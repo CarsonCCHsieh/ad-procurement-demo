@@ -421,6 +421,45 @@ textarea:focus {
   color: hsl(var(--muted-foreground));
 }
 
+.toast {
+  position: fixed;
+  right: 14px;
+  bottom: 14px;
+  z-index: 9999;
+  max-width: min(560px, calc(100vw - 28px));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--card) / 0.92);
+  box-shadow: var(--shadow-md);
+  backdrop-filter: blur(10px);
+}
+
+.toast-text {
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.toast-success {
+  border-color: rgba(16, 185, 129, 0.55);
+}
+
+.toast-info {
+  border-color: hsl(var(--primary) / 0.35);
+}
+
+.toast-warn {
+  border-color: rgba(245, 158, 11, 0.65);
+}
+
+.toast-error {
+  border-color: hsl(var(--destructive) / 0.55);
+}
+
 .list {
   display: grid;
   gap: 10px;

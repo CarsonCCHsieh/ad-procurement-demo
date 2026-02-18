@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { ServicePicker } from "../components/ServicePicker";
@@ -29,12 +29,15 @@ function vendorLabel(key: VendorKey) {
 
 const ALL_VENDORS: VendorKey[] = ["smmraja", "urpanel", "justanotherpanel"];
 
+type MsgKind = "success" | "info" | "warn" | "error";
+
 export function SettingsPage() {
   const nav = useNavigate();
   const { user, signOut } = useAuth();
 
   const [cfg, setCfg] = useState<AppConfigV1>(() => getConfig());
-  const [msg, setMsg] = useState<string | null>(null);
+  const [msg, setMsg] = useState<{ kind: MsgKind; text: string } | null>(null);
+  const msgTimer = useRef<number | null>(null);
   const [showKeys, setShowKeys] = useState(false);
   const [keys, setKeys] = useState<Record<VendorKey, string>>(() => ({
     smmraja: getVendorKey("smmraja"),
@@ -68,18 +71,23 @@ export function SettingsPage() {
     });
   };
 
+  const flashMsg = (kind: MsgKind, text: string, ms = 2500) => {
+    setMsg({ kind, text });
+    if (msgTimer.current != null) window.clearTimeout(msgTimer.current);
+    msgTimer.current = window.setTimeout(() => setMsg(null), ms);
+  };
+
   const save = () => {
     saveConfig(cfg);
     setCfg(getConfig());
-    setMsg("已儲存。");
-    setTimeout(() => setMsg(null), 2000);
+    const t = new Date().toLocaleTimeString("zh-TW", { hour12: false });
+    flashMsg("success", `已儲存（${t}）。`, 3000);
   };
 
   const doReset = () => {
     resetConfig();
     setCfg(getConfig());
-    setMsg("已重設為預設值。");
-    setTimeout(() => setMsg(null), 2000);
+    flashMsg("info", "已重設為預設值。", 3000);
   };
 
   const loadServicesFromSite = async (vendor: VendorKey, opts?: { silent?: boolean }) => {
@@ -87,8 +95,7 @@ export function SettingsPage() {
       const res = await fetch(`./services/${vendor}.json`, { cache: "no-store" });
       if (!res.ok) {
         if (!opts?.silent) {
-          setMsg(`載入 ${vendorLabel(vendor)} 服務清單失敗：HTTP ${res.status}（可能尚未產生檔案）`);
-          setTimeout(() => setMsg(null), 3500);
+          flashMsg("error", `載入 ${vendorLabel(vendor)} 服務清單失敗：HTTP ${res.status}（可能尚未產生檔案）`, 4500);
         }
         return;
       }
@@ -97,19 +104,16 @@ export function SettingsPage() {
       const r = importVendorServicesJson(vendor, JSON.stringify(json));
       if (!r.ok) {
         if (!opts?.silent) {
-          setMsg(r.message ?? `載入 ${vendorLabel(vendor)} 後解析失敗`);
-          setTimeout(() => setMsg(null), 3500);
+          flashMsg("error", r.message ?? `載入 ${vendorLabel(vendor)} 後解析失敗`, 4500);
         }
         return;
       }
       if (!opts?.silent) {
-        setMsg(`已載入 ${vendorLabel(vendor)} 服務清單：${(r.count ?? 0).toLocaleString()} 筆`);
-        setTimeout(() => setMsg(null), 2500);
+        flashMsg("success", `已載入 ${vendorLabel(vendor)} 服務清單：${(r.count ?? 0).toLocaleString()} 筆`, 3000);
       }
     } catch {
       if (!opts?.silent) {
-        setMsg(`載入 ${vendorLabel(vendor)} 服務清單失敗：網路錯誤`);
-        setTimeout(() => setMsg(null), 3500);
+        flashMsg("error", `載入 ${vendorLabel(vendor)} 服務清單失敗：網路錯誤`, 4500);
       }
     }
   };
@@ -121,8 +125,7 @@ export function SettingsPage() {
       await loadServicesFromSite(v, { silent: true });
       if (getVendorServices(v).length > 0) ok += 1;
     }
-    setMsg(`已嘗試載入全部服務清單（成功 ${ok}/${ALL_VENDORS.length} 家）。`);
-    setTimeout(() => setMsg(null), 3000);
+    flashMsg("info", `已嘗試載入全部服務清單（成功 ${ok}/${ALL_VENDORS.length} 家）。`, 3500);
   };
 
   const updatePricing = (patch: Partial<typeof pricingCfg>) => {
@@ -180,8 +183,11 @@ export function SettingsPage() {
       </div>
 
       {msg && (
-        <div className="card" style={{ borderColor: "rgba(16, 185, 129, 0.45)" }}>
-          <div className="card-bd">{msg}</div>
+        <div className={`toast toast-${msg.kind}`} role="status" aria-live="polite">
+          <div className="toast-text">{msg.text}</div>
+          <button className="btn ghost sm" type="button" onClick={() => setMsg(null)}>
+            關閉
+          </button>
         </div>
       )}
 
@@ -497,8 +503,7 @@ export function SettingsPage() {
                             onClick={() => {
                               clearVendorKey(v.key);
                               setKeys((k) => ({ ...k, [v.key]: "" }));
-                              setMsg(`已清除 ${vendorLabel(v.key)} API 金鑰（僅此瀏覽器）。`);
-                              setTimeout(() => setMsg(null), 2000);
+                              flashMsg("info", `已清除 ${vendorLabel(v.key)} API 金鑰（僅此瀏覽器）。`, 3000);
                             }}
                           >
                             清除金鑰
@@ -521,8 +526,7 @@ export function SettingsPage() {
                         type="button"
                         onClick={() => {
                           clearVendorServices(v.key);
-                          setMsg(`已清空 ${vendorLabel(v.key)} 服務清單。`);
-                          setTimeout(() => setMsg(null), 2000);
+                          flashMsg("info", `已清空 ${vendorLabel(v.key)} 服務清單。`, 3000);
                         }}
                       >
                         清空本機清單
