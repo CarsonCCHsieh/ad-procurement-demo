@@ -115,7 +115,7 @@ export function AdOrdersPage() {
           <div className="brand-title">
             {step === "edit" ? "廣告下單" : step === "confirm" ? "確認送出" : "已送出（Demo）"}
           </div>
-          <div className="brand-sub">表單 -> 確認頁 -> 送出（尚未串接 API）</div>
+          <div className="brand-sub">表單 → 確認頁 → 送出（尚未串接 API）</div>
         </div>
 
         <div className="pill">
@@ -418,7 +418,7 @@ export function AdOrdersPage() {
             <div className="card-hd">
               <div>
                 <div className="card-title">已送出（Demo）</div>
-                <div className="card-desc">這代表「表單 -> 確認頁 -> 送出」流程已可展示。</div>
+                  <div className="card-desc">這代表「表單 → 確認頁 → 送出」流程已可展示。</div>
               </div>
               <span className="tag">submitted</span>
             </div>
@@ -442,4 +442,3 @@ export function AdOrdersPage() {
     </div>
   );
 }
-
