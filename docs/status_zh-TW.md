@@ -42,6 +42,10 @@
     - 你可以把供應商 `action=services` 的 JSON 回應貼到此頁匯入，之後就能用「可搜尋挑選」方式選 service，而不是只看 serviceId 數字。
   - 注意：因為 Demo 是純前端靜態站，無法安全保存 API key，也容易遇到 CORS，所以此頁採用「匯入 services JSON」的方式；正式版建議由後端同步 services 清單並保管 key。
 
+## 視覺風格（已調整接近 Juksysmallerp）
+- Demo 站已改為「淺色背景 + 藍色主色」的設計語彙，目標是讓測試人員感覺更像同一套後台系統。
+- 色票與陰影策略參考 `juksysmallerp` 的 HSL token（background/card/border/primary 等）。
+
 ## GitHub Pages 部署方式（Actions）
 本專案使用 GitHub Actions 自動建置並部署到 GitHub Pages：
 - Workflow 檔：`.github/workflows/pages.yml`
