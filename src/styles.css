@@ -60,7 +60,7 @@ body {
 .container {
   width: min(90vw, 1100px);
   margin: 0 auto;
-  padding: 28px 20px 80px;
+  padding: 20px 16px 64px;
 }
 
 .topbar {
@@ -68,7 +68,7 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 18px;
+  margin-bottom: 14px;
 }
 
 .brand {
@@ -102,7 +102,7 @@ body {
 
 .grid {
   display: grid;
-  gap: 14px;
+  gap: 12px;
 }
 
 .card {
@@ -114,7 +114,7 @@ body {
 }
 
 .card-hd {
-  padding: 14px 16px;
+  padding: 12px 14px;
   border-bottom: 1px solid hsl(var(--border));
   display: flex;
   align-items: flex-start;
@@ -134,13 +134,13 @@ body {
 }
 
 .card-bd {
-  padding: 16px;
+  padding: 12px 14px;
 }
 
 .row {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 12px;
+  gap: 10px;
 }
 
 @media (min-width: 820px) {
@@ -179,7 +179,7 @@ textarea {
   background: hsl(var(--card));
   border: 1px solid hsl(var(--border));
   border-radius: 12px;
-  padding: 10px 12px;
+  padding: 8px 10px;
   outline: none;
 }
 
@@ -207,15 +207,15 @@ textarea:focus {
 .actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 14px;
+  gap: 8px;
+  margin-top: 10px;
 }
 
 .btn {
   appearance: none;
   border: 1px solid hsl(var(--border));
-  border-radius: 12px;
-  padding: 10px 14px;
+  border-radius: 10px;
+  padding: 8px 12px;
   font-weight: 700;
   letter-spacing: 0.2px;
   cursor: pointer;
@@ -224,6 +224,7 @@ textarea:focus {
   box-shadow: var(--shadow-xs);
   transition: background-color 250ms ease-out, box-shadow 250ms ease-out, border-color 250ms ease-out,
     transform 250ms ease-out, color 250ms ease-out;
+  font-size: 13px;
 }
 
 .btn:hover:not(:disabled) {
@@ -282,7 +283,7 @@ textarea:focus {
 .item {
   border: 1px solid hsl(var(--border));
   border-radius: 12px;
-  padding: 12px;
+  padding: 10px;
   background: hsl(var(--card));
   box-shadow: var(--shadow-xs);
 }

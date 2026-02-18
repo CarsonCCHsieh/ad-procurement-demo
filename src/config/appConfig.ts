@@ -22,6 +22,8 @@ export type SupplierConfig = {
 
 export type PlacementConfig = {
   placement: AdPlacement;
+  // If unset, default is "random" (per user requirement).
+  splitStrategy?: "random" | "weighted";
   suppliers: SupplierConfig[];
 };
 
@@ -53,6 +55,7 @@ export const DEFAULT_CONFIG: AppConfigV1 = {
   placements: [
     {
       placement: "fb_like",
+      splitStrategy: "random",
       suppliers: [
         { vendor: "smmraja", serviceId: 0, weight: 1, maxPerOrder: 1000, enabled: true },
         { vendor: "urpanel", serviceId: 0, weight: 1, maxPerOrder: 1000, enabled: true },
@@ -61,6 +64,7 @@ export const DEFAULT_CONFIG: AppConfigV1 = {
     },
     {
       placement: "fb_reach",
+      splitStrategy: "random",
       suppliers: [
         { vendor: "smmraja", serviceId: 0, weight: 1, enabled: true },
         { vendor: "urpanel", serviceId: 0, weight: 1, enabled: true },
@@ -68,6 +72,7 @@ export const DEFAULT_CONFIG: AppConfigV1 = {
     },
     {
       placement: "fb_video_views",
+      splitStrategy: "random",
       suppliers: [
         { vendor: "smmraja", serviceId: 0, weight: 1, enabled: true },
         { vendor: "urpanel", serviceId: 0, weight: 1, enabled: true },
@@ -75,6 +80,7 @@ export const DEFAULT_CONFIG: AppConfigV1 = {
     },
     {
       placement: "ig_like",
+      splitStrategy: "random",
       suppliers: [
         { vendor: "smmraja", serviceId: 0, weight: 1, enabled: true },
         { vendor: "urpanel", serviceId: 1, weight: 1, enabled: false },
@@ -82,6 +88,7 @@ export const DEFAULT_CONFIG: AppConfigV1 = {
     },
     {
       placement: "ig_reels_views",
+      splitStrategy: "random",
       suppliers: [
         { vendor: "smmraja", serviceId: 0, weight: 1, enabled: true },
         { vendor: "justanotherpanel", serviceId: 0, weight: 1, enabled: true },
@@ -122,13 +129,15 @@ function normalizeConfig(raw: unknown): AppConfigV1 | null {
       const x = p as Partial<PlacementConfig>;
       if (!isPlacement(x.placement)) return null;
       if (!Array.isArray(x.suppliers)) return null;
+      const splitStrategy =
+        x.splitStrategy === "weighted" || x.splitStrategy === "random" ? x.splitStrategy : undefined;
       const suppliers: SupplierConfig[] = x.suppliers
         .map((s) => {
           if (!s || typeof s !== "object") return null;
           const y = s as Partial<SupplierConfig>;
           if (!isVendorKey(y.vendor)) return null;
           const sid = Number(y.serviceId);
-          const w = Number(y.weight);
+          const w = Number(y.weight ?? 1);
           const cap = y.maxPerOrder == null ? undefined : Number(y.maxPerOrder);
           if (!Number.isFinite(sid) || sid < 0) return null;
           if (!Number.isFinite(w) || w < 0) return null;
@@ -136,7 +145,7 @@ function normalizeConfig(raw: unknown): AppConfigV1 | null {
           return { vendor: y.vendor, serviceId: sid, weight: w, maxPerOrder: cap, enabled: !!y.enabled };
         })
         .filter((y): y is SupplierConfig => y != null);
-      return { placement: x.placement, suppliers };
+      return { placement: x.placement, splitStrategy, suppliers };
     })
     .filter((x): x is PlacementConfig => x != null);
 
@@ -195,6 +204,5 @@ export function getPlacementConfig(placement: AdPlacement): PlacementConfig {
   const cfg = getConfig();
   const found = cfg.placements.find((p) => p.placement === placement);
   if (found) return found;
-  return { placement, suppliers: [] };
+  return { placement, splitStrategy: "random", suppliers: [] };
 }
-

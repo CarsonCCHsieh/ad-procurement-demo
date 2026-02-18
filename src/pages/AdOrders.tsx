@@ -105,6 +105,7 @@ export function AdOrdersPage() {
       return planSplit({
         total: n,
         suppliers: p.suppliers,
+        strategy: p.splitStrategy ?? "random",
         vendorEnabled: (v) => vendorEnabled(v),
       });
     });

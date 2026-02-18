@@ -39,9 +39,8 @@
   - 控制設定頁（本次新增重點）。
   - 用途：把「內部下單品項（fb_like/ig_like...）」對應到三家供應商各自的 `serviceId`，並設定拆單 `weight` 與 `maxPerOrder`。
   - 服務下拉選單：
-    - 你可以把供應商 `action=services` 的 JSON 回應貼到此頁匯入，之後就能用「可搜尋挑選」方式選 service，而不是只看 serviceId 數字。
-    - 也支援「從網站載入」：若 repo 有設定 GitHub Actions secrets 並成功抓到 services，會產生 `public/services/<vendor>.json`，Settings 可一鍵載入，不用手動貼 JSON。
-  - 注意：因為 Demo 是純前端靜態站，無法安全保存 API key，也容易遇到 CORS，所以此頁採用「匯入 services JSON」的方式；正式版建議由後端同步 services 清單並保管 key。
+    - Settings 支援「從網站載入」：由 GitHub Actions 產生 `public/services/<vendor>.json`，前端一鍵載入後即可用可搜尋挑選器選 service（不需要手動貼 JSON）。
+  - 注意：因為 Demo 是純前端靜態站，無法安全保存 API key，也容易遇到 CORS，所以 services 清單改由 GitHub Actions 產生靜態檔再讓前端載入；正式版建議由後端同步 services 清單並保管 key。
 
 ## 自動更新 services（GitHub Actions）
 此 Demo 專案已加入一個 workflow 會去抓三家供應商的 services 清單並寫入靜態檔案：
@@ -55,6 +54,12 @@
 - `JAP_KEY`
 
 然後手動跑一次 workflow（或等每日排程），Settings 頁就可以按「從網站載入」直接取得清單。
+
+## Settings UI 調整
+- 已移除「貼 JSON 匯入」的 UI，避免測試人員操作混亂。
+- 拆單策略可選：
+  - `Random`：預設，不看 weight（每次拆單結果可不同）
+  - `配比`：依 weight 分配數量
 
 ## 視覺風格（已調整接近 Juksysmallerp）
 - Demo 站已改為「淺色背景 + 藍色主色」的設計語彙，目標是讓測試人員感覺更像同一套後台系統。

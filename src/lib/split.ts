@@ -38,6 +38,8 @@ export function planSplit(params: {
   total: number;
   suppliers: SupplierConfig[];
   vendorEnabled: (v: VendorKey) => boolean;
+  // If unset, default is "random" (per user requirement).
+  strategy?: "random" | "weighted";
 }): { splits: PlannedSplit[]; warnings: string[] } {
   const { total, suppliers, vendorEnabled } = params;
   const warnings: string[] = [];
@@ -47,7 +49,6 @@ export function planSplit(params: {
   const eligible = suppliers
     .filter((s) => s.enabled)
     .filter((s) => vendorEnabled(s.vendor))
-    .filter((s) => s.weight > 0)
     .filter((s) => s.serviceId > 0);
 
   if (eligible.length === 0) {
@@ -55,43 +56,57 @@ export function planSplit(params: {
     return { splits: [], warnings };
   }
 
-  const sumW = eligible.reduce((a, s) => a + s.weight, 0);
-  if (sumW <= 0) {
-    warnings.push("供應商權重總和為 0，無法拆單。");
-    return { splits: [], warnings };
-  }
-
-  const alloc = eligible.map((s) => Math.floor((total * s.weight) / sumW));
-  let remainder = total - alloc.reduce((a, b) => a + b, 0);
-
-  // Distribute remainder using weighted random.
-  while (remainder > 0) {
-    const idx = pickWeightedIndex(eligible.map((s) => s.weight));
-    alloc[idx] += 1;
-    remainder -= 1;
-  }
-
-  // Apply caps and redistribute overflow.
-  let overflow = 0;
+  const strategy = params.strategy ?? "random";
+  const alloc = eligible.map(() => 0);
   const caps = eligible.map((s) => (s.maxPerOrder == null ? Infinity : s.maxPerOrder));
+
+  if (strategy === "weighted") {
+    const filtered = eligible.filter((s) => s.weight > 0);
+    if (filtered.length === 0) {
+      warnings.push("供應商權重總和為 0，無法拆單。請把 weight 設成正數，或改用 Random。");
+      return { splits: [], warnings };
+    }
+
+    const sumW = filtered.reduce((a, s) => a + s.weight, 0);
+    const idxMap = filtered.map((s) => eligible.indexOf(s));
+    for (let i = 0; i < filtered.length; i++) {
+      const idx = idxMap[i];
+      alloc[idx] = Math.floor((total * filtered[i].weight) / sumW);
+    }
+
+    let remainder = total - alloc.reduce((a, b) => a + b, 0);
+    while (remainder > 0) {
+      const pick = pickWeightedIndex(filtered.map((s) => s.weight));
+      alloc[idxMap[pick]] += 1;
+      remainder -= 1;
+    }
+  } else {
+    // Random strategy: distribute unit-by-unit across eligible suppliers uniformly,
+    // respecting caps when possible.
+    let remaining = total;
+    while (remaining > 0) {
+      const availableIdx = alloc
+        .map((a, i) => (a < caps[i] ? i : -1))
+        .filter((i) => i >= 0);
+      if (availableIdx.length === 0) break;
+      const r = Math.floor(rand01() * availableIdx.length);
+      alloc[availableIdx[r]] += 1;
+      remaining -= 1;
+    }
+    if (remaining > 0) {
+      warnings.push(`供應商 maxPerOrder 容量不足，仍有 ${remaining} 無法分配（Demo 先忽略）。`);
+      alloc[0] += remaining;
+    }
+  }
+
+  // Apply caps and redistribute overflow (weighted strategy primarily; random already checks caps, but keep safe).
+  let overflow = 0;
   for (let i = 0; i < alloc.length; i++) {
     if (alloc[i] > caps[i]) {
       overflow += alloc[i] - caps[i];
       alloc[i] = caps[i];
     }
   }
-
-  // Redistribute overflow to suppliers with remaining capacity.
-  while (overflow > 0) {
-    const remainingCaps = alloc.map((a, i) => caps[i] - a);
-    const weights = eligible.map((s, i) => (remainingCaps[i] > 0 ? s.weight : 0));
-    const sum = weights.reduce((a, b) => a + b, 0);
-    if (sum <= 0) break;
-    const idx = pickWeightedIndex(weights);
-    alloc[idx] += 1;
-    overflow -= 1;
-  }
-
   if (overflow > 0) {
     warnings.push(`供應商 maxPerOrder 容量不足，仍有 ${overflow} 無法分配（Demo 先忽略）。`);
     alloc[0] += overflow;
@@ -103,4 +118,3 @@ export function planSplit(params: {
 
   return { splits, warnings };
 }
-
