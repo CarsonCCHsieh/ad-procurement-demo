@@ -445,7 +445,9 @@ export function AdOrdersPage() {
                           拆單（Demo 預排）：
                         </div>
                         {plan.splits.length === 0 ? (
-                          <div className="hint">尚未設定供應商 serviceId，請到「控制設定」頁面調整。</div>
+                          <div className="error" style={{ marginTop: 6 }}>
+                            尚未完成拆單設定，請通知管理員協助設定供應商 serviceId（控制設定）。
+                          </div>
                         ) : (
                           <div className="list" style={{ marginTop: 8 }}>
                             {plan.splits.map((s) => (
@@ -465,7 +467,7 @@ export function AdOrdersPage() {
                             ))}
                           </div>
                         )}
-                        {plan.warnings.length > 0 && (
+                        {plan.splits.length > 0 && plan.warnings.length > 0 && (
                           <div className="hint" style={{ marginTop: 6, color: "rgba(245, 158, 11, 0.95)" }}>
                             {plan.warnings.join(" / ")}
                           </div>
