@@ -19,6 +19,7 @@ import {
   importVendorServicesJson,
 } from "../config/serviceCatalog";
 import { ServicePicker } from "../components/ServicePicker";
+import { clearVendorKey, getVendorKey, setVendorKey } from "../config/vendorKeys";
 
 function placementLabel(p: AdPlacement) {
   return PRICING[p]?.label ?? p;
@@ -37,6 +38,12 @@ export function SettingsPage() {
   const [servicesVendor, setServicesVendor] = useState<VendorKey>("smmraja");
   const [servicesJson, setServicesJson] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
+  const [showKeys, setShowKeys] = useState(false);
+  const [keys, setKeys] = useState<Record<VendorKey, string>>(() => ({
+    smmraja: getVendorKey("smmraja"),
+    urpanel: getVendorKey("urpanel"),
+    justanotherpanel: getVendorKey("justanotherpanel"),
+  }));
 
   const vendorKeys = useMemo(() => cfg.vendors.map((v) => v.key), [cfg.vendors]);
 
@@ -153,6 +160,16 @@ export function SettingsPage() {
             <span className="tag">#/settings</span>
           </div>
           <div className="card-bd">
+            <div className="actions" style={{ justifyContent: "space-between" }}>
+              <div className="hint">
+                若你想在 Demo 站直接「同步狀態」，可以暫存在瀏覽器（不安全，僅 Demo）。
+              </div>
+              <button className="btn" type="button" onClick={() => setShowKeys((x) => !x)}>
+                {showKeys ? "隱藏 API key" : "顯示 API key（Demo）"}
+              </button>
+            </div>
+            <div className="sep" />
+
             <div className="list">
               {cfg.vendors.map((v, idx) => (
                 <div className="item" key={v.key}>
@@ -193,6 +210,43 @@ export function SettingsPage() {
                       <div className="hint">SMM Raja: /api/v3，Urpanel/JAP: /api/v2（以文件為準）</div>
                     </div>
                   </div>
+                  {showKeys && (
+                    <div className="row cols2" style={{ marginTop: 12 }}>
+                      <div className="field">
+                        <div className="label">API key（Demo only）</div>
+                        <input
+                          type="password"
+                          value={keys[v.key]}
+                          onChange={(e) => {
+                            const next = e.target.value;
+                            setKeys((k) => ({ ...k, [v.key]: next }));
+                            setVendorKey(v.key, next);
+                          }}
+                          placeholder="貼上 vendor API key"
+                        />
+                        <div className="hint">
+                          警告：靜態站存 key 不安全。正式版請用後端代打 API。
+                        </div>
+                      </div>
+                      <div className="field">
+                        <div className="label">操作</div>
+                        <div className="actions">
+                          <button
+                            className="btn danger"
+                            type="button"
+                            onClick={() => {
+                              clearVendorKey(v.key);
+                              setKeys((k) => ({ ...k, [v.key]: "" }));
+                              setMsg(`已清除 ${vendorLabel(v.key)} API key（僅此瀏覽器）。`);
+                              setTimeout(() => setMsg(null), 2000);
+                            }}
+                          >
+                            清除 key
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                   <div className="sep" />
                   <div className="hint">
                     services 清單筆數：{getVendorServices(v.key).length.toLocaleString()}（用於下方下拉挑選 service）

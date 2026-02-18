@@ -1,11 +1,22 @@
 import type { AdPlacement } from "./pricing";
 import type { PlannedSplit } from "./split";
 
+export type VendorSplitExec = PlannedSplit & {
+  vendorOrderId?: number; // order id returned by vendor after "add"
+  vendorStatus?: string;
+  remains?: number;
+  startCount?: number;
+  charge?: number;
+  currency?: string;
+  lastSyncAt?: string; // ISO
+  error?: string;
+};
+
 export type DemoOrderLine = {
   placement: AdPlacement;
   quantity: number;
   amount: number;
-  splits: PlannedSplit[];
+  splits: VendorSplitExec[];
   warnings: string[];
 };
 
@@ -61,7 +72,16 @@ export function addOrder(order: Omit<DemoOrder, "id" | "createdAt" | "status">):
   return full;
 }
 
+export function updateOrder(orderId: string, updater: (order: DemoOrder) => DemoOrder): DemoOrder | null {
+  const all = readAll();
+  const idx = all.findIndex((o) => o.id === orderId);
+  if (idx < 0) return null;
+  const next = updater(all[idx]);
+  all[idx] = next;
+  writeAll(all);
+  return next;
+}
+
 export function clearOrders() {
   writeAll([]);
 }
-
