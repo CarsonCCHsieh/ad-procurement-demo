@@ -38,7 +38,9 @@
 - `#/settings`
   - 控制設定頁（本次新增重點）。
   - 用途：把「內部下單品項（fb_like/ig_like...）」對應到三家供應商各自的 `serviceId`，並設定拆單 `weight` 與 `maxPerOrder`。
-  - 注意：因為 Demo 是純前端靜態站，無法安全保存 API key，也容易遇到 CORS，所以此頁只做「手動維護對應表」與 JSON 匯入/匯出；正式版建議由後端同步 services 清單並保管 key。
+  - 服務下拉選單：
+    - 你可以把供應商 `action=services` 的 JSON 回應貼到此頁匯入，之後就能用「可搜尋挑選」方式選 service，而不是只看 serviceId 數字。
+  - 注意：因為 Demo 是純前端靜態站，無法安全保存 API key，也容易遇到 CORS，所以此頁採用「匯入 services JSON」的方式；正式版建議由後端同步 services 清單並保管 key。
 
 ## GitHub Pages 部署方式（Actions）
 本專案使用 GitHub Actions 自動建置並部署到 GitHub Pages：

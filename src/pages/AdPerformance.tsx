@@ -4,6 +4,7 @@ import { listOrders, clearOrders } from "../lib/ordersStore";
 import { PRICING } from "../lib/pricing";
 import { getVendorLabel } from "../config/appConfig";
 import { useMemo, useState } from "react";
+import { findServiceName } from "../config/serviceCatalog";
 
 export function AdPerformancePage() {
   const nav = useNavigate();
@@ -112,6 +113,11 @@ export function AdPerformancePage() {
                                   </div>
                                   <div style={{ fontWeight: 800 }}>{s.quantity.toLocaleString()}</div>
                                 </div>
+                                {findServiceName(s.vendor, s.serviceId) && (
+                                  <div className="hint" style={{ marginTop: 6 }}>
+                                    {findServiceName(s.vendor, s.serviceId)}
+                                  </div>
+                                )}
                               </div>
                             ))}
                           </div>

@@ -6,6 +6,7 @@ import { isValidUrl, parseLinks } from "../lib/validate";
 import { getConfig, getPlacementConfig, getVendorLabel, type VendorKey } from "../config/appConfig";
 import { planSplit } from "../lib/split";
 import { addOrder } from "../lib/ordersStore";
+import { findServiceName } from "../config/serviceCatalog";
 
 type OrderKind = "new" | "upsell";
 
@@ -446,6 +447,11 @@ export function AdOrdersPage() {
                                   </div>
                                   <div style={{ fontWeight: 800 }}>{s.quantity.toLocaleString()}</div>
                                 </div>
+                                {findServiceName(s.vendor, s.serviceId) && (
+                                  <div className="hint" style={{ marginTop: 6 }}>
+                                    {findServiceName(s.vendor, s.serviceId)}
+                                  </div>
+                                )}
                               </div>
                             ))}
                           </div>

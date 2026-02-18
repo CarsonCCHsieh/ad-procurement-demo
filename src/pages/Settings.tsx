@@ -12,6 +12,13 @@ import {
 } from "../config/appConfig";
 import { useAuth } from "../auth/AuthContext";
 import { PRICING, type AdPlacement } from "../lib/pricing";
+import {
+  clearVendorServices,
+  exportServiceCatalogJson,
+  getVendorServices,
+  importVendorServicesJson,
+} from "../config/serviceCatalog";
+import { ServicePicker } from "../components/ServicePicker";
 
 function placementLabel(p: AdPlacement) {
   return PRICING[p]?.label ?? p;
@@ -27,6 +34,8 @@ export function SettingsPage() {
 
   const [cfg, setCfg] = useState<AppConfigV1>(() => getConfig());
   const [importJson, setImportJson] = useState("");
+  const [servicesVendor, setServicesVendor] = useState<VendorKey>("smmraja");
+  const [servicesJson, setServicesJson] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
 
   const vendorKeys = useMemo(() => cfg.vendors.map((v) => v.key), [cfg.vendors]);
@@ -74,6 +83,28 @@ export function SettingsPage() {
     setCfg(getConfig());
     setImportJson("");
     setMsg("已匯入並套用設定。");
+    setTimeout(() => setMsg(null), 2500);
+  };
+
+  const importServices = () => {
+    const r = importVendorServicesJson(servicesVendor, servicesJson.trim());
+    if (!r.ok) {
+      setMsg(r.message ?? "匯入 services 失敗");
+      return;
+    }
+    setServicesJson("");
+    setMsg(`已匯入 ${vendorLabel(servicesVendor)} services：${(r.count ?? 0).toLocaleString()} 筆`);
+    setTimeout(() => setMsg(null), 2500);
+  };
+
+  const copyServicesExport = async () => {
+    const json = exportServiceCatalogJson();
+    try {
+      await navigator.clipboard.writeText(json);
+      setMsg("已複製 services catalog JSON 到剪貼簿。");
+    } catch {
+      setMsg("複製失敗。");
+    }
     setTimeout(() => setMsg(null), 2500);
   };
 
@@ -162,6 +193,10 @@ export function SettingsPage() {
                       <div className="hint">SMM Raja: /api/v3，Urpanel/JAP: /api/v2（以文件為準）</div>
                     </div>
                   </div>
+                  <div className="sep" />
+                  <div className="hint">
+                    services 清單筆數：{getVendorServices(v.key).length.toLocaleString()}（用於下方下拉挑選 service）
+                  </div>
                 </div>
               ))}
             </div>
@@ -177,6 +212,71 @@ export function SettingsPage() {
               <button className="btn primary" type="button" onClick={save}>
                 儲存
               </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="card">
+          <div className="card-hd">
+            <div>
+              <div className="card-title">服務清單（下拉選單來源）</div>
+              <div className="card-desc">
+                你可以把各家 `action=services` 的 JSON 回應貼進來，系統就能提供「可搜尋挑選」的 service 下拉選單。
+              </div>
+            </div>
+            <span className="tag">services</span>
+          </div>
+          <div className="card-bd">
+            <div className="row cols2">
+              <div className="field">
+                <div className="label">供應商</div>
+                <select value={servicesVendor} onChange={(e) => setServicesVendor(e.target.value as VendorKey)}>
+                  {vendorKeys.map((k) => (
+                    <option key={k} value={k}>
+                      {vendorLabel(k)}
+                    </option>
+                  ))}
+                </select>
+                <div className="hint">
+                  建議做法：你先用 cURL/Postman 呼叫 `{vendorLabel(servicesVendor)}: action=services`，把回傳的 JSON 整段貼入。
+                </div>
+              </div>
+              <div className="field">
+                <div className="label">目前筆數</div>
+                <input value={getVendorServices(servicesVendor).length.toLocaleString()} readOnly />
+              </div>
+            </div>
+
+            <div className="field" style={{ marginTop: 12 }}>
+              <div className="label">貼上 services JSON</div>
+              <textarea rows={8} value={servicesJson} onChange={(e) => setServicesJson(e.target.value)} placeholder='[{"service":1,"name":"...","rate":"...","min":"...","max":"..."}]' />
+            </div>
+
+            <div className="actions" style={{ justifyContent: "space-between" }}>
+              <button
+                className="btn danger"
+                type="button"
+                onClick={() => {
+                  clearVendorServices(servicesVendor);
+                  setMsg(`已清空 ${vendorLabel(servicesVendor)} services 清單。`);
+                  setTimeout(() => setMsg(null), 2000);
+                }}
+              >
+                清空此供應商清單
+              </button>
+              <div>
+                <button className="btn" type="button" onClick={copyServicesExport}>
+                  複製全部 services catalog JSON
+                </button>
+                <button className="btn primary" type="button" onClick={importServices} disabled={!servicesJson.trim()}>
+                  匯入
+                </button>
+              </div>
+            </div>
+
+            <div className="sep" />
+            <div className="hint">
+              注意：這是純前端 Demo，所以不會在此頁輸入 API key 直接抓 services（避免 key 暴露、也避免遇到 CORS）。
             </div>
           </div>
         </div>
@@ -300,6 +400,21 @@ export function SettingsPage() {
                             </div>
                           </div>
 
+                          <div className="sep" />
+                          <div className="hint">
+                            用下拉選單挑選（需要先匯入該供應商 services 清單）：
+                          </div>
+                          <ServicePicker
+                            vendor={s.vendor}
+                            currentServiceId={s.serviceId}
+                            onPick={(svc) => {
+                              upsertPlacement(
+                                placement,
+                                current.map((x, i) => (i === idx ? { ...x, serviceId: svc.id } : x)),
+                              );
+                            }}
+                          />
+
                           <div className="actions" style={{ justifyContent: "space-between" }}>
                             <div>
                               <button
@@ -370,4 +485,3 @@ export function SettingsPage() {
     </div>
   );
 }
-
