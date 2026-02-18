@@ -30,10 +30,15 @@
     - 目標數量欄位強制數字檢核（不合法不可進入確認頁）。
     - 連結欄位支援多筆（以換行分隔），並進行基本 URL 檢核。
     - 定價目前為硬編碼，集中在：`src/lib/pricing.ts`
-    - 送出後目前不會真的打 API，只會進入「已送出」展示狀態（便於先對齊 UI/欄位/流程）。
+    - 送出後目前不會真的打 API；但會把「拆單計畫」存到 `localStorage`，供成效頁顯示（便於先對齊拆單邏輯與欄位）。
 
 - `#/ad-performance`
-  - 成效頁占位（之後再依 API 回傳資料結構補齊）。
+  - 成效頁（Demo 版本先顯示「已提交工單」與「拆單計畫」，正式版再接 API 回寫狀態與成效）。
+
+- `#/settings`
+  - 控制設定頁（本次新增重點）。
+  - 用途：把「內部下單品項（fb_like/ig_like...）」對應到三家供應商各自的 `serviceId`，並設定拆單 `weight` 與 `maxPerOrder`。
+  - 注意：因為 Demo 是純前端靜態站，無法安全保存 API key，也容易遇到 CORS，所以此頁只做「手動維護對應表」與 JSON 匯入/匯出；正式版建議由後端同步 services 清單並保管 key。
 
 ## GitHub Pages 部署方式（Actions）
 本專案使用 GitHub Actions 自動建置並部署到 GitHub Pages：
@@ -63,4 +68,3 @@ Repo 設定必要步驟（在 GitHub 網站上做一次即可）：
   - 送出後呼叫後端端點（先 mock 回應也可）
   - 成效頁 UI 根據 API response schema 定稿
   - 最小可用的資料儲存（若要 SQLite，建議用一個輕量後端承載，GitHub Pages 本身無法跑 SQLite）
-

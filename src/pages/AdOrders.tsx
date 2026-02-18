@@ -3,6 +3,9 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { PRICING, calcLineAmount, type AdPlacement } from "../lib/pricing";
 import { isValidUrl, parseLinks } from "../lib/validate";
+import { getConfig, getPlacementConfig, getVendorLabel, type VendorKey } from "../config/appConfig";
+import { planSplit } from "../lib/split";
+import { addOrder } from "../lib/ordersStore";
 
 type OrderKind = "new" | "upsell";
 
@@ -83,6 +86,9 @@ export function AdOrdersPage() {
   const [state, setState] = useState<FormState>(() => defaultState());
   const [errors, setErrors] = useState<FormErrors>({});
 
+  const cfg = getConfig();
+  const vendorEnabled = (v: VendorKey) => cfg.vendors.some((x) => x.key === v && x.enabled);
+
   const computed = useMemo(() => {
     const lineAmounts = state.items.map((it) => {
       const n = Number(it.target);
@@ -90,8 +96,20 @@ export function AdOrdersPage() {
       return calcLineAmount(it.placement, n);
     });
     const total = lineAmounts.reduce((a, b) => a + b, 0);
-    return { lineAmounts, total };
-  }, [state.items]);
+
+    const linePlans = state.items.map((it) => {
+      const n = Number(it.target);
+      if (!Number.isFinite(n) || n <= 0) return { splits: [], warnings: [] as string[] };
+      const p = getPlacementConfig(it.placement);
+      return planSplit({
+        total: n,
+        suppliers: p.suppliers,
+        vendorEnabled: (v) => vendorEnabled(v),
+      });
+    });
+
+    return { lineAmounts, total, linePlans };
+  }, [state.items, cfg.updatedAt]);
 
   const toConfirm = () => {
     const e = validate(state);
@@ -101,7 +119,29 @@ export function AdOrdersPage() {
   };
 
   const onConfirmSubmit = () => {
-    // MVP checkpoint: confirm-submit flow exists. No backend/API yet.
+    // MVP checkpoint: store a planned order locally (no backend/API yet).
+    const applicant = user?.displayName ?? user?.username ?? "";
+    const links = parseLinks(state.linksRaw);
+    addOrder({
+      applicant,
+      orderNo: state.orderNo.trim(),
+      caseName: state.caseName.trim(),
+      kind: state.kind,
+      links,
+      lines: state.items.map((it, idx) => {
+        const n = Number(it.target);
+        const amount = Number.isFinite(n) && n > 0 ? calcLineAmount(it.placement, n) : 0;
+        const plan = computed.linePlans[idx] ?? { splits: [], warnings: [] };
+        return {
+          placement: it.placement,
+          quantity: Number.isFinite(n) ? n : 0,
+          amount,
+          splits: plan.splits,
+          warnings: plan.warnings,
+        };
+      }),
+      totalAmount: computed.total,
+    });
     setStep("submitted");
   };
 
@@ -122,6 +162,9 @@ export function AdOrdersPage() {
           <span className="tag">{applicant}</span>
           <button className="btn" onClick={() => nav("/ad-performance")}>
             成效頁
+          </button>
+          <button className="btn" onClick={() => nav("/settings")}>
+            控制設定
           </button>
           <button
             className="btn danger"
@@ -378,6 +421,7 @@ export function AdOrdersPage() {
                     const rule = PRICING[it.placement];
                     const n = Number(it.target);
                     const amt = Number.isFinite(n) && n > 0 ? calcLineAmount(it.placement, n) : 0;
+                    const plan = computed.linePlans[idx] ?? { splits: [], warnings: [] as string[] };
                     return (
                       <div className="item" key={idx}>
                         <div className="item-hd">
@@ -386,6 +430,31 @@ export function AdOrdersPage() {
                           </div>
                           <div style={{ fontWeight: 800 }}>NT$ {amt.toLocaleString()}</div>
                         </div>
+
+                        <div className="hint" style={{ marginTop: 6 }}>
+                          拆單（Demo 預排）：
+                        </div>
+                        {plan.splits.length === 0 ? (
+                          <div className="hint">尚未設定供應商 serviceId，請到「控制設定」頁面調整。</div>
+                        ) : (
+                          <div className="list" style={{ marginTop: 8 }}>
+                            {plan.splits.map((s) => (
+                              <div className="item" key={`${idx}-${s.vendor}-${s.serviceId}`}>
+                                <div className="item-hd">
+                                  <div className="item-title">
+                                    {getVendorLabel(s.vendor)} / serviceId {s.serviceId}
+                                  </div>
+                                  <div style={{ fontWeight: 800 }}>{s.quantity.toLocaleString()}</div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {plan.warnings.length > 0 && (
+                          <div className="hint" style={{ marginTop: 6, color: "rgba(245, 158, 11, 0.95)" }}>
+                            {plan.warnings.join(" / ")}
+                          </div>
+                        )}
                       </div>
                     );
                   })}

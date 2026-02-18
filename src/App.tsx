@@ -3,6 +3,7 @@ import { ProtectedRoute } from "./auth/ProtectedRoute";
 import { LoginPage } from "./pages/Login";
 import { AdOrdersPage } from "./pages/AdOrders";
 import { AdPerformancePage } from "./pages/AdPerformance";
+import { SettingsPage } from "./pages/Settings";
 
 export function App() {
   return (
@@ -25,8 +26,15 @@ export function App() {
           </ProtectedRoute>
         }
       />
+      <Route
+        path="/settings"
+        element={
+          <ProtectedRoute>
+            <SettingsPage />
+          </ProtectedRoute>
+        }
+      />
       <Route path="*" element={<Navigate to="/ad-orders" replace />} />
     </Routes>
   );
 }
-

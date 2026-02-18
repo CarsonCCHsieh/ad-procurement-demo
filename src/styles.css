@@ -130,6 +130,9 @@ body {
   .row.cols3 {
     grid-template-columns: 1.25fr 0.9fr 0.85fr;
   }
+  .row.cols4 {
+    grid-template-columns: 1.1fr 0.9fr 0.7fr 0.9fr;
+  }
 }
 
 .field {
@@ -261,4 +264,3 @@ textarea:focus {
   gap: 12px;
   padding-top: 8px;
 }
-
