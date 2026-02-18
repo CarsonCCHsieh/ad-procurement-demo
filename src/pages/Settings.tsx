@@ -115,6 +115,30 @@ export function SettingsPage() {
     setTimeout(() => setMsg(null), 2500);
   };
 
+  const loadServicesFromSite = async () => {
+    try {
+      const res = await fetch(`./services/${servicesVendor}.json`, { cache: "no-store" });
+      if (!res.ok) {
+        setMsg(`載入失敗：HTTP ${res.status}（可能尚未由 Actions 產生此檔案）`);
+        setTimeout(() => setMsg(null), 3000);
+        return;
+      }
+      const json = await res.json();
+      // Reuse the same normalizer by going through importVendorServicesJson.
+      const r = importVendorServicesJson(servicesVendor, JSON.stringify(json));
+      if (!r.ok) {
+        setMsg(r.message ?? "載入後解析失敗");
+        setTimeout(() => setMsg(null), 3000);
+        return;
+      }
+      setMsg(`已從網站載入 ${vendorLabel(servicesVendor)} services：${(r.count ?? 0).toLocaleString()} 筆`);
+      setTimeout(() => setMsg(null), 2500);
+    } catch {
+      setMsg("載入失敗：網路錯誤或 JSON 格式錯誤");
+      setTimeout(() => setMsg(null), 3000);
+    }
+  };
+
   return (
     <div className="container">
       <div className="topbar">
@@ -319,6 +343,9 @@ export function SettingsPage() {
                 清空此供應商清單
               </button>
               <div>
+                <button className="btn" type="button" onClick={loadServicesFromSite}>
+                  從網站載入
+                </button>
                 <button className="btn" type="button" onClick={copyServicesExport}>
                   複製全部 services catalog JSON
                 </button>
