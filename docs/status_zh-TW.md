@@ -38,6 +38,9 @@
 - `#/settings`
   - 控制設定頁（本次新增重點）。
   - 用途：把「內部下單品項（fb_like/ig_like...）」對應到三家供應商各自的 `serviceId`，並設定拆單 `weight` 與 `maxPerOrder`。
+  - 定價設定：
+    - 可設定「前台是否顯示價格」。
+    - 可設定各品項的「內部單價（每 minUnit / NT$）」並提供試算。
   - 服務下拉選單：
     - Settings 支援「從網站載入」：由 GitHub Actions 產生 `public/services/<vendor>.json`，前端一鍵載入後即可用可搜尋挑選器選 service（不需要手動貼 JSON）。
   - 注意：因為 Demo 是純前端靜態站，無法安全保存 API key，也容易遇到 CORS，所以 services 清單改由 GitHub Actions 產生靜態檔再讓前端載入；正式版建議由後端同步 services 清單並保管 key。

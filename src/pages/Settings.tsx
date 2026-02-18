@@ -12,8 +12,11 @@ import {
   type VendorKey,
 } from "../config/appConfig";
 import { clearVendorKey, getVendorKey, setVendorKey } from "../config/vendorKeys";
-import { clearVendorServices, getVendorServices, importVendorServicesJson } from "../config/serviceCatalog";
+import { clearVendorServices, findServiceName, getVendorServices, importVendorServicesJson, type VendorService } from "../config/serviceCatalog";
 import { PRICING, type AdPlacement } from "../lib/pricing";
+import { getPlacementPrice, getPricingConfig, savePricingConfig } from "../config/pricingConfig";
+import { planSplit } from "../lib/split";
+import { calcInternalLineAmount } from "../lib/internalPricing";
 
 function placementLabel(p: AdPlacement) {
   return PRICING[p]?.label ?? p;
@@ -37,6 +40,9 @@ export function SettingsPage() {
     urpanel: getVendorKey("urpanel"),
     justanotherpanel: getVendorKey("justanotherpanel"),
   }));
+  const [pricingCfg, setPricingCfg] = useState(() => getPricingConfig());
+  const [quotePlacement, setQuotePlacement] = useState<AdPlacement>("fb_like");
+  const [quoteQty, setQuoteQty] = useState<string>("2000");
 
   const vendorKeys = useMemo(() => cfg.vendors.map((v) => v.key), [cfg.vendors]);
 
@@ -72,27 +78,35 @@ export function SettingsPage() {
     setTimeout(() => setMsg(null), 2000);
   };
 
-  const loadServicesFromSite = async (vendor: VendorKey) => {
+  const loadServicesFromSite = async (vendor: VendorKey, opts?: { silent?: boolean }) => {
     try {
       const res = await fetch(`./services/${vendor}.json`, { cache: "no-store" });
       if (!res.ok) {
-        setMsg(`載入 ${vendorLabel(vendor)} services 失敗：HTTP ${res.status}（可能尚未產生檔案）`);
-        setTimeout(() => setMsg(null), 3500);
+        if (!opts?.silent) {
+          setMsg(`載入 ${vendorLabel(vendor)} services 失敗：HTTP ${res.status}（可能尚未產生檔案）`);
+          setTimeout(() => setMsg(null), 3500);
+        }
         return;
       }
       const json = await res.json();
       // Reuse schema/normalization through the existing importer.
       const r = importVendorServicesJson(vendor, JSON.stringify(json));
       if (!r.ok) {
-        setMsg(r.message ?? `載入 ${vendorLabel(vendor)} 後解析失敗`);
-        setTimeout(() => setMsg(null), 3500);
+        if (!opts?.silent) {
+          setMsg(r.message ?? `載入 ${vendorLabel(vendor)} 後解析失敗`);
+          setTimeout(() => setMsg(null), 3500);
+        }
         return;
       }
-      setMsg(`已載入 ${vendorLabel(vendor)} services：${(r.count ?? 0).toLocaleString()} 筆`);
-      setTimeout(() => setMsg(null), 2500);
+      if (!opts?.silent) {
+        setMsg(`已載入 ${vendorLabel(vendor)} services：${(r.count ?? 0).toLocaleString()} 筆`);
+        setTimeout(() => setMsg(null), 2500);
+      }
     } catch {
-      setMsg(`載入 ${vendorLabel(vendor)} services 失敗：網路錯誤`);
-      setTimeout(() => setMsg(null), 3500);
+      if (!opts?.silent) {
+        setMsg(`載入 ${vendorLabel(vendor)} services 失敗：網路錯誤`);
+        setTimeout(() => setMsg(null), 3500);
+      }
     }
   };
 
@@ -100,11 +114,38 @@ export function SettingsPage() {
     let ok = 0;
     for (const v of ALL_VENDORS) {
       // eslint-disable-next-line no-await-in-loop
-      await loadServicesFromSite(v);
+      await loadServicesFromSite(v, { silent: true });
       if (getVendorServices(v).length > 0) ok += 1;
     }
     setMsg(`已嘗試載入全部 services（成功 ${ok}/${ALL_VENDORS.length} 家）。`);
     setTimeout(() => setMsg(null), 3000);
+  };
+
+  const updatePricing = (patch: Partial<typeof pricingCfg>) => {
+    const next = { ...pricingCfg, ...patch };
+    savePricingConfig(next);
+    setPricingCfg(getPricingConfig());
+  };
+
+  const setPrice = (placement: AdPlacement, price: number) => {
+    const n = Number(price);
+    if (!Number.isFinite(n) || n < 0) return;
+    const next = { ...pricingCfg, prices: { ...pricingCfg.prices, [placement]: n } };
+    savePricingConfig(next);
+    setPricingCfg(getPricingConfig());
+  };
+
+  const getServiceMeta = (vendor: VendorKey, serviceId: number): VendorService | null => {
+    if (!serviceId) return null;
+    const hit = getVendorServices(vendor).find((s) => s.id === serviceId);
+    return hit ?? null;
+  };
+
+  const calcVendorEstimatedCost = (vendor: VendorKey, serviceId: number, qty: number): number | null => {
+    const meta = getServiceMeta(vendor, serviceId);
+    if (!meta || meta.rate == null) return null;
+    // Most SMM panels use rate = price per 1000 units.
+    return (qty / 1000) * meta.rate;
   };
 
   return (
@@ -141,6 +182,145 @@ export function SettingsPage() {
       )}
 
       <div className="grid">
+        <div className="card">
+          <div className="card-hd">
+            <div>
+              <div className="card-title">定價設定（內部顯示）</div>
+              <div className="card-desc">
+                這裡管理「內部人員下單頁」顯示的預估金額。供應商的 panel rate 會在下方試算中作參考。
+              </div>
+            </div>
+            <span className="tag">pricing</span>
+          </div>
+          <div className="card-bd">
+            <div className="row cols3">
+              <div className="field">
+                <div className="label">前台顯示價格</div>
+                <select
+                  value={pricingCfg.showPrices ? "on" : "off"}
+                  onChange={(e) => updatePricing({ showPrices: e.target.value === "on" })}
+                >
+                  <option value="on">顯示</option>
+                  <option value="off">隱藏</option>
+                </select>
+                <div className="hint">隱藏後，下單頁仍可下單，但不顯示金額。</div>
+              </div>
+              <div className="field" />
+              <div className="field" />
+            </div>
+
+            <div className="sep" />
+
+            <div className="list">
+              {(Object.keys(PRICING) as AdPlacement[]).map((p) => {
+                const rule = PRICING[p];
+                const pricePerMinUnit = getPlacementPrice(p);
+                return (
+                  <div className="item" key={p}>
+                    <div className="item-hd">
+                      <div className="item-title">{rule.label}</div>
+                      <span className="tag">minUnit {rule.minUnit.toLocaleString()}</span>
+                    </div>
+                    <div className="row cols3">
+                      <div className="field">
+                        <div className="label">內部單價（每 minUnit / NT$）</div>
+                        <input
+                          value={String(pricePerMinUnit)}
+                          inputMode="numeric"
+                          onChange={(e) => setPrice(p, Number(e.target.value))}
+                        />
+                      </div>
+                      <div className="field">
+                        <div className="label">示例（2000）</div>
+                        <input value={`NT$ ${calcInternalLineAmount(p, 2000).toLocaleString()}`} readOnly />
+                      </div>
+                      <div className="field" />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="sep" />
+
+            <div className="item">
+              <div className="item-hd">
+                <div className="item-title">價格試算（含供應商 rate 參考）</div>
+                <span className="tag">estimate</span>
+              </div>
+              <div className="row cols3">
+                <div className="field">
+                  <div className="label">品項</div>
+                  <select value={quotePlacement} onChange={(e) => setQuotePlacement(e.target.value as AdPlacement)}>
+                    {(Object.keys(PRICING) as AdPlacement[]).map((p) => (
+                      <option key={p} value={p}>
+                        {PRICING[p].label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="field">
+                  <div className="label">數量</div>
+                  <input value={quoteQty} inputMode="numeric" onChange={(e) => setQuoteQty(e.target.value)} />
+                </div>
+                <div className="field">
+                  <div className="label">內部預估金額</div>
+                  {(() => {
+                    const qty = Number(quoteQty);
+                    const ok = Number.isFinite(qty) && qty > 0;
+                    return <input value={ok ? `NT$ ${calcInternalLineAmount(quotePlacement, qty).toLocaleString()}` : "-"} readOnly />;
+                  })()}
+                </div>
+              </div>
+
+              <div className="sep" />
+
+              {(() => {
+                const qty = Number(quoteQty);
+                if (!Number.isFinite(qty) || qty <= 0) return <div className="hint">請輸入正整數數量。</div>;
+                const pCfg = cfg.placements.find((p) => p.placement === quotePlacement);
+                const strategy = pCfg?.splitStrategy ?? "random";
+                const suppliers = (pCfg?.suppliers ?? []).filter((s) => s.enabled);
+                const vendorEnabled = (v: VendorKey) => cfg.vendors.some((x) => x.key === v && x.enabled);
+                const plan = planSplit({ total: qty, suppliers, vendorEnabled, strategy });
+                if (plan.splits.length === 0) return <div className="hint">尚未設定可用的 serviceId，無法試算拆單成本。</div>;
+                return (
+                  <div className="list">
+                    {plan.splits.map((s) => {
+                      const meta = getServiceMeta(s.vendor, s.serviceId);
+                      const vendorCost = calcVendorEstimatedCost(s.vendor, s.serviceId, s.quantity);
+                      return (
+                        <div className="item" key={`${s.vendor}-${s.serviceId}`}>
+                          <div className="item-hd">
+                            <div className="item-title">
+                              {vendorLabel(s.vendor)} / serviceId {s.serviceId} / qty {s.quantity.toLocaleString()}
+                            </div>
+                            <span className="tag">{strategy === "random" ? "Random" : "Weighted"}</span>
+                          </div>
+                          <div className="hint">
+                            {meta?.name ?? findServiceName(s.vendor, s.serviceId) ?? ""}
+                            {meta?.rate != null ? ` / rate=${meta.rate}` : ""}
+                            {meta?.min != null ? ` / min=${meta.min}` : ""}
+                            {meta?.max != null ? ` / max=${meta.max}` : ""}
+                          </div>
+                          <div className="hint" style={{ marginTop: 6 }}>
+                            供應商成本估算：{vendorCost == null ? "（缺少 rate）" : vendorCost.toFixed(4)}（依 rate 估算，通常為每 1000 單位）
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {plan.warnings.length > 0 && (
+                      <div className="hint" style={{ color: "rgba(245, 158, 11, 0.95)" }}>
+                        {plan.warnings.join(" / ")}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+
         <div className="card">
           <div className="card-hd">
             <div>
@@ -439,6 +619,18 @@ export function SettingsPage() {
                                 );
                               }}
                             />
+                            {(() => {
+                              const meta = getServiceMeta(s.vendor, s.serviceId);
+                              if (!meta) return null;
+                              return (
+                                <div className="hint" style={{ marginTop: 8 }}>
+                                  已選服務：{meta.name}
+                                  {meta.rate != null ? ` / rate=${meta.rate}` : ""}
+                                  {meta.min != null ? ` / min=${meta.min}` : ""}
+                                  {meta.max != null ? ` / max=${meta.max}` : ""}
+                                </div>
+                              );
+                            })()}
 
                             <div className="actions" style={{ justifyContent: "space-between" }}>
                               <button

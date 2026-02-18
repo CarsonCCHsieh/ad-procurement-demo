@@ -1,12 +1,13 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
-import { PRICING, calcLineAmount, type AdPlacement } from "../lib/pricing";
+import { PRICING, type AdPlacement } from "../lib/pricing";
 import { isValidUrl, parseLinks } from "../lib/validate";
 import { getConfig, getPlacementConfig, getVendorLabel, type VendorKey } from "../config/appConfig";
 import { planSplit } from "../lib/split";
 import { addOrder } from "../lib/ordersStore";
 import { findServiceName } from "../config/serviceCatalog";
+import { calcInternalLineAmount, shouldShowPrices } from "../lib/internalPricing";
 
 type OrderKind = "new" | "upsell";
 
@@ -94,7 +95,7 @@ export function AdOrdersPage() {
     const lineAmounts = state.items.map((it) => {
       const n = Number(it.target);
       if (!Number.isFinite(n) || n <= 0) return 0;
-      return calcLineAmount(it.placement, n);
+      return calcInternalLineAmount(it.placement, n);
     });
     const total = lineAmounts.reduce((a, b) => a + b, 0);
 
@@ -132,7 +133,7 @@ export function AdOrdersPage() {
       links,
       lines: state.items.map((it, idx) => {
         const n = Number(it.target);
-        const amount = Number.isFinite(n) && n > 0 ? calcLineAmount(it.placement, n) : 0;
+        const amount = Number.isFinite(n) && n > 0 ? calcInternalLineAmount(it.placement, n) : 0;
         const plan = computed.linePlans[idx] ?? { splits: [], warnings: [] };
         return {
           placement: it.placement,
@@ -149,6 +150,7 @@ export function AdOrdersPage() {
 
   const applicant = user?.displayName ?? user?.username ?? "";
   const links = parseLinks(state.linksRaw);
+  const showPrices = shouldShowPrices();
 
   return (
     <div className="container">
@@ -277,7 +279,7 @@ export function AdOrdersPage() {
                 {state.items.map((it, idx) => {
                   const rule = PRICING[it.placement];
                   const n = Number(it.target);
-                  const amount = Number.isFinite(n) && n > 0 ? calcLineAmount(it.placement, n) : 0;
+                  const amount = Number.isFinite(n) && n > 0 ? calcInternalLineAmount(it.placement, n) : 0;
                   const itemErr = errors.items?.[idx];
                   return (
                     <div className="item" key={idx}>
@@ -346,7 +348,11 @@ export function AdOrdersPage() {
 
                         <div className="field">
                           <div className="label">預估金額</div>
-                          <input value={`NT$ ${amount.toLocaleString()}`} readOnly />
+                          {showPrices ? (
+                            <input value={`NT$ ${amount.toLocaleString()}`} readOnly />
+                          ) : (
+                            <input value="（已隱藏）" readOnly />
+                          )}
                         </div>
                       </div>
                     </div>
@@ -358,7 +364,9 @@ export function AdOrdersPage() {
 
               <div className="kpi">
                 <div className="hint">預估總價（暫定）</div>
-                <div style={{ fontWeight: 800, fontSize: 18 }}>NT$ {computed.total.toLocaleString()}</div>
+                <div style={{ fontWeight: 800, fontSize: 18 }}>
+                  {showPrices ? `NT$ ${computed.total.toLocaleString()}` : "（已隱藏）"}
+                </div>
               </div>
 
               <div className="actions">
@@ -422,16 +430,16 @@ export function AdOrdersPage() {
                   {state.items.map((it, idx) => {
                     const rule = PRICING[it.placement];
                     const n = Number(it.target);
-                    const amt = Number.isFinite(n) && n > 0 ? calcLineAmount(it.placement, n) : 0;
+                    const amt = Number.isFinite(n) && n > 0 ? calcInternalLineAmount(it.placement, n) : 0;
                     const plan = computed.linePlans[idx] ?? { splits: [], warnings: [] as string[] };
                     return (
                       <div className="item" key={idx}>
-                        <div className="item-hd">
-                          <div className="item-title">
-                            {rule.label} / 數量 {Number.isFinite(n) ? n.toLocaleString() : "-"}
-                          </div>
-                          <div style={{ fontWeight: 800 }}>NT$ {amt.toLocaleString()}</div>
-                        </div>
+                <div className="item-hd">
+                  <div className="item-title">
+                    {rule.label} / 數量 {Number.isFinite(n) ? n.toLocaleString() : "-"}
+                  </div>
+                  <div style={{ fontWeight: 800 }}>{showPrices ? `NT$ ${amt.toLocaleString()}` : "（已隱藏）"}</div>
+                </div>
 
                         <div className="hint" style={{ marginTop: 6 }}>
                           拆單（Demo 預排）：
@@ -472,7 +480,9 @@ export function AdOrdersPage() {
 
               <div className="kpi">
                 <div className="hint">預估總價（暫定）</div>
-                <div style={{ fontWeight: 800, fontSize: 18 }}>NT$ {computed.total.toLocaleString()}</div>
+                <div style={{ fontWeight: 800, fontSize: 18 }}>
+                  {showPrices ? `NT$ ${computed.total.toLocaleString()}` : "（已隱藏）"}
+                </div>
               </div>
 
               <div className="actions">
