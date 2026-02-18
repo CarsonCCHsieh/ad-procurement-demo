@@ -43,6 +43,7 @@ export function SettingsPage() {
   const [pricingCfg, setPricingCfg] = useState(() => getPricingConfig());
   const [quotePlacement, setQuotePlacement] = useState<AdPlacement>("fb_like");
   const [quoteQty, setQuoteQty] = useState<string>("2000");
+  const [sampleQty, setSampleQty] = useState<string>("2000");
 
   const vendorKeys = useMemo(() => cfg.vendors.map((v) => v.key), [cfg.vendors]);
 
@@ -193,7 +194,7 @@ export function SettingsPage() {
             <span className="tag">pricing</span>
           </div>
           <div className="card-bd">
-            <div className="row cols3">
+            <div className="dense-toolbar">
               <div className="field">
                 <div className="label">前台顯示價格</div>
                 <select
@@ -205,119 +206,149 @@ export function SettingsPage() {
                 </select>
                 <div className="hint">隱藏後，下單頁仍可下單，但不顯示金額。</div>
               </div>
-              <div className="field" />
-              <div className="field" />
+
+              <div className="field">
+                <div className="label">示例數量</div>
+                <input value={sampleQty} inputMode="numeric" onChange={(e) => setSampleQty(e.target.value)} />
+                <div className="hint">用於下方「示例金額」。</div>
+              </div>
             </div>
 
             <div className="sep" />
 
-            <div className="list">
+            <div className="dense-table">
+              <div className="dense-th">品項</div>
+              <div className="dense-th">minUnit</div>
+              <div className="dense-th">內部單價（NT$ / minUnit）</div>
+              <div className="dense-th">示例金額</div>
+
               {(Object.keys(PRICING) as AdPlacement[]).map((p) => {
                 const rule = PRICING[p];
                 const pricePerMinUnit = getPlacementPrice(p);
+                const qty = Number(sampleQty);
+                const sampleOk = Number.isFinite(qty) && qty > 0;
+                const sampleAmt = sampleOk ? calcInternalLineAmount(p, qty) : 0;
                 return (
-                  <div className="item" key={p}>
-                    <div className="item-hd">
-                      <div className="item-title">{rule.label}</div>
-                      <span className="tag">minUnit {rule.minUnit.toLocaleString()}</span>
+                  <div className="dense-tr" key={p}>
+                    <div className="dense-td dense-main">
+                      <div className="dense-title">{rule.label}</div>
+                      <div className="dense-meta">{p}</div>
                     </div>
-                    <div className="row cols3">
-                      <div className="field">
-                        <div className="label">內部單價（每 minUnit / NT$）</div>
-                        <input
-                          value={String(pricePerMinUnit)}
-                          inputMode="numeric"
-                          onChange={(e) => setPrice(p, Number(e.target.value))}
-                        />
+                    <div className="dense-td">
+                      <span className="tag">{rule.minUnit.toLocaleString()}</span>
+                    </div>
+                    <div className="dense-td">
+                      <input
+                        className="dense-input"
+                        value={String(pricePerMinUnit)}
+                        inputMode="numeric"
+                        onChange={(e) => setPrice(p, Number(e.target.value))}
+                      />
+                    </div>
+                    <div className="dense-td">
+                      <div className="dense-title">
+                        {sampleOk ? `NT$ ${sampleAmt.toLocaleString()}` : "-"}
                       </div>
-                      <div className="field">
-                        <div className="label">示例（2000）</div>
-                        <input value={`NT$ ${calcInternalLineAmount(p, 2000).toLocaleString()}`} readOnly />
-                      </div>
-                      <div className="field" />
+                      <div className="dense-meta">{sampleOk ? `qty ${qty.toLocaleString()}` : "qty 無效"}</div>
                     </div>
                   </div>
                 );
               })}
             </div>
 
-            <div className="sep" />
-
-            <div className="item">
-              <div className="item-hd">
-                <div className="item-title">價格試算（含供應商 rate 參考）</div>
-                <span className="tag">estimate</span>
-              </div>
-              <div className="row cols3">
-                <div className="field">
-                  <div className="label">品項</div>
-                  <select value={quotePlacement} onChange={(e) => setQuotePlacement(e.target.value as AdPlacement)}>
-                    {(Object.keys(PRICING) as AdPlacement[]).map((p) => (
-                      <option key={p} value={p}>
-                        {PRICING[p].label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="field">
-                  <div className="label">數量</div>
-                  <input value={quoteQty} inputMode="numeric" onChange={(e) => setQuoteQty(e.target.value)} />
-                </div>
-                <div className="field">
-                  <div className="label">內部預估金額</div>
-                  {(() => {
-                    const qty = Number(quoteQty);
-                    const ok = Number.isFinite(qty) && qty > 0;
-                    return <input value={ok ? `NT$ ${calcInternalLineAmount(quotePlacement, qty).toLocaleString()}` : "-"} readOnly />;
-                  })()}
-                </div>
-              </div>
-
-              <div className="sep" />
-
-              {(() => {
-                const qty = Number(quoteQty);
-                if (!Number.isFinite(qty) || qty <= 0) return <div className="hint">請輸入正整數數量。</div>;
-                const pCfg = cfg.placements.find((p) => p.placement === quotePlacement);
-                const strategy = pCfg?.splitStrategy ?? "random";
-                const suppliers = (pCfg?.suppliers ?? []).filter((s) => s.enabled);
-                const vendorEnabled = (v: VendorKey) => cfg.vendors.some((x) => x.key === v && x.enabled);
-                const plan = planSplit({ total: qty, suppliers, vendorEnabled, strategy });
-                if (plan.splits.length === 0) return <div className="hint">尚未設定可用的 serviceId，無法試算拆單成本。</div>;
-                return (
-                  <div className="list">
-                    {plan.splits.map((s) => {
-                      const meta = getServiceMeta(s.vendor, s.serviceId);
-                      const vendorCost = calcVendorEstimatedCost(s.vendor, s.serviceId, s.quantity);
-                      return (
-                        <div className="item" key={`${s.vendor}-${s.serviceId}`}>
-                          <div className="item-hd">
-                            <div className="item-title">
-                              {vendorLabel(s.vendor)} / serviceId {s.serviceId} / qty {s.quantity.toLocaleString()}
-                            </div>
-                            <span className="tag">{strategy === "random" ? "Random" : "Weighted"}</span>
-                          </div>
-                          <div className="hint">
-                            {meta?.name ?? findServiceName(s.vendor, s.serviceId) ?? ""}
-                            {meta?.rate != null ? ` / rate=${meta.rate}` : ""}
-                            {meta?.min != null ? ` / min=${meta.min}` : ""}
-                            {meta?.max != null ? ` / max=${meta.max}` : ""}
-                          </div>
-                          <div className="hint" style={{ marginTop: 6 }}>
-                            供應商成本估算：{vendorCost == null ? "（缺少 rate）" : vendorCost.toFixed(4)}（依 rate 估算，通常為每 1000 單位）
-                          </div>
-                        </div>
-                      );
-                    })}
-                    {plan.warnings.length > 0 && (
-                      <div className="hint" style={{ color: "rgba(245, 158, 11, 0.95)" }}>
-                        {plan.warnings.join(" / ")}
-                      </div>
-                    )}
+            <details className="dense-details">
+              <summary className="dense-summary">價格試算（含供應商 rate 參考）</summary>
+              <div className="dense-panel">
+                <div className="dense-toolbar" style={{ marginTop: 10 }}>
+                  <div className="field">
+                    <div className="label">品項</div>
+                    <select value={quotePlacement} onChange={(e) => setQuotePlacement(e.target.value as AdPlacement)}>
+                      {(Object.keys(PRICING) as AdPlacement[]).map((p) => (
+                        <option key={p} value={p}>
+                          {PRICING[p].label}
+                        </option>
+                      ))}
+                    </select>
                   </div>
-                );
-              })()}
-            </div>
+                  <div className="field">
+                    <div className="label">數量</div>
+                    <input value={quoteQty} inputMode="numeric" onChange={(e) => setQuoteQty(e.target.value)} />
+                  </div>
+                  <div className="field">
+                    <div className="label">內部預估金額</div>
+                    {(() => {
+                      const qty = Number(quoteQty);
+                      const ok = Number.isFinite(qty) && qty > 0;
+                      return (
+                        <input
+                          value={ok ? `NT$ ${calcInternalLineAmount(quotePlacement, qty).toLocaleString()}` : "-"}
+                          readOnly
+                        />
+                      );
+                    })()}
+                  </div>
+                </div>
+
+                <div className="sep" />
+
+                {(() => {
+                  const qty = Number(quoteQty);
+                  if (!Number.isFinite(qty) || qty <= 0) return <div className="hint">請輸入正整數數量。</div>;
+                  const pCfg = cfg.placements.find((p) => p.placement === quotePlacement);
+                  const strategy = pCfg?.splitStrategy ?? "random";
+                  const suppliers = (pCfg?.suppliers ?? []).filter((s) => s.enabled);
+                  const vendorEnabled = (v: VendorKey) => cfg.vendors.some((x) => x.key === v && x.enabled);
+                  const plan = planSplit({ total: qty, suppliers, vendorEnabled, strategy });
+                  if (plan.splits.length === 0) return <div className="hint">尚未設定可用的 serviceId，無法試算拆單成本。</div>;
+
+                  return (
+                    <>
+                      <div className="hint">拆單策略：{strategy === "random" ? "Random" : "配比（weight）"}</div>
+                      <div className="dense-table" style={{ marginTop: 10 }}>
+                        <div className="dense-th">供應商</div>
+                        <div className="dense-th">service</div>
+                        <div className="dense-th">qty</div>
+                        <div className="dense-th">成本估算</div>
+
+                        {plan.splits.map((s) => {
+                          const meta = getServiceMeta(s.vendor, s.serviceId);
+                          const vendorCost = calcVendorEstimatedCost(s.vendor, s.serviceId, s.quantity);
+                          return (
+                            <div className="dense-tr" key={`${s.vendor}-${s.serviceId}`}>
+                              <div className="dense-td dense-main">
+                                <div className="dense-title">{vendorLabel(s.vendor)}</div>
+                                <div className="dense-meta">serviceId {s.serviceId}</div>
+                              </div>
+                              <div className="dense-td">
+                                <div className="dense-title">{meta?.name ?? findServiceName(s.vendor, s.serviceId) ?? "-"}</div>
+                                <div className="dense-meta">
+                                  {meta?.rate != null ? `rate=${meta.rate}` : "rate=-"}
+                                  {meta?.min != null ? ` / min=${meta.min}` : ""}
+                                  {meta?.max != null ? ` / max=${meta.max}` : ""}
+                                </div>
+                              </div>
+                              <div className="dense-td">
+                                <div className="dense-title">{s.quantity.toLocaleString()}</div>
+                              </div>
+                              <div className="dense-td">
+                                <div className="dense-title">{vendorCost == null ? "-" : vendorCost.toFixed(4)}</div>
+                                <div className="dense-meta">通常 rate 為每 1000 單位</div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {plan.warnings.length > 0 && (
+                        <div className="hint" style={{ marginTop: 8, color: "rgba(245, 158, 11, 0.95)" }}>
+                          {plan.warnings.join(" / ")}
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+            </details>
           </div>
         </div>
 

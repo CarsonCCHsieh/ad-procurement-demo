@@ -307,3 +307,112 @@ textarea:focus {
   gap: 12px;
   padding-top: 8px;
 }
+
+/* Dense layout helpers (for Settings pricing tables) */
+.dense-toolbar {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+@media (min-width: 820px) {
+  .dense-toolbar {
+    grid-template-columns: 1fr 1fr;
+    align-items: end;
+  }
+}
+
+.dense-details {
+  margin-top: 10px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 12px;
+  background: hsl(var(--card));
+  box-shadow: var(--shadow-xs);
+  overflow: hidden;
+}
+
+.dense-summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 10px 12px;
+  font-weight: 800;
+  background: hsl(var(--muted) / 0.25);
+}
+
+.dense-summary::-webkit-details-marker {
+  display: none;
+}
+
+.dense-panel {
+  padding: 10px 12px 12px;
+}
+
+.dense-table {
+  border: 1px solid hsl(var(--border));
+  border-radius: 12px;
+  overflow: hidden;
+  background: hsl(var(--card));
+  box-shadow: var(--shadow-xs);
+  display: grid;
+  grid-template-columns: 1.25fr 0.65fr 0.9fr 0.9fr;
+}
+
+@media (max-width: 819px) {
+  .dense-table {
+    grid-template-columns: 1.2fr 0.8fr;
+  }
+  .dense-th:nth-child(n + 3) {
+    display: none;
+  }
+  .dense-tr {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: 1.2fr 0.8fr;
+  }
+  .dense-tr .dense-td:nth-child(n + 3) {
+    grid-column: 1 / -1;
+  }
+}
+
+.dense-th {
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 800;
+  color: hsl(var(--muted-foreground));
+  background: hsl(var(--muted) / 0.25);
+  border-bottom: 1px solid hsl(var(--border));
+}
+
+.dense-tr {
+  display: contents;
+}
+
+.dense-td {
+  padding: 8px 10px;
+  border-bottom: 1px solid hsl(var(--border));
+}
+
+.dense-table .dense-tr:last-child .dense-td {
+  border-bottom: none;
+}
+
+.dense-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dense-title {
+  font-weight: 800;
+}
+
+.dense-meta {
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+}
+
+.dense-input {
+  padding: 6px 8px;
+  border-radius: 10px;
+  font-size: 13px;
+}
