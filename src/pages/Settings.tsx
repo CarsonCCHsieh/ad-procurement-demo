@@ -360,7 +360,7 @@ export function SettingsPage() {
                 services 清單由 GitHub Actions 產生為靜態檔，這裡只做載入與清空。你不需要貼 JSON。
               </div>
             </div>
-            <div className="actions" style={{ marginTop: 0 }}>
+            <div className="actions inline">
               <button className="btn" type="button" onClick={loadAllServicesFromSite}>
                 載入全部 services
               </button>
@@ -431,7 +431,7 @@ export function SettingsPage() {
                       </div>
                       <div className="field">
                         <div className="label">操作</div>
-                        <div className="actions">
+                        <div className="actions inline">
                           <button
                             className="btn danger"
                             type="button"
@@ -449,11 +449,11 @@ export function SettingsPage() {
                     </div>
                   )}
 
-                  <div className="actions" style={{ justifyContent: "space-between" }}>
+                  <div className="actions inline" style={{ justifyContent: "space-between" }}>
                     <div className="hint">
                       services：{getVendorServices(v.key).length.toLocaleString()} 筆
                     </div>
-                    <div>
+                    <div className="btn-group">
                       <button className="btn" type="button" onClick={() => loadServicesFromSite(v.key)}>
                         從網站載入
                       </button>
@@ -475,7 +475,7 @@ export function SettingsPage() {
             </div>
 
             <div className="sep" />
-            <div className="actions">
+            <div className="actions inline">
               <button className="btn" type="button" onClick={doReset}>
                 重設預設值
               </button>
@@ -520,7 +520,7 @@ export function SettingsPage() {
                   <div className="item" key={placement}>
                     <div className="item-hd">
                       <div className="item-title">{placementLabel(placement)}</div>
-                      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                      <div className="btn-group">
                         <span className="tag">{splitStrategy === "random" ? "Random" : "Weighted"}</span>
                         <select
                           value={splitStrategy}
@@ -663,7 +663,7 @@ export function SettingsPage() {
                               );
                             })()}
 
-                            <div className="actions" style={{ justifyContent: "space-between" }}>
+                            <div className="actions inline" style={{ justifyContent: "space-between" }}>
                               <button
                                 className="btn"
                                 type="button"
@@ -694,7 +694,7 @@ export function SettingsPage() {
             </div>
 
             <div className="sep" />
-            <div className="actions">
+            <div className="actions inline">
               <button className="btn" type="button" onClick={doReset}>
                 重設預設值
               </button>

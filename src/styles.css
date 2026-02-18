@@ -209,6 +209,33 @@ textarea:focus {
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 10px;
+  align-items: center;
+}
+
+.actions.inline {
+  margin-top: 0;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.actions.inline::-webkit-scrollbar {
+  display: none;
+}
+
+.btn-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.btn-group::-webkit-scrollbar {
+  display: none;
 }
 
 .btn {
