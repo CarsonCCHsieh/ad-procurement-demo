@@ -29,6 +29,13 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Fetch vendor services catalog (optional)
+        env:
+          SMMRAJA_KEY: ${{ secrets.SMMRAJA_KEY }}
+          URPANEL_KEY: ${{ secrets.URPANEL_KEY }}
+          JAP_KEY: ${{ secrets.JAP_KEY }}
+        run: node scripts/fetchServices.mjs
+
       - name: Build
         run: npm run build
 
