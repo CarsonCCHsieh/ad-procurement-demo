@@ -52,7 +52,7 @@ export function planSplit(params: {
     .filter((s) => s.serviceId > 0);
 
   if (eligible.length === 0) {
-    warnings.push("尚未設定供應商 serviceId（或全部停用），因此無法拆單。請到「控制設定」頁面設定。");
+    warnings.push("尚未完成拆單設定（服務編號未填或供應商停用），因此無法拆單。請通知管理員到「控制設定」頁面設定。");
     return { splits: [], warnings };
   }
 
@@ -63,7 +63,7 @@ export function planSplit(params: {
   if (strategy === "weighted") {
     const filtered = eligible.filter((s) => s.weight > 0);
     if (filtered.length === 0) {
-      warnings.push("供應商權重總和為 0，無法拆單。請把 weight 設成正數，或改用 Random。");
+      warnings.push("供應商配比總和為 0，無法拆單。請把「配比」設成正數，或改用「隨機」。");
       return { splits: [], warnings };
     }
 
@@ -94,7 +94,7 @@ export function planSplit(params: {
       remaining -= 1;
     }
     if (remaining > 0) {
-      warnings.push(`供應商 maxPerOrder 容量不足，仍有 ${remaining} 無法分配（Demo 先忽略）。`);
+      warnings.push(`供應商「單次上限」不足，仍有 ${remaining} 無法分配；已暫時併入第一家供應商。請調整上限或增加供應商。`);
       alloc[0] += remaining;
     }
   }
@@ -108,7 +108,7 @@ export function planSplit(params: {
     }
   }
   if (overflow > 0) {
-    warnings.push(`供應商 maxPerOrder 容量不足，仍有 ${overflow} 無法分配（Demo 先忽略）。`);
+    warnings.push(`供應商「單次上限」不足，仍有 ${overflow} 無法分配；已暫時併入第一家供應商。請調整上限或增加供應商。`);
     alloc[0] += overflow;
   }
 

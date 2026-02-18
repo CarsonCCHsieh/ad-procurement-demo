@@ -13,6 +13,5 @@ export type DemoUser = {
 export const DEMO_USER: DemoUser = {
   username: "demo",
   password: "demo1234",
-  displayName: "Demo User",
+  displayName: "測試使用者",
 };
-

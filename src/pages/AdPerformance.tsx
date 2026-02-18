@@ -37,7 +37,7 @@ export function AdPerformancePage() {
 
     const key = getVendorKey(vendor);
     if (!key) {
-      setMsg(`缺少 ${getVendorLabel(vendor)} API key。請到「控制設定」頁面輸入（僅 Demo）。`);
+      setMsg(`缺少 ${getVendorLabel(vendor)} API 金鑰。請到「控制設定」頁面輸入（僅測試）。`);
       setTimeout(() => setMsg(null), 3500);
       return;
     }
@@ -55,7 +55,7 @@ export function AdPerformancePage() {
     }
     const uniq = Array.from(new Set(ids)).filter((n) => Number.isFinite(n) && n > 0);
     if (uniq.length === 0) {
-      setMsg(`尚無 ${getVendorLabel(vendor)} vendorOrderId，可同步的訂單為 0。`);
+      setMsg(`尚無 ${getVendorLabel(vendor)} 供應商訂單編號（vendorOrderId），可同步的訂單為 0。`);
       setTimeout(() => setMsg(null), 3000);
       return;
     }
@@ -133,8 +133,8 @@ export function AdPerformancePage() {
     <div className="container">
       <div className="topbar">
         <div className="brand">
-          <div className="brand-title">投放成效（Demo 占位）</div>
-          <div className="brand-sub">目前顯示「已提交的拆單計畫」，正式版再接 API 回寫狀態與成效。</div>
+          <div className="brand-title">投放成效</div>
+          <div className="brand-sub">目前顯示「已提交的拆單規劃」。串接供應商後，可在此同步狀態與成效。</div>
         </div>
         <div className="pill">
           <span className="tag">{user?.displayName ?? user?.username}</span>
@@ -165,10 +165,9 @@ export function AdPerformancePage() {
       <div className="card">
         <div className="card-hd">
           <div>
-            <div className="card-title">已提交工單（Demo）</div>
-            <div className="card-desc">資料儲存在瀏覽器 localStorage，因此不同電腦或清除資料後會消失。</div>
+            <div className="card-title">已提交工單</div>
+            <div className="card-desc">資料儲存在瀏覽器暫存中，因此不同電腦或清除資料後會消失。</div>
           </div>
-          <span className="tag">#/ad-performance</span>
         </div>
         <div className="card-bd">
           <div className="actions" style={{ justifyContent: "space-between" }}>
@@ -198,7 +197,7 @@ export function AdPerformancePage() {
                   setRefresh((x) => x + 1);
                 }}
               >
-                清空（僅 Demo）
+                清空工單
               </button>
             </div>
           </div>
@@ -219,7 +218,7 @@ export function AdPerformancePage() {
                   </div>
 
                   <div className="hint" style={{ marginTop: 6 }}>
-                    申請人：{o.applicant} / 類型：{o.kind === "new" ? "新案" : "加購"} / 總價（暫定）：NT$ {o.totalAmount.toLocaleString()}
+                    申請人：{o.applicant} / 類型：{o.kind === "new" ? "新案" : "加購"} / 內部預估總價：NT$ {o.totalAmount.toLocaleString()}
                   </div>
 
                   <div className="sep" />
@@ -237,14 +236,14 @@ export function AdPerformancePage() {
                           拆單：
                         </div>
                         {ln.splits.length === 0 ? (
-                          <div className="hint">無（尚未設定 serviceId 或供應商被停用）</div>
+                          <div className="hint">無（尚未設定服務編號（serviceId）或供應商被停用）</div>
                         ) : (
                           <div className="list" style={{ marginTop: 8 }}>
                             {ln.splits.map((s, splitIdx) => (
                               <div className="item" key={`${o.id}-${idx}-${s.vendor}-${s.serviceId}`}>
                                 <div className="item-hd">
                                   <div className="item-title">
-                                    {getVendorLabel(s.vendor)} / serviceId {s.serviceId}
+                                    {getVendorLabel(s.vendor)} / 服務編號（serviceId）{s.serviceId}
                                   </div>
                                   <div style={{ fontWeight: 800 }}>{s.quantity.toLocaleString()}</div>
                                 </div>
@@ -256,14 +255,14 @@ export function AdPerformancePage() {
 
                                 <div className="row cols3" style={{ marginTop: 10 }}>
                                   <div className="field">
-                                    <div className="label">vendorOrderId</div>
+                                    <div className="label">供應商訂單編號（vendorOrderId）</div>
                                     <input
                                       value={s.vendorOrderId == null ? "" : String(s.vendorOrderId)}
                                       inputMode="numeric"
                                       onChange={(e) => setSplitOrderId(o.id, idx, splitIdx, e.target.value)}
-                                      placeholder="由供應商 API 回傳的 order id"
+                                      placeholder="例如 123456（供應商回傳）"
                                     />
-                                    <div className="hint">沒有實際下發時，可先手動填入做 UI 測試。</div>
+                                    <div className="hint">尚未串接下發時，可先手動填入用來測試同步流程。</div>
                                   </div>
                                   <div className="field">
                                     <div className="label">狀態</div>
@@ -271,10 +270,10 @@ export function AdPerformancePage() {
                                     {s.error ? <div className="hint" style={{ color: "rgba(245, 158, 11, 0.95)" }}>{s.error}</div> : null}
                                   </div>
                                   <div className="field">
-                                    <div className="label">remains</div>
+                                    <div className="label">剩餘數量（remains）</div>
                                     <input value={s.remains == null ? "" : String(s.remains)} readOnly />
                                     <div className="hint">
-                                      lastSync: {s.lastSyncAt ? new Date(s.lastSyncAt).toLocaleString("zh-TW") : "-"}
+                                      最後同步：{s.lastSyncAt ? new Date(s.lastSyncAt).toLocaleString("zh-TW") : "-"}
                                     </div>
                                   </div>
                                 </div>

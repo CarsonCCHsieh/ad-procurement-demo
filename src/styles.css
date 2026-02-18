@@ -95,6 +95,25 @@ body {
   margin: 10px 0;
 }
 
+.item-details > summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.item-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.item-details[open] > summary {
+  padding-bottom: 8px;
+  border-bottom: 1px solid hsl(var(--border));
+  margin-bottom: 10px;
+}
+
 .topbar {
   display: flex;
   align-items: center;
@@ -143,6 +162,45 @@ body {
   border-radius: var(--radius);
   box-shadow: var(--shadow-card);
   overflow: hidden;
+}
+
+.card.section {
+  position: relative;
+  border-left: 5px solid hsl(var(--border));
+}
+
+.card.section.section-blue {
+  border-left-color: hsl(var(--primary) / 0.75);
+}
+
+.card.section.section-green {
+  border-left-color: rgba(16, 185, 129, 0.85);
+}
+
+.card.section.section-amber {
+  border-left-color: rgba(245, 158, 11, 0.85);
+}
+
+.card.section.section-slate {
+  border-left-color: rgba(100, 116, 139, 0.8);
+}
+
+.card.section .card-hd {
+  background: linear-gradient(90deg, hsl(var(--muted) / 0.45), hsl(var(--muted) / 0.2));
+}
+
+.section-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.section-right::-webkit-scrollbar {
+  display: none;
 }
 
 .card-hd {
@@ -305,6 +363,14 @@ textarea:focus {
   padding: 6px 10px;
   border-radius: 9px;
   font-size: 12px;
+}
+
+.btn.ghost {
+  background: hsl(var(--card));
+}
+
+.btn.ghost:hover:not(:disabled) {
+  background: hsl(var(--muted) / 0.35);
 }
 
 .btn:hover:not(:disabled) {

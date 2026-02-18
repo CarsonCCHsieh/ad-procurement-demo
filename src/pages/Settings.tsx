@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { ServicePicker } from "../components/ServicePicker";
+import { CollapsibleCard } from "../components/CollapsibleCard";
 import {
   DEFAULT_CONFIG,
   getConfig,
@@ -86,7 +87,7 @@ export function SettingsPage() {
       const res = await fetch(`./services/${vendor}.json`, { cache: "no-store" });
       if (!res.ok) {
         if (!opts?.silent) {
-          setMsg(`載入 ${vendorLabel(vendor)} services 失敗：HTTP ${res.status}（可能尚未產生檔案）`);
+          setMsg(`載入 ${vendorLabel(vendor)} 服務清單失敗：HTTP ${res.status}（可能尚未產生檔案）`);
           setTimeout(() => setMsg(null), 3500);
         }
         return;
@@ -102,12 +103,12 @@ export function SettingsPage() {
         return;
       }
       if (!opts?.silent) {
-        setMsg(`已載入 ${vendorLabel(vendor)} services：${(r.count ?? 0).toLocaleString()} 筆`);
+        setMsg(`已載入 ${vendorLabel(vendor)} 服務清單：${(r.count ?? 0).toLocaleString()} 筆`);
         setTimeout(() => setMsg(null), 2500);
       }
     } catch {
       if (!opts?.silent) {
-        setMsg(`載入 ${vendorLabel(vendor)} services 失敗：網路錯誤`);
+        setMsg(`載入 ${vendorLabel(vendor)} 服務清單失敗：網路錯誤`);
         setTimeout(() => setMsg(null), 3500);
       }
     }
@@ -120,7 +121,7 @@ export function SettingsPage() {
       await loadServicesFromSite(v, { silent: true });
       if (getVendorServices(v).length > 0) ok += 1;
     }
-    setMsg(`已嘗試載入全部 services（成功 ${ok}/${ALL_VENDORS.length} 家）。`);
+    setMsg(`已嘗試載入全部服務清單（成功 ${ok}/${ALL_VENDORS.length} 家）。`);
     setTimeout(() => setMsg(null), 3000);
   };
 
@@ -155,8 +156,8 @@ export function SettingsPage() {
     <div className="container settings-page">
       <div className="topbar">
         <div className="brand">
-          <div className="brand-title">控制設定（Demo）</div>
-          <div className="brand-sub">serviceId 對應、拆單策略（Random/配比），以及供應商 services 清單載入。</div>
+          <div className="brand-title">控制設定</div>
+          <div className="brand-sub">服務編號（serviceId）對應、拆單方式（隨機/按配比）、供應商服務清單載入與成本試算。</div>
         </div>
         <div className="pill">
           <span className="tag">{user?.displayName ?? user?.username}</span>
@@ -185,17 +186,14 @@ export function SettingsPage() {
       )}
 
       <div className="grid">
-        <div className="card">
-          <div className="card-hd">
-            <div>
-              <div className="card-title">定價設定（內部顯示）</div>
-              <div className="card-desc">
-                這裡管理「內部人員下單頁」顯示的預估金額。供應商的 panel rate 會在下方試算中作參考。
-              </div>
-            </div>
-            <span className="tag">pricing</span>
-          </div>
-          <div className="card-bd">
+        <CollapsibleCard
+          accent="blue"
+          title="定價設定（內部顯示）"
+          desc="這裡管理「內部下單頁」顯示的預估金額（給同仁看）。供應商實際採購成本，請用下方成本試算。"
+          tag="定價"
+          storageKey="sec:pricing"
+          defaultOpen
+        >
             <div className="dense-toolbar">
               <div className="field">
                 <div className="label">前台顯示價格</div>
@@ -218,10 +216,10 @@ export function SettingsPage() {
 
             <div className="sep" />
 
-            <div className="dense-table">
+          <div className="dense-table">
               <div className="dense-th">品項</div>
-              <div className="dense-th">minUnit</div>
-              <div className="dense-th">內部單價（NT$ / minUnit）</div>
+              <div className="dense-th">最小單位</div>
+              <div className="dense-th">內部單價（NT$ / 最小單位）</div>
               <div className="dense-th">示例金額</div>
 
               {(Object.keys(PRICING) as AdPlacement[]).map((p) => {
@@ -251,7 +249,7 @@ export function SettingsPage() {
                       <div className="dense-title">
                         {sampleOk ? `NT$ ${sampleAmt.toLocaleString()}` : "-"}
                       </div>
-                      <div className="dense-meta">{sampleOk ? `qty ${qty.toLocaleString()}` : "qty 無效"}</div>
+                      <div className="dense-meta">{sampleOk ? `數量 ${qty.toLocaleString()}` : "數量無效"}</div>
                     </div>
                   </div>
                 );
@@ -291,22 +289,20 @@ export function SettingsPage() {
                   </div>
                 </div>
                 <div className="hint" style={{ marginTop: 8 }}>
-                  這裡是「內部下單頁顯示」的金額試算；供應商實際成本請看下方「供應商成本試算」。
+                  這裡只計算「內部顯示金額」，不代表供應商實際採購成本。
                 </div>
               </div>
             </details>
-          </div>
-        </div>
+        </CollapsibleCard>
 
-        <div className="card">
-          <div className="card-hd">
-            <div>
-              <div className="card-title">供應商成本試算（真實成本）</div>
-              <div className="card-desc">用你在「品項對應（拆單設定）」設定的 serviceId + 配比，估算公司實際採購成本。</div>
-            </div>
-            <span className="tag">cost</span>
-          </div>
-          <div className="card-bd">
+        <CollapsibleCard
+          accent="green"
+          title="供應商成本試算（公司成本）"
+          desc="用你在「品項對應（拆單設定）」設定的服務編號（serviceId）與拆單配比，估算公司實際採購成本。"
+          tag="成本"
+          storageKey="sec:vendor-cost"
+          defaultOpen
+        >
             <div className="dense-toolbar">
               <div className="field">
                 <div className="label">品項</div>
@@ -341,7 +337,7 @@ export function SettingsPage() {
               const suppliers = (pCfg?.suppliers ?? []).filter((s) => s.enabled);
               const vendorEnabled = (v: VendorKey) => cfg.vendors.some((x) => x.key === v && x.enabled);
               const plan = planSplit({ total: qty, suppliers, vendorEnabled, strategy });
-              if (plan.splits.length === 0) return <div className="hint">尚未設定可用的 serviceId（或全部停用），無法試算成本。</div>;
+              if (plan.splits.length === 0) return <div className="hint">尚未設定可用的服務編號（serviceId）（或全部停用），無法試算成本。</div>;
 
               const rows = plan.splits.map((s) => {
                 const meta = getServiceMeta(s.vendor, s.serviceId);
@@ -355,26 +351,26 @@ export function SettingsPage() {
               return (
                 <>
                   <div className="kpi" style={{ paddingTop: 0 }}>
-                    <div className="hint">拆單策略</div>
-                    <div style={{ fontWeight: 800 }}>{strategy === "random" ? "Random" : "配比（weight）"}</div>
+                    <div className="hint">拆單方式</div>
+                    <div style={{ fontWeight: 800 }}>{strategy === "random" ? "隨機" : "按配比"}</div>
                   </div>
 
                   <div className="kpi" style={{ paddingTop: 6 }}>
-                    <div className="hint">成本總計（估算）</div>
+                    <div className="hint">成本合計（估算）</div>
                     <div style={{ fontWeight: 800, fontSize: 18 }}>{totalCost == null ? "-" : totalCost.toFixed(4)}</div>
                   </div>
 
                   {anyMissingRate && (
                     <div className="hint" style={{ marginTop: 8, color: "rgba(245, 158, 11, 0.95)" }}>
-                      部分 service 缺少 rate，無法計算完整總成本（請先載入 services 清單或更換項目）。
+                      部分服務缺少報價（rate），無法計算完整總成本（請先載入服務清單或更換項目）。
                     </div>
                   )}
 
                   <div className="dense-table" style={{ marginTop: 10 }}>
                     <div className="dense-th">供應商</div>
-                    <div className="dense-th">service</div>
-                    <div className="dense-th">qty</div>
-                    <div className="dense-th">成本估算</div>
+                    <div className="dense-th">服務</div>
+                    <div className="dense-th">數量</div>
+                    <div className="dense-th">成本（估算）</div>
 
                     {rows.map((r) => {
                       const s = r.s;
@@ -384,14 +380,14 @@ export function SettingsPage() {
                         <div className="dense-tr" key={`${s.vendor}-${s.serviceId}`}>
                           <div className="dense-td dense-main">
                             <div className="dense-title">{vendorLabel(s.vendor)}</div>
-                            <div className="dense-meta">serviceId {s.serviceId}</div>
+                            <div className="dense-meta">服務編號（serviceId）{s.serviceId}</div>
                           </div>
                           <div className="dense-td">
                             <div className="dense-title">{meta?.name ?? findServiceName(s.vendor, s.serviceId) ?? "-"}</div>
                             <div className="dense-meta">
-                              {meta?.rate != null ? `rate=${meta.rate}` : "rate=-"}
-                              {meta?.min != null ? ` / min=${meta.min}` : ""}
-                              {meta?.max != null ? ` / max=${meta.max}` : ""}
+                              {meta?.rate != null ? `報價（rate）=${meta.rate}` : "報價（rate）=-"}
+                              {meta?.min != null ? ` / 最小=${meta.min}` : ""}
+                              {meta?.max != null ? ` / 最大=${meta.max}` : ""}
                             </div>
                           </div>
                           <div className="dense-td">
@@ -399,7 +395,7 @@ export function SettingsPage() {
                           </div>
                           <div className="dense-td">
                             <div className="dense-title">{vendorCost == null ? "-" : vendorCost.toFixed(4)}</div>
-                            <div className="dense-meta">通常 rate 為每 1000 單位</div>
+                            <div className="dense-meta">通常報價為每 1000 單位（以供應商文件為準）</div>
                           </div>
                         </div>
                       );
@@ -414,28 +410,26 @@ export function SettingsPage() {
                 </>
               );
             })()}
-          </div>
-        </div>
+        </CollapsibleCard>
 
-        <div className="card">
-          <div className="card-hd">
-            <div>
-              <div className="card-title">供應商與 services 清單</div>
-              <div className="card-desc">
-                services 清單由 GitHub Actions 產生為靜態檔，這裡只做載入與清空。你不需要貼 JSON。
-              </div>
-            </div>
-            <div className="actions inline">
+        <CollapsibleCard
+          accent="amber"
+          title="供應商與服務清單"
+          desc="服務清單由 GitHub Actions（自動化）產生為靜態檔；這裡只做載入與清空。你不需要貼上 JSON。"
+          tag="供應商"
+          storageKey="sec:vendors"
+          defaultOpen={false}
+          actions={
+            <>
               <button className="btn" type="button" onClick={loadAllServicesFromSite}>
-                載入全部 services
+                載入全部服務清單
               </button>
               <button className="btn" type="button" onClick={() => setShowKeys((x) => !x)}>
-                {showKeys ? "隱藏 API key（Demo）" : "顯示 API key（Demo）"}
+                {showKeys ? "隱藏 API 金鑰（僅測試）" : "顯示 API 金鑰（僅測試）"}
               </button>
-            </div>
-          </div>
-
-          <div className="card-bd">
+            </>
+          }
+        >
             <div className="list">
               {cfg.vendors.map((v, idx) => (
                 <div className="item" key={v.key}>
@@ -464,7 +458,7 @@ export function SettingsPage() {
                     </div>
 
                     <div className="field" style={{ gridColumn: "2 / -1" }}>
-                      <div className="label">API Base URL</div>
+                      <div className="label">API 入口網址</div>
                       <input
                         value={v.apiBaseUrl}
                         onChange={(e) =>
@@ -474,14 +468,14 @@ export function SettingsPage() {
                           }))
                         }
                       />
-                      <div className="hint">SMM Raja: /api/v3，Urpanel/JAP: /api/v2（以文件為準）</div>
+                      <div className="hint">例如：SMM Raja 常見為 /api/v3；Urpanel/JustAnotherPanel 常見為 /api/v2（以文件為準）</div>
                     </div>
                   </div>
 
                   {showKeys && (
                     <div className="row cols2" style={{ marginTop: 10 }}>
                       <div className="field">
-                        <div className="label">API key（Demo only，用於同步狀態）</div>
+                        <div className="label">API 金鑰（僅測試，用於同步狀態）</div>
                         <input
                           type="password"
                           value={keys[v.key]}
@@ -490,9 +484,9 @@ export function SettingsPage() {
                             setKeys((k) => ({ ...k, [v.key]: next }));
                             setVendorKey(v.key, next);
                           }}
-                          placeholder="貼上 vendor API key"
+                          placeholder="貼上供應商 API 金鑰"
                         />
-                        <div className="hint">正式版不要放前端，請改後端代打。</div>
+                        <div className="hint">正式環境不要放前端，建議由後端代打供應商 API。</div>
                       </div>
                       <div className="field">
                         <div className="label">操作</div>
@@ -503,11 +497,11 @@ export function SettingsPage() {
                             onClick={() => {
                               clearVendorKey(v.key);
                               setKeys((k) => ({ ...k, [v.key]: "" }));
-                              setMsg(`已清除 ${vendorLabel(v.key)} API key（僅此瀏覽器）。`);
+                              setMsg(`已清除 ${vendorLabel(v.key)} API 金鑰（僅此瀏覽器）。`);
                               setTimeout(() => setMsg(null), 2000);
                             }}
                           >
-                            清除 key
+                            清除金鑰
                           </button>
                         </div>
                       </div>
@@ -516,22 +510,22 @@ export function SettingsPage() {
 
                   <div className="actions inline" style={{ justifyContent: "space-between" }}>
                     <div className="hint">
-                      services：{getVendorServices(v.key).length.toLocaleString()} 筆
+                      服務清單：{getVendorServices(v.key).length.toLocaleString()} 筆
                     </div>
                     <div className="btn-group">
                       <button className="btn" type="button" onClick={() => loadServicesFromSite(v.key)}>
-                        從網站載入
+                        從網站載入清單
                       </button>
                       <button
                         className="btn danger"
                         type="button"
                         onClick={() => {
                           clearVendorServices(v.key);
-                          setMsg(`已清空 ${vendorLabel(v.key)} services 清單。`);
+                          setMsg(`已清空 ${vendorLabel(v.key)} 服務清單。`);
                           setTimeout(() => setMsg(null), 2000);
                         }}
                       >
-                        清空清單
+                        清空本機清單
                       </button>
                     </div>
                   </div>
@@ -548,28 +542,24 @@ export function SettingsPage() {
                 儲存
               </button>
             </div>
-          </div>
-        </div>
+        </CollapsibleCard>
 
-        <div className="card">
-          <div className="card-hd">
-            <div>
-              <div className="card-title">品項對應（拆單設定）</div>
-              <div className="card-desc">
-                `weight` 只有在「配比」才會用到。若不設定策略，預設就是 Random。
-              </div>
-            </div>
-            <span className="tag">routing</span>
-          </div>
-          <div className="card-bd">
+        <CollapsibleCard
+          accent="slate"
+          title="品項對應（拆單設定）"
+          desc="拆單方式可選「隨機」或「按配比」。配比欄位填寫比例數字即可，不用填 %（例如 2 / 1 / 1 代表約 50% / 25% / 25%）。"
+          tag="拆單"
+          storageKey="sec:routing"
+          defaultOpen={false}
+        >
             <details>
               <summary style={{ cursor: "pointer", fontWeight: 700 }}>說明（點開）</summary>
               <div className="hint" style={{ marginTop: 10 }}>
-                1. `serviceId` 來自供應商 services 清單，可能會更換編號，所以這裡要可調整。
+                1. 服務編號（serviceId）來自供應商「服務清單」，供應商可能會更換編號，所以這裡需要可調整。
                 <br />
-                2. Random：每次拆單結果會不一樣（不看 weight）。
+                2. 隨機：每次拆單結果可能不同（不看配比）。
                 <br />
-                3. 配比：會依 weight 做比例分配（數字越大拿到越多）。
+                3. 按配比：會依「配比」欄位做比例分配（數字越大拿到越多）。
               </div>
             </details>
 
@@ -582,20 +572,24 @@ export function SettingsPage() {
                 const splitStrategy = placementCfg?.splitStrategy ?? "random";
 
                 return (
-                  <div className="item" key={placement}>
-                    <div className="item-hd">
+                  <details className="item item-details" key={placement}>
+                    <summary className="item-summary">
                       <div className="item-title">{placementLabel(placement)}</div>
-                      <div className="btn-group">
-                        <span className="tag">{splitStrategy === "random" ? "Random" : "Weighted"}</span>
+                      <div
+                        className="btn-group"
+                        onClick={(e) => e.stopPropagation()}
+                        onMouseDown={(e) => e.stopPropagation()}
+                      >
+                        <span className="tag">{splitStrategy === "random" ? "隨機" : "按配比"}</span>
                         <select
                           value={splitStrategy}
                           onChange={(e) => setPlacementStrategy(placement, e.target.value as "random" | "weighted")}
                         >
-                          <option value="random">Random（預設）</option>
-                          <option value="weighted">配比（看 weight）</option>
+                          <option value="random">隨機（預設）</option>
+                          <option value="weighted">按配比（看配比欄位）</option>
                         </select>
                         <button
-                          className="btn"
+                          className="btn sm"
                           type="button"
                           onClick={() =>
                             setPlacementSuppliers(placement, [
@@ -607,7 +601,7 @@ export function SettingsPage() {
                           新增供應商
                         </button>
                       </div>
-                    </div>
+                    </summary>
 
                     {suppliers.length === 0 ? (
                       <div className="hint">尚未設定供應商。</div>
@@ -615,9 +609,9 @@ export function SettingsPage() {
                       <div className="dense-table suppliers-table">
                         <div className="dense-th">啟用</div>
                         <div className="dense-th">供應商</div>
-                        <div className="dense-th">service</div>
-                        <div className="dense-th">weight</div>
-                        <div className="dense-th">maxPerOrder</div>
+                        <div className="dense-th">服務</div>
+                        <div className="dense-th">配比</div>
+                        <div className="dense-th">單次上限</div>
                         <div className="dense-th">操作</div>
 
                         {suppliers.map((s, idx) => {
@@ -639,8 +633,8 @@ export function SettingsPage() {
                                     )
                                   }
                                 >
-                                  <option value="on">on</option>
-                                  <option value="off">off</option>
+                                  <option value="on">啟用</option>
+                                  <option value="off">停用</option>
                                 </select>
                               </div>
 
@@ -679,13 +673,13 @@ export function SettingsPage() {
                                         ),
                                       );
                                     }}
-                                    placeholder="serviceId"
+                                    placeholder="服務編號"
                                   />
                                   <ServicePicker
                                     vendor={s.vendor}
                                     currentServiceId={s.serviceId}
                                     compact
-                                    buttonLabel="挑選"
+                                    buttonLabel="挑選服務"
                                     buttonClassName="btn sm"
                                     onPick={(svc) => {
                                       setPlacementSuppliers(
@@ -699,11 +693,11 @@ export function SettingsPage() {
                                   {name
                                     ? `已選：${name}`
                                     : s.serviceId > 0
-                                      ? `serviceId ${s.serviceId}（未在清單中）`
+                                      ? `服務編號（serviceId）${s.serviceId}（未在清單中）`
                                       : "未選擇"}
-                                  {meta?.rate != null ? ` / rate=${meta.rate}` : ""}
-                                  {meta?.min != null ? ` / min=${meta.min}` : ""}
-                                  {meta?.max != null ? ` / max=${meta.max}` : ""}
+                                  {meta?.rate != null ? ` / 報價=${meta.rate}` : ""}
+                                  {meta?.min != null ? ` / 最小=${meta.min}` : ""}
+                                  {meta?.max != null ? ` / 最大=${meta.max}` : ""}
                                 </div>
                               </div>
 
@@ -723,7 +717,7 @@ export function SettingsPage() {
                                       ),
                                     );
                                   }}
-                                  placeholder="1"
+                                  placeholder="例如 2"
                                 />
                               </div>
 
@@ -744,7 +738,7 @@ export function SettingsPage() {
                                       ),
                                     );
                                   }}
-                                  placeholder="(空)"
+                                  placeholder="留空=不限"
                                 />
                               </div>
 
@@ -764,7 +758,7 @@ export function SettingsPage() {
                         })}
                       </div>
                     )}
-                  </div>
+                  </details>
                 );
               })}
             </div>
@@ -778,8 +772,7 @@ export function SettingsPage() {
                 儲存
               </button>
             </div>
-          </div>
-        </div>
+        </CollapsibleCard>
       </div>
     </div>
   );

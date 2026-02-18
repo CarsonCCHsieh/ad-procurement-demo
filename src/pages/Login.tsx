@@ -32,17 +32,16 @@ export function LoginPage() {
     <div className="container">
       <div className="topbar">
         <div className="brand">
-          <div className="brand-title">廣告採購 Demo</div>
-          <div className="brand-sub">GitHub Pages 預覽用（假登入）</div>
+          <div className="brand-title">廣告採購</div>
+          <div className="brand-sub">預覽站（測試登入）</div>
         </div>
-        <span className="tag">#/login</span>
       </div>
 
       <div className="card">
         <div className="card-hd">
           <div>
             <div className="card-title">登入</div>
-            <div className="card-desc">這不是安全機制，只用於 demo 門檻。</div>
+            <div className="card-desc">此登入僅用於預覽站測試，不代表正式權限控管。測試帳號請向管理員索取。</div>
           </div>
         </div>
         <div className="card-bd">
@@ -52,7 +51,7 @@ export function LoginPage() {
                 <div className="label">
                   帳號<span className="req">*</span>
                 </div>
-                <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="demo" />
+                <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="輸入帳號" />
               </div>
               <div className="field">
                 <div className="label">
@@ -62,7 +61,7 @@ export function LoginPage() {
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="demo1234"
+                  placeholder="輸入密碼"
                 />
               </div>
             </div>
@@ -80,4 +79,3 @@ export function LoginPage() {
     </div>
   );
 }
-

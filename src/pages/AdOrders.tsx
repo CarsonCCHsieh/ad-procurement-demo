@@ -122,7 +122,7 @@ export function AdOrdersPage() {
   };
 
   const onConfirmSubmit = () => {
-    // MVP checkpoint: store a planned order locally (no backend/API yet).
+    // MVP checkpoint: store a planned order locally (尚未串接供應商下單)。
     const applicant = user?.displayName ?? user?.username ?? "";
     const links = parseLinks(state.linksRaw);
     addOrder({
@@ -157,9 +157,9 @@ export function AdOrdersPage() {
       <div className="topbar">
         <div className="brand">
           <div className="brand-title">
-            {step === "edit" ? "廣告下單" : step === "confirm" ? "確認送出" : "已送出（Demo）"}
+            {step === "edit" ? "廣告下單" : step === "confirm" ? "確認送出" : "已送出"}
           </div>
-          <div className="brand-sub">表單 → 確認頁 → 送出（尚未串接 API）</div>
+          <div className="brand-sub">下單表單 → 確認送出 → 進入處理流程（目前不會真的送到供應商）</div>
         </div>
 
         <div className="pill">
@@ -188,9 +188,8 @@ export function AdOrdersPage() {
             <div className="card-hd">
               <div>
                 <div className="card-title">基本資訊</div>
-                <div className="card-desc">申請人與日期由系統帶入（Demo）。</div>
+                <div className="card-desc">申請人與日期由系統帶入。</div>
               </div>
-              <span className="tag">#/ad-orders</span>
             </div>
             <div className="card-bd">
               <div className="row cols2">
@@ -385,9 +384,8 @@ export function AdOrdersPage() {
             <div className="card-hd">
               <div>
                 <div className="card-title">確認摘要</div>
-                <div className="card-desc">此 demo 只確認流程，送出不會真的呼叫 API。</div>
+                <div className="card-desc">請確認資訊無誤後送出；此版本不會真的送到供應商。</div>
               </div>
-              <span className="tag">confirm</span>
             </div>
             <div className="card-bd">
               <div className="row cols2">
@@ -442,11 +440,11 @@ export function AdOrdersPage() {
                 </div>
 
                         <div className="hint" style={{ marginTop: 6 }}>
-                          拆單（Demo 預排）：
+                          拆單規劃：
                         </div>
                         {plan.splits.length === 0 ? (
                           <div className="error" style={{ marginTop: 6 }}>
-                            尚未完成拆單設定，請通知管理員協助設定供應商 serviceId（控制設定）。
+                            尚未完成拆單設定，請通知管理員協助設定供應商服務編號（serviceId）（控制設定）。
                           </div>
                         ) : (
                           <div className="list" style={{ marginTop: 8 }}>
@@ -454,7 +452,7 @@ export function AdOrdersPage() {
                               <div className="item" key={`${idx}-${s.vendor}-${s.serviceId}`}>
                                 <div className="item-hd">
                                   <div className="item-title">
-                                    {getVendorLabel(s.vendor)} / serviceId {s.serviceId}
+                                    {getVendorLabel(s.vendor)} / 服務編號（serviceId）{s.serviceId}
                                   </div>
                                   <div style={{ fontWeight: 800 }}>{s.quantity.toLocaleString()}</div>
                                 </div>
@@ -505,10 +503,9 @@ export function AdOrdersPage() {
           <div className="card">
             <div className="card-hd">
               <div>
-                <div className="card-title">已送出（Demo）</div>
-                  <div className="card-desc">這代表「表單 → 確認頁 → 送出」流程已可展示。</div>
+                <div className="card-title">已送出</div>
+                  <div className="card-desc">已建立一筆下單工單（目前儲存在本機瀏覽器）。</div>
               </div>
-              <span className="tag">submitted</span>
             </div>
             <div className="card-bd">
               <div className="actions">
@@ -521,7 +518,7 @@ export function AdOrdersPage() {
               </div>
               <div className="sep" />
               <div className="hint">
-                若你要接測試 API：後續可以在「確認送出」時改成呼叫後端或直接 fetch API，並把結果與錯誤顯示在成效頁。
+                若要串接供應商：後續可以在「確認送出」時改成呼叫後端，由後端去打供應商 API，並把結果與錯誤回寫到成效頁。
               </div>
             </div>
           </div>

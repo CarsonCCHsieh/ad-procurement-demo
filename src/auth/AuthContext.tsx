@@ -39,7 +39,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isAuthed: !!user,
       signIn: (username: string, password: string) => {
         if (username !== DEMO_USER.username || password !== DEMO_USER.password) {
-          return { ok: false, message: "帳號或密碼錯誤（Demo）" };
+          return { ok: false, message: "帳號或密碼錯誤" };
         }
         const next = { username, displayName: DEMO_USER.displayName };
         setUser(next);
@@ -69,4 +69,3 @@ export function useAuth() {
   if (!ctx) throw new Error("useAuth must be used within AuthProvider");
   return ctx;
 }
-
