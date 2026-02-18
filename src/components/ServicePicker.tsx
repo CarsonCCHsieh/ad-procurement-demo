@@ -10,14 +10,19 @@ export function ServicePicker(props: {
   vendor: VendorKey;
   currentServiceId: number;
   onPick: (svc: VendorService) => void;
+  compact?: boolean;
+  buttonLabel?: string;
+  buttonClassName?: string;
 }) {
-  const { vendor, currentServiceId, onPick } = props;
+  const { vendor, currentServiceId, onPick, compact, buttonLabel, buttonClassName } = props;
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
 
   const services = useMemo(() => getVendorServices(vendor), [vendor]);
 
   const current = useMemo(() => services.find((s) => s.id === currentServiceId) ?? null, [services, currentServiceId]);
+
+  const canPick = services.length > 0;
 
   const filtered = useMemo(() => {
     const query = norm(q);
@@ -33,16 +38,26 @@ export function ServicePicker(props: {
     return scored.slice(0, 80);
   }, [services, q]);
 
+  const pickBtn = (
+    <button className={buttonClassName ?? "btn"} type="button" onClick={() => setOpen(true)} disabled={!canPick}>
+      {buttonLabel ?? "從清單挑選"}
+    </button>
+  );
+
   return (
     <div>
-      <div className="hint" style={{ marginTop: 6 }}>
-        目前選擇：{current ? `${current.id} / ${current.name}` : currentServiceId > 0 ? `serviceId ${currentServiceId}（未在清單中）` : "未選擇"}
-      </div>
-      <div className="actions" style={{ marginTop: 8 }}>
-        <button className="btn" type="button" onClick={() => setOpen(true)} disabled={services.length === 0}>
-          從清單挑選
-        </button>
-      </div>
+      {!compact && (
+        <div className="hint" style={{ marginTop: 6 }}>
+          目前選擇：
+          {current
+            ? `${current.id} / ${current.name}`
+            : currentServiceId > 0
+              ? `serviceId ${currentServiceId}（未在清單中）`
+              : "未選擇"}
+        </div>
+      )}
+
+      {compact ? pickBtn : <div className="actions" style={{ marginTop: 8 }}>{pickBtn}</div>}
 
       {open && (
         <div
@@ -125,4 +140,3 @@ export function ServicePicker(props: {
     </div>
   );
 }
-

@@ -150,7 +150,7 @@ export function SettingsPage() {
   };
 
   return (
-    <div className="container">
+    <div className="container settings-page">
       <div className="topbar">
         <div className="brand">
           <div className="brand-title">控制設定（Demo）</div>
@@ -547,13 +547,41 @@ export function SettingsPage() {
                     {suppliers.length === 0 ? (
                       <div className="hint">尚未設定供應商。</div>
                     ) : (
-                      <div className="list">
-                        {suppliers.map((s, idx) => (
-                          <div className="item" key={`${placement}-${idx}`}>
-                            <div className="row cols4">
-                              <div className="field">
-                                <div className="label">供應商</div>
+                      <div className="dense-table suppliers-table">
+                        <div className="dense-th">啟用</div>
+                        <div className="dense-th">供應商</div>
+                        <div className="dense-th">service</div>
+                        <div className="dense-th">weight</div>
+                        <div className="dense-th">maxPerOrder</div>
+                        <div className="dense-th">操作</div>
+
+                        {suppliers.map((s, idx) => {
+                          const meta = getServiceMeta(s.vendor, s.serviceId);
+                          const name = meta?.name ?? findServiceName(s.vendor, s.serviceId) ?? null;
+
+                          return (
+                            <div className="dense-tr" key={`${placement}-${idx}`}>
+                              <div className="dense-td">
                                 <select
+                                  className="dense-input"
+                                  value={s.enabled ? "on" : "off"}
+                                  onChange={(e) =>
+                                    setPlacementSuppliers(
+                                      placement,
+                                      suppliers.map((x, i) =>
+                                        i === idx ? { ...x, enabled: e.target.value === "on" } : x,
+                                      ),
+                                    )
+                                  }
+                                >
+                                  <option value="on">on</option>
+                                  <option value="off">off</option>
+                                </select>
+                              </div>
+
+                              <div className="dense-td">
+                                <select
+                                  className="dense-input"
                                   value={s.vendor}
                                   onChange={(e) => {
                                     const v = e.target.value as VendorKey;
@@ -571,54 +599,72 @@ export function SettingsPage() {
                                 </select>
                               </div>
 
-                              <div className="field">
-                                <div className="label">serviceId</div>
-                                <input
-                                  value={String(s.serviceId)}
-                                  inputMode="numeric"
-                                  onChange={(e) => {
-                                    const n = Number(e.target.value);
-                                    setPlacementSuppliers(
-                                      placement,
-                                      suppliers.map((x, i) =>
-                                        i === idx ? { ...x, serviceId: Number.isFinite(n) ? n : 0 } : x,
-                                      ),
-                                    );
-                                  }}
-                                  placeholder="例如 1234"
-                                />
-                                <div className="hint">搭配下方「從清單挑選」較不會選錯。</div>
-                              </div>
-
-                              {splitStrategy === "weighted" ? (
-                                <div className="field">
-                                  <div className="label">weight（配比）</div>
+                              <div className="dense-td dense-main">
+                                <div className="inline-fields">
                                   <input
-                                    value={String(s.weight)}
+                                    className="dense-input"
+                                    value={String(s.serviceId)}
                                     inputMode="numeric"
                                     onChange={(e) => {
                                       const n = Number(e.target.value);
                                       setPlacementSuppliers(
                                         placement,
                                         suppliers.map((x, i) =>
-                                          i === idx ? { ...x, weight: Number.isFinite(n) ? n : 0 } : x,
+                                          i === idx ? { ...x, serviceId: Number.isFinite(n) ? n : 0 } : x,
                                         ),
                                       );
                                     }}
-                                    placeholder="1"
+                                    placeholder="serviceId"
                                   />
-                                  <div className="hint">例：2/1/1 約等於 50%/25%/25%</div>
+                                  <ServicePicker
+                                    vendor={s.vendor}
+                                    currentServiceId={s.serviceId}
+                                    compact
+                                    buttonLabel="挑選"
+                                    buttonClassName="btn sm"
+                                    onPick={(svc) => {
+                                      setPlacementSuppliers(
+                                        placement,
+                                        suppliers.map((x, i) => (i === idx ? { ...x, serviceId: svc.id } : x)),
+                                      );
+                                    }}
+                                  />
                                 </div>
-                              ) : (
-                                <div className="field">
-                                  <div className="label">weight</div>
-                                  <input value="(Random 不使用)" readOnly />
+                                <div className="dense-meta">
+                                  {name
+                                    ? `已選：${name}`
+                                    : s.serviceId > 0
+                                      ? `serviceId ${s.serviceId}（未在清單中）`
+                                      : "未選擇"}
+                                  {meta?.rate != null ? ` / rate=${meta.rate}` : ""}
+                                  {meta?.min != null ? ` / min=${meta.min}` : ""}
+                                  {meta?.max != null ? ` / max=${meta.max}` : ""}
                                 </div>
-                              )}
+                              </div>
 
-                              <div className="field">
-                                <div className="label">maxPerOrder（可留空）</div>
+                              <div className="dense-td">
                                 <input
+                                  className="dense-input"
+                                  value={splitStrategy === "weighted" ? String(s.weight) : "-"}
+                                  inputMode="numeric"
+                                  readOnly={splitStrategy !== "weighted"}
+                                  onChange={(e) => {
+                                    if (splitStrategy !== "weighted") return;
+                                    const n = Number(e.target.value);
+                                    setPlacementSuppliers(
+                                      placement,
+                                      suppliers.map((x, i) =>
+                                        i === idx ? { ...x, weight: Number.isFinite(n) ? n : 0 } : x,
+                                      ),
+                                    );
+                                  }}
+                                  placeholder="1"
+                                />
+                              </div>
+
+                              <div className="dense-td">
+                                <input
+                                  className="dense-input"
                                   value={s.maxPerOrder == null ? "" : String(s.maxPerOrder)}
                                   inputMode="numeric"
                                   onChange={(e) => {
@@ -633,59 +679,24 @@ export function SettingsPage() {
                                       ),
                                     );
                                   }}
-                                  placeholder="例如 1000"
+                                  placeholder="(空)"
                                 />
                               </div>
-                            </div>
 
-                            <div className="sep" />
-                            <div className="hint">從清單挑選（需先載入該供應商 services）：</div>
-                            <ServicePicker
-                              vendor={s.vendor}
-                              currentServiceId={s.serviceId}
-                              onPick={(svc) => {
-                                setPlacementSuppliers(
-                                  placement,
-                                  suppliers.map((x, i) => (i === idx ? { ...x, serviceId: svc.id } : x)),
-                                );
-                              }}
-                            />
-                            {(() => {
-                              const meta = getServiceMeta(s.vendor, s.serviceId);
-                              if (!meta) return null;
-                              return (
-                                <div className="hint" style={{ marginTop: 8 }}>
-                                  已選服務：{meta.name}
-                                  {meta.rate != null ? ` / rate=${meta.rate}` : ""}
-                                  {meta.min != null ? ` / min=${meta.min}` : ""}
-                                  {meta.max != null ? ` / max=${meta.max}` : ""}
+                              <div className="dense-td">
+                                <div className="btn-group">
+                                  <button
+                                    className="btn danger sm"
+                                    type="button"
+                                    onClick={() => setPlacementSuppliers(placement, suppliers.filter((_, i) => i !== idx))}
+                                  >
+                                    刪除
+                                  </button>
                                 </div>
-                              );
-                            })()}
-
-                            <div className="actions inline" style={{ justifyContent: "space-between" }}>
-                              <button
-                                className="btn"
-                                type="button"
-                                onClick={() =>
-                                  setPlacementSuppliers(
-                                    placement,
-                                    suppliers.map((x, i) => (i === idx ? { ...x, enabled: !x.enabled } : x)),
-                                  )
-                                }
-                              >
-                                {s.enabled ? "已啟用" : "已停用"}
-                              </button>
-                              <button
-                                className="btn danger"
-                                type="button"
-                                onClick={() => setPlacementSuppliers(placement, suppliers.filter((_, i) => i !== idx))}
-                              >
-                                刪除
-                              </button>
+                              </div>
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>

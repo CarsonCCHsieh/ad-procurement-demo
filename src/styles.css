@@ -63,6 +63,38 @@ body {
   padding: 20px 16px 64px;
 }
 
+.settings-page .card-hd {
+  padding: 10px 12px;
+}
+
+.settings-page .card-bd {
+  padding: 10px 12px;
+}
+
+.settings-page .list {
+  gap: 8px;
+}
+
+.settings-page .item {
+  padding: 8px;
+}
+
+.settings-page .item-hd {
+  margin-bottom: 8px;
+}
+
+.settings-page .row {
+  gap: 8px;
+}
+
+.settings-page .field {
+  gap: 4px;
+}
+
+.settings-page .sep {
+  margin: 10px 0;
+}
+
 .topbar {
   display: flex;
   align-items: center;
@@ -141,6 +173,21 @@ body {
   display: grid;
   grid-template-columns: 1fr;
   gap: 10px;
+}
+
+.inline-fields {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+
+.inline-fields > * {
+  flex: 0 0 auto;
+}
+
+.inline-fields input {
+  width: 120px;
 }
 
 @media (min-width: 820px) {
@@ -252,6 +299,12 @@ textarea:focus {
   transition: background-color 250ms ease-out, box-shadow 250ms ease-out, border-color 250ms ease-out,
     transform 250ms ease-out, color 250ms ease-out;
   font-size: 13px;
+}
+
+.btn.sm {
+  padding: 6px 10px;
+  border-radius: 9px;
+  font-size: 12px;
 }
 
 .btn:hover:not(:disabled) {
@@ -442,4 +495,31 @@ textarea:focus {
   padding: 6px 8px;
   border-radius: 10px;
   font-size: 13px;
+}
+
+/* Dense supplier mapping table in Settings */
+.dense-table.suppliers-table {
+  grid-template-columns: 64px 180px minmax(320px, 1fr) 110px 140px 88px;
+  overflow: auto;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.dense-table.suppliers-table::-webkit-scrollbar {
+  display: none;
+}
+
+@media (max-width: 819px) {
+  /* Override the generic dense-table mobile collapse for this table: keep columns, allow horizontal scroll. */
+  .dense-table.suppliers-table .dense-th {
+    display: block;
+  }
+
+  .dense-table.suppliers-table .dense-tr {
+    display: contents;
+  }
+
+  .dense-table.suppliers-table .dense-tr .dense-td {
+    grid-column: auto;
+  }
 }
