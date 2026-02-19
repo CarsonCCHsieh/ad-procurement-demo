@@ -87,7 +87,7 @@
     "service": 11384,
     "name": "Instagram - Likes || work after 09/08/2025 update",
     "type": "Default",
-    "rate": "1.25",
+    "rate": "0.809",
     "min": 10,
     "max": 200000,
     "dripfeed": true,
