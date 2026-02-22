@@ -60,7 +60,7 @@ body {
 .container {
   width: min(90vw, 1100px);
   margin: 0 auto;
-  padding: 20px 16px 64px;
+  padding: 20px 16px calc(88px + env(safe-area-inset-bottom));
 }
 
 .settings-page .card-hd {
@@ -149,6 +149,13 @@ body {
   background: hsl(var(--card) / 0.85);
   box-shadow: var(--shadow-xs);
   backdrop-filter: blur(8px);
+  overflow-x: auto;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.pill::-webkit-scrollbar {
+  display: none;
 }
 
 .grid {
@@ -357,6 +364,9 @@ textarea:focus {
   transition: background-color 250ms ease-out, box-shadow 250ms ease-out, border-color 250ms ease-out,
     transform 250ms ease-out, color 250ms ease-out;
   font-size: 13px;
+  white-space: nowrap;
+  writing-mode: horizontal-tb;
+  min-height: 40px;
 }
 
 .btn.sm {
@@ -424,7 +434,7 @@ textarea:focus {
 .toast {
   position: fixed;
   right: 14px;
-  bottom: 14px;
+  bottom: calc(14px + env(safe-area-inset-bottom));
   z-index: 9999;
   max-width: min(560px, calc(100vw - 28px));
   display: flex;
@@ -612,6 +622,102 @@ textarea:focus {
 
 .dense-table.suppliers-table::-webkit-scrollbar {
   display: none;
+}
+
+@media (max-width: 900px) {
+  .container {
+    width: min(96vw, 1100px);
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+
+  .topbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .brand-title {
+    font-size: 16px;
+  }
+
+  .brand-sub {
+    line-height: 1.4;
+  }
+
+  .pill {
+    width: 100%;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    padding: 8px;
+  }
+
+  .pill .tag {
+    flex: 0 0 auto;
+    max-width: 34vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .pill .btn {
+    flex: 0 0 auto;
+    min-height: 42px;
+    padding: 8px 12px;
+  }
+
+  .card-hd {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .section-right {
+    width: 100%;
+    justify-content: flex-start;
+    padding-bottom: 2px;
+  }
+
+  .section-right .actions.inline {
+    flex: 0 0 auto;
+    gap: 6px;
+  }
+
+  .section-right .tag {
+    flex: 0 0 auto;
+  }
+
+  .settings-page .item-summary {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .settings-page .item-summary .btn-group {
+    width: 100%;
+    justify-content: flex-start;
+    padding-bottom: 2px;
+  }
+
+  .settings-page .item-summary .item-title {
+    margin-bottom: 2px;
+  }
+
+  .settings-page .btn-group select {
+    min-width: 170px;
+  }
+
+  .settings-page .dense-input,
+  .settings-page input,
+  .settings-page select,
+  .settings-page textarea {
+    min-height: 42px;
+  }
+
+  .toast {
+    left: 10px;
+    right: 10px;
+    max-width: none;
+  }
 }
 
 @media (max-width: 819px) {
