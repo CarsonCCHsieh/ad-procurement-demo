@@ -695,6 +695,8 @@ textarea:focus {
   .settings-page .item-summary .btn-group {
     width: 100%;
     justify-content: flex-start;
+    flex-wrap: wrap;
+    overflow: visible;
     padding-bottom: 2px;
   }
 
@@ -703,7 +705,96 @@ textarea:focus {
   }
 
   .settings-page .btn-group select {
-    min-width: 170px;
+    min-width: 0;
+    flex: 1 1 180px;
+  }
+
+  .settings-page .item-summary .btn-group .btn {
+    flex: 1 1 120px;
+  }
+
+  .settings-page .item-summary .btn-group .tag {
+    flex: 0 0 auto;
+  }
+
+  /* Mobile: supplier mapping should be vertical cards instead of a wide table. */
+  .settings-page .dense-table.suppliers-table {
+    display: block;
+    border: 1px solid hsl(var(--border));
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .settings-page .dense-table.suppliers-table > .dense-th {
+    display: none !important;
+  }
+
+  .settings-page .dense-table.suppliers-table .dense-tr {
+    display: block;
+    border-bottom: 1px solid hsl(var(--border));
+  }
+
+  .settings-page .dense-table.suppliers-table .dense-tr:last-child {
+    border-bottom: none;
+  }
+
+  .settings-page .dense-table.suppliers-table .dense-td {
+    display: block;
+    padding: 8px 10px;
+    border-bottom: none;
+  }
+
+  .settings-page .dense-table.suppliers-table .dense-td::before {
+    display: block;
+    margin-bottom: 5px;
+    font-size: 12px;
+    font-weight: 700;
+    color: hsl(var(--muted-foreground));
+  }
+
+  .settings-page .dense-table.suppliers-table .dense-td:nth-child(1)::before {
+    content: "啟用";
+  }
+
+  .settings-page .dense-table.suppliers-table .dense-td:nth-child(2)::before {
+    content: "供應商";
+  }
+
+  .settings-page .dense-table.suppliers-table .dense-td:nth-child(3)::before {
+    content: "服務";
+  }
+
+  .settings-page .dense-table.suppliers-table .dense-td:nth-child(4)::before {
+    content: "配比";
+  }
+
+  .settings-page .dense-table.suppliers-table .dense-td:nth-child(5)::before {
+    content: "單次上限";
+  }
+
+  .settings-page .dense-table.suppliers-table .dense-td:nth-child(6)::before {
+    content: "操作";
+  }
+
+  .settings-page .dense-table.suppliers-table .inline-fields {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .settings-page .dense-table.suppliers-table .inline-fields input {
+    width: 100%;
+    min-width: 0;
+    flex: 1 1 100%;
+  }
+
+  .settings-page .dense-table.suppliers-table .inline-fields .btn {
+    flex: 1 1 auto;
+  }
+
+  .settings-page .dense-table.suppliers-table .dense-td .btn-group {
+    width: 100%;
+    overflow: visible;
+    justify-content: flex-start;
   }
 
   .settings-page .dense-input,
@@ -720,17 +811,3 @@ textarea:focus {
   }
 }
 
-@media (max-width: 819px) {
-  /* Override the generic dense-table mobile collapse for this table: keep columns, allow horizontal scroll. */
-  .dense-table.suppliers-table .dense-th {
-    display: block;
-  }
-
-  .dense-table.suppliers-table .dense-tr {
-    display: contents;
-  }
-
-  .dense-table.suppliers-table .dense-tr .dense-td {
-    grid-column: auto;
-  }
-}
