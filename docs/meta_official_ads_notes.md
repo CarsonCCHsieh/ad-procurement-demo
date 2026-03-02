@@ -2,7 +2,7 @@
 
 ## 已實作頁面
 - `#/meta-ads-orders`：建立 Meta 投放（UI + payload + 送出）
-- `#/meta-ads-performance`：檢視送出結果與同步狀態
+- `#/ad-performance`：檢視送出結果與同步狀態（與廠商互動成效同頁）
 - `#/settings`：新增 Meta 設定區塊（模式、API 版本、帳號、Page/IG Actor、Token）
 
 ## 已支援的投放目標

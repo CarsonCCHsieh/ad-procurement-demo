@@ -10,10 +10,9 @@
 
 ## 功能
 - `#/login`：假登入
-- `#/ad-orders`：原 SMM 下單表單（含欄位驗證） -> 確認送出頁
-- `#/ad-performance`：原 SMM 成效頁
-- `#/meta-ads-orders`：Meta 官方投放下單（Campaign/AdSet/Creative/Ad）
-- `#/meta-ads-performance`：Meta 投放狀態同步與送出紀錄
+- `#/ad-orders`：廠商互動下單
+- `#/meta-ads-orders`：Meta 官方投廣
+- `#/ad-performance`：投放成效（廠商互動 + Meta 官方投廣同頁）
 - `#/settings`：系統設定（含 Meta API 設定、供應商設定、定價設定）
 
 ## Demo 帳密（可自行修改）
