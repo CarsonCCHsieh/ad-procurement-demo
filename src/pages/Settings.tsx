@@ -15,6 +15,7 @@ import {
 } from "../config/appConfig";
 import { clearVendorKey, getVendorKey, setVendorKey } from "../config/vendorKeys";
 import { clearVendorServices, findServiceName, getVendorServices, importVendorServicesJson, type VendorService } from "../config/serviceCatalog";
+import { getMetaConfig } from "../config/metaConfig";
 import { PRICING, type AdPlacement } from "../lib/pricing";
 import { getPlacementPrice, getPricingConfig, savePricingConfig } from "../config/pricingConfig";
 import { planSplit } from "../lib/split";
@@ -51,8 +52,26 @@ export function SettingsPage() {
   const [costPlacement, setCostPlacement] = useState<AdPlacement>("fb_like");
   const [costQty, setCostQty] = useState<string>("2000");
   const [sampleQty, setSampleQty] = useState<string>("2000");
+  const metaCfg = getMetaConfig();
 
   const vendorKeys = useMemo(() => cfg.vendors.map((v) => v.key), [cfg.vendors]);
+  const loadedVendorCount = useMemo(
+    () => cfg.vendors.filter((v) => getVendorServices(v.key).length > 0).length,
+    [cfg.vendors, msg],
+  );
+  const configuredPlacementCount = useMemo(
+    () =>
+      cfg.placements.filter((p) =>
+        p.suppliers.some((s) => s.enabled && Number.isFinite(s.serviceId) && s.serviceId > 0),
+      ).length,
+    [cfg.placements],
+  );
+  const metaReady = !!metaCfg.adAccountId && !!metaCfg.pageId;
+
+  const jump = (id: string) => {
+    const el = document.getElementById(id);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
 
   const setPlacementSuppliers = (placement: AdPlacement, nextSuppliers: SupplierConfig[]) => {
     setCfg((c) => {
@@ -195,15 +214,64 @@ export function SettingsPage() {
       )}
 
       <div className="grid">
-        <MetaSettingsCard onNotice={flashMsg} />
+        <div className="card settings-setup">
+          <div className="card-hd">
+            <div>
+              <div className="card-title">快速設定導引</div>
+              <div className="card-desc">照順序完成 4 個步驟即可。</div>
+            </div>
+          </div>
+          <div className="card-bd">
+            <div className="setup-grid">
+              <button className="setup-step" type="button" onClick={() => jump("settings-meta")}>
+                <div className="setup-title">1. Meta 投放設定</div>
+                <div className={`setup-status ${metaReady ? "ok" : "pending"}`}>
+                  {metaReady ? "已完成" : "未完成"}
+                </div>
+              </button>
+              <button className="setup-step" type="button" onClick={() => jump("settings-vendors")}>
+                <div className="setup-title">2. 載入供應商服務</div>
+                <div className={`setup-status ${loadedVendorCount > 0 ? "ok" : "pending"}`}>
+                  {loadedVendorCount > 0 ? `已載入 ${loadedVendorCount} 家` : "尚未載入"}
+                </div>
+              </button>
+              <button className="setup-step" type="button" onClick={() => jump("settings-routing")}>
+                <div className="setup-title">3. 設定拆單對應</div>
+                <div className={`setup-status ${configuredPlacementCount > 0 ? "ok" : "pending"}`}>
+                  {configuredPlacementCount > 0 ? `已設定 ${configuredPlacementCount} 個品項` : "尚未設定"}
+                </div>
+              </button>
+              <button className="setup-step" type="button" onClick={() => jump("settings-pricing")}>
+                <div className="setup-title">4. 設定下單定價</div>
+                <div className="setup-status ok">可調整</div>
+              </button>
+            </div>
+            <div className="actions inline" style={{ marginTop: 10 }}>
+              <button className="btn" type="button" onClick={save}>
+                儲存拆單與供應商設定
+              </button>
+              <button className="btn" type="button" onClick={loadAllServicesFromSite}>
+                載入全部服務清單
+              </button>
+              <button className="btn danger" type="button" onClick={doReset}>
+                重設拆單與供應商
+              </button>
+            </div>
+          </div>
+        </div>
 
-        <CollapsibleCard
+        <div id="settings-meta">
+          <MetaSettingsCard onNotice={flashMsg} />
+        </div>
+
+        <div id="settings-pricing">
+          <CollapsibleCard
           accent="blue"
           title="定價設定"
           desc="管理下單頁顯示的預估金額。"
           tag="定價"
           storageKey="sec:pricing"
-          defaultOpen
+          defaultOpen={false}
         >
             <div className="dense-toolbar">
               <div className="field">
@@ -304,15 +372,17 @@ export function SettingsPage() {
                 </div>
               </div>
             </details>
-        </CollapsibleCard>
+          </CollapsibleCard>
+        </div>
 
-        <CollapsibleCard
+        <div id="settings-cost">
+          <CollapsibleCard
           accent="green"
           title="供應商成本試算"
           desc="依服務編號與配比估算供應商採購成本。"
           tag="成本"
           storageKey="sec:vendor-cost"
-          defaultOpen
+          defaultOpen={false}
         >
             <div className="dense-toolbar">
               <div className="field">
@@ -421,22 +491,24 @@ export function SettingsPage() {
                 </>
               );
             })()}
-        </CollapsibleCard>
+          </CollapsibleCard>
+        </div>
 
-        <CollapsibleCard
+        <div id="settings-vendors">
+          <CollapsibleCard
           accent="amber"
           title="供應商與服務清單"
           desc="管理供應商狀態、服務清單與 API 金鑰。"
           tag="供應商"
           storageKey="sec:vendors"
-          defaultOpen={false}
+          defaultOpen
           actions={
             <>
               <button className="btn" type="button" onClick={loadAllServicesFromSite}>
                 載入全部服務清單
               </button>
               <button className="btn" type="button" onClick={() => setShowKeys((x) => !x)}>
-                {showKeys ? "隱藏 API 金鑰（僅測試）" : "顯示 API 金鑰（僅測試）"}
+                {showKeys ? "隱藏 API 金鑰" : "顯示 API 金鑰"}
               </button>
             </>
           }
@@ -551,24 +623,26 @@ export function SettingsPage() {
                 儲存
               </button>
             </div>
-        </CollapsibleCard>
+          </CollapsibleCard>
+        </div>
 
-        <CollapsibleCard
+        <div id="settings-routing">
+          <CollapsibleCard
           accent="slate"
           title="品項對應"
           desc="可設定隨機拆單或按配比分配。"
           tag="拆單"
           storageKey="sec:routing"
-          defaultOpen={false}
+          defaultOpen
         >
             <details>
-              <summary style={{ cursor: "pointer", fontWeight: 700 }}>說明（點開）</summary>
+              <summary style={{ cursor: "pointer", fontWeight: 700 }}>設定說明</summary>
               <div className="hint" style={{ marginTop: 10 }}>
-                1. 服務編號（serviceId）來自供應商「服務清單」，供應商可能會更換編號，所以這裡需要可調整。
+                1. 服務編號來自供應商服務清單，可隨時調整。
                 <br />
-                2. 隨機：每次拆單結果可能不同（不看配比）。
+                2. 隨機：每次拆單結果可能不同。
                 <br />
-                3. 按配比：會依「配比」欄位做比例分配（數字越大拿到越多）。
+                3. 按配比：數字越大分到越多。
               </div>
             </details>
 
@@ -781,7 +855,8 @@ export function SettingsPage() {
                 儲存
               </button>
             </div>
-        </CollapsibleCard>
+          </CollapsibleCard>
+        </div>
       </div>
     </div>
   );
