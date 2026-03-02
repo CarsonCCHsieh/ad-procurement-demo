@@ -503,6 +503,45 @@ textarea:focus {
   padding-top: 8px;
 }
 
+.placement-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.placement-col {
+  border: 1px solid hsl(var(--border));
+  border-radius: 12px;
+  padding: 10px;
+  background: hsl(var(--card));
+  box-shadow: var(--shadow-xs);
+}
+
+.placement-title {
+  font-size: 12px;
+  font-weight: 800;
+  color: hsl(var(--muted-foreground));
+  margin-bottom: 8px;
+}
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+
+.check-row:last-child {
+  margin-bottom: 0;
+}
+
+.check-row input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+
 /* Dense layout helpers (for Settings pricing tables) */
 .dense-toolbar {
   display: grid;
@@ -514,6 +553,10 @@ textarea:focus {
   .dense-toolbar {
     grid-template-columns: 1fr 1fr;
     align-items: end;
+  }
+
+  .placement-grid {
+    grid-template-columns: 1fr 1fr;
   }
 }
 

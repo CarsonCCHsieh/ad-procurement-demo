@@ -5,6 +5,9 @@ export type MetaOrderStatus = "draft" | "submitted" | "running" | "paused" | "fa
 export type MetaOrderInput = {
   applicant: string;
   title: string;
+  campaignName: string;
+  adsetName: string;
+  adName: string;
   goal: MetaAdGoalKey;
   landingUrl: string;
   message: string;
@@ -18,6 +21,11 @@ export type MetaOrderInput = {
   ageMin: number;
   ageMax: number;
   genders: number[]; // 0=all,1=male,2=female
+  manualPlacements: {
+    facebook: string[];
+    instagram: string[];
+  };
+  detailedTargetingText?: string;
   mode: "simulate" | "live";
 };
 

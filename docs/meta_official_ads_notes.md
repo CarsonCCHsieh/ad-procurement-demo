@@ -53,3 +53,14 @@
    - insights（`/{ad_id}/insights`）
 4. 幣別固定 `TWD`，目前只使用 `daily budget`（不含 lifetime budget）。
 5. 素材欄位維持精簡，最終合法性以 Meta API 回應為準。
+
+## 第三版調整（依你提供的 Ads Manager 截圖）
+1. 下單頁拆成三層設定：
+   - 行銷活動（Campaign）：名稱、目標、單日預算
+   - 廣告組合（Ad Set）：名稱、受眾、排程、手動版位
+   - 廣告（Ad）：名稱、身份、既有貼文/連結素材
+2. 版位改為「手動勾選」，且只提供 Facebook / Instagram：
+   - 不含 Messenger、Audience Network、Threads
+   - payload 會帶 `publisher_platforms + facebook_positions + instagram_positions`
+3. 預算走 Campaign daily budget（不使用 lifetime budget）。
+4. 保留詳細目標設定欄位（interest id），支援每行 `interest_id|名稱` 轉 payload。

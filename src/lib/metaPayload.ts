@@ -1,5 +1,5 @@
 import type { MetaConfigV1 } from "../config/metaConfig";
-import { META_AD_GOALS, type MetaAdGoalTemplate } from "./metaGoals";
+import { META_AD_GOALS } from "./metaGoals";
 import type { MetaOrderInput } from "./metaOrdersStore";
 
 function sanitizePostId(raw: string): string {
@@ -12,18 +12,49 @@ function toObjectStoryId(pageId: string, postIdRaw: string): string {
   return `${pageId}_${v}`;
 }
 
-function defaultPositions(template: MetaAdGoalTemplate): {
+function normalizePlacements(input: MetaOrderInput["manualPlacements"]): {
+  publisher_platforms: string[];
   facebook_positions?: string[];
   instagram_positions?: string[];
+  device_platforms: string[];
 } {
-  if (template.platform === "facebook") {
-    if (template.recommendedPlacement === "reels") return { facebook_positions: ["video_feeds", "feed", "story"] };
-    if (template.recommendedPlacement === "feed") return { facebook_positions: ["feed"] };
-    return { facebook_positions: ["feed", "video_feeds", "right_hand_column"] };
+  const facebook = Array.from(new Set(input.facebook.map((x) => x.trim()).filter(Boolean)));
+  const instagram = Array.from(new Set(input.instagram.map((x) => x.trim()).filter(Boolean)));
+
+  const publishers: string[] = [];
+  if (facebook.length > 0) publishers.push("facebook");
+  if (instagram.length > 0) publishers.push("instagram");
+
+  const fallbackPublishers = publishers.length > 0 ? publishers : ["facebook", "instagram"];
+  const out: {
+    publisher_platforms: string[];
+    facebook_positions?: string[];
+    instagram_positions?: string[];
+    device_platforms: string[];
+  } = {
+    publisher_platforms: fallbackPublishers,
+    device_platforms: ["mobile", "desktop"],
+  };
+
+  if (facebook.length > 0) out.facebook_positions = facebook;
+  if (instagram.length > 0) out.instagram_positions = instagram;
+  return out;
+}
+
+function parseInterestObjects(raw: string): Array<{ id: string; name?: string }> {
+  const lines = raw
+    .split(/\r?\n/g)
+    .map((x) => x.trim())
+    .filter(Boolean);
+  const out: Array<{ id: string; name?: string }> = [];
+  for (const line of lines) {
+    const m = line.match(/^(\d+)(?:\s*[|,]\s*(.+))?$/);
+    if (!m) continue;
+    const id = m[1];
+    const name = m[2]?.trim();
+    out.push(name ? { id, name } : { id });
   }
-  if (template.recommendedPlacement === "reels") return { instagram_positions: ["reels", "story"] };
-  if (template.recommendedPlacement === "feed") return { instagram_positions: ["stream"] };
-  return { instagram_positions: ["stream", "reels", "story", "explore"] };
+  return out;
 }
 
 export function buildMetaPayloads(cfg: MetaConfigV1, input: MetaOrderInput): {
@@ -33,47 +64,60 @@ export function buildMetaPayloads(cfg: MetaConfigV1, input: MetaOrderInput): {
   ad: Record<string, unknown>;
 } {
   const goal = META_AD_GOALS[input.goal];
-  const nowIso = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-  const baseName = `${input.title || "meta_order"}_${nowIso}`;
-
   const countries = input.countries.length > 0 ? input.countries : ["TW"];
+  const placement = normalizePlacements(input.manualPlacements);
+  const interests = parseInterestObjects(input.detailedTargetingText ?? "");
 
   const targeting: Record<string, unknown> = {
     geo_locations: { countries },
     age_min: input.ageMin,
     age_max: input.ageMax,
     genders: input.genders,
-    publisher_platforms: [goal.platform],
-    ...defaultPositions(goal),
+    publisher_platforms: placement.publisher_platforms,
+    device_platforms: placement.device_platforms,
   };
+  if (placement.facebook_positions && placement.facebook_positions.length > 0) {
+    targeting.facebook_positions = placement.facebook_positions;
+  }
+  if (placement.instagram_positions && placement.instagram_positions.length > 0) {
+    targeting.instagram_positions = placement.instagram_positions;
+  }
+  if (interests.length > 0) {
+    targeting.flexible_spec = [{ interests }];
+  }
 
   const promotedObject: Record<string, unknown> = {};
   if (cfg.pageId) promotedObject.page_id = cfg.pageId;
   if (cfg.instagramActorId) promotedObject.instagram_actor_id = cfg.instagramActorId;
 
   const campaign: Record<string, unknown> = {
-    name: `${baseName}_campaign`,
+    name: input.campaignName || `${input.title}_campaign`,
+    buying_type: "AUCTION",
     objective: goal.objective,
-    status: "PAUSED",
     special_ad_categories: [],
+    status: "PAUSED",
+    bid_strategy: "LOWEST_COST_WITHOUT_CAP",
+    daily_budget: String(Math.max(100, Math.round(input.dailyBudget * 100))),
   };
 
   const adset: Record<string, unknown> = {
-    name: `${baseName}_adset`,
+    name: input.adsetName || `${input.title}_adset`,
     campaign_id: "{campaign_id}",
     billing_event: "IMPRESSIONS",
     optimization_goal: goal.optimizationGoal,
     bid_strategy: "LOWEST_COST_WITHOUT_CAP",
-    daily_budget: String(Math.max(100, Math.round(input.dailyBudget * 100))),
     start_time: input.startTime,
     status: "PAUSED",
     targeting,
   };
+  if (goal.optimizationGoal === "POST_ENGAGEMENT") {
+    adset.destination_type = "ON_AD";
+  }
   if (input.endTime) adset.end_time = input.endTime;
   if (Object.keys(promotedObject).length > 0) adset.promoted_object = promotedObject;
 
   const creative: Record<string, unknown> = {
-    name: `${baseName}_creative`,
+    name: `${input.adName || input.title}_creative`,
   };
 
   if (input.useExistingPost && input.existingPostId && cfg.pageId) {
@@ -91,14 +135,14 @@ export function buildMetaPayloads(cfg: MetaConfigV1, input: MetaOrderInput): {
       page_id: cfg.pageId || undefined,
       link_data: linkData,
     };
-    if (goal.platform === "instagram" && cfg.instagramActorId) {
+    if (cfg.instagramActorId) {
       objectStorySpec.instagram_actor_id = cfg.instagramActorId;
     }
     creative.object_story_spec = objectStorySpec;
   }
 
   const ad: Record<string, unknown> = {
-    name: `${baseName}_ad`,
+    name: input.adName || `${input.title}_ad`,
     adset_id: "{adset_id}",
     creative: { creative_id: "{creative_id}" },
     status: "PAUSED",
@@ -106,4 +150,3 @@ export function buildMetaPayloads(cfg: MetaConfigV1, input: MetaOrderInput): {
 
   return { campaign, adset, creative, ad };
 }
-
