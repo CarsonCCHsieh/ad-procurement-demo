@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { ServicePicker } from "../components/ServicePicker";
 import { CollapsibleCard } from "../components/CollapsibleCard";
+import { MetaSettingsCard } from "../components/MetaSettingsCard";
 import {
   DEFAULT_CONFIG,
   getConfig,
@@ -55,16 +56,16 @@ export function SettingsPage() {
 
   const setPlacementSuppliers = (placement: AdPlacement, nextSuppliers: SupplierConfig[]) => {
     setCfg((c) => {
-      const placements = c.placements.some((p) => p.placement === placement)
+      const placements: AppConfigV1["placements"] = c.placements.some((p) => p.placement === placement)
         ? c.placements.map((p) => (p.placement === placement ? { ...p, suppliers: nextSuppliers } : p))
-        : [...c.placements, { placement, splitStrategy: "random", suppliers: nextSuppliers }];
+        : [...c.placements, { placement, splitStrategy: "random" as const, suppliers: nextSuppliers }];
       return { ...c, placements };
     });
   };
 
   const setPlacementStrategy = (placement: AdPlacement, next: "random" | "weighted") => {
     setCfg((c) => {
-      const placements = c.placements.some((p) => p.placement === placement)
+      const placements: AppConfigV1["placements"] = c.placements.some((p) => p.placement === placement)
         ? c.placements.map((p) => (p.placement === placement ? { ...p, splitStrategy: next } : p))
         : [...c.placements, { placement, splitStrategy: next, suppliers: [] }];
       return { ...c, placements };
@@ -167,6 +168,9 @@ export function SettingsPage() {
           <button className="btn" onClick={() => nav("/ad-orders")}>
             下單
           </button>
+          <button className="btn" onClick={() => nav("/meta-ads-orders")}>
+            Meta 下單
+          </button>
           <button className="btn" onClick={() => nav("/ad-performance")}>
             成效
           </button>
@@ -192,6 +196,8 @@ export function SettingsPage() {
       )}
 
       <div className="grid">
+        <MetaSettingsCard onNotice={flashMsg} />
+
         <CollapsibleCard
           accent="blue"
           title="定價設定（內部顯示）"

@@ -24,7 +24,7 @@ type FormState = {
   items: LineItem[];
 };
 
-type FormErrors = Partial<Record<keyof FormState, string>> & {
+type FormErrors = Partial<Record<Exclude<keyof FormState, "items">, string>> & {
   items?: Array<{ placement?: string; target?: string }>;
 };
 
@@ -72,7 +72,7 @@ function validate(state: FormState): FormErrors {
       }
       return e;
     });
-    if (errors.items.every((x) => !x.placement && !x.target)) {
+    if (errors.items?.every((x) => !x.placement && !x.target)) {
       delete errors.items;
     }
   }
@@ -164,6 +164,9 @@ export function AdOrdersPage() {
 
         <div className="pill">
           <span className="tag">{applicant}</span>
+          <button className="btn" onClick={() => nav("/meta-ads-orders")}>
+            Meta 下單
+          </button>
           <button className="btn" onClick={() => nav("/ad-performance")}>
             成效頁
           </button>

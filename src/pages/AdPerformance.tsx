@@ -138,6 +138,9 @@ export function AdPerformancePage() {
         </div>
         <div className="pill">
           <span className="tag">{user?.displayName ?? user?.username}</span>
+          <button className="btn" onClick={() => nav("/meta-ads-orders")}>
+            Meta 下單
+          </button>
           <button className="btn" onClick={() => nav("/ad-orders")}>
             回下單
           </button>

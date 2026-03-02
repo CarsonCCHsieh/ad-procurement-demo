@@ -4,6 +4,8 @@ import { LoginPage } from "./pages/Login";
 import { AdOrdersPage } from "./pages/AdOrders";
 import { AdPerformancePage } from "./pages/AdPerformance";
 import { SettingsPage } from "./pages/Settings";
+import { MetaAdsOrdersPage } from "./pages/MetaAdsOrders";
+import { MetaAdsPerformancePage } from "./pages/MetaAdsPerformance";
 
 export function App() {
   return (
@@ -23,6 +25,22 @@ export function App() {
         element={
           <ProtectedRoute>
             <AdPerformancePage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/meta-ads-orders"
+        element={
+          <ProtectedRoute>
+            <MetaAdsOrdersPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/meta-ads-performance"
+        element={
+          <ProtectedRoute>
+            <MetaAdsPerformancePage />
           </ProtectedRoute>
         }
       />

@@ -112,42 +112,36 @@ function normalizeConfig(raw: unknown): AppConfigV1 | null {
   if (r.version !== 1) return null;
   if (!Array.isArray(r.vendors) || !Array.isArray(r.placements)) return null;
 
-  const vendors: VendorConfig[] = r.vendors
-    .map((v) => {
-      if (!v || typeof v !== "object") return null;
-      const x = v as Partial<VendorConfig>;
-      if (!isVendorKey(x.key)) return null;
-      if (typeof x.label !== "string") return null;
-      if (typeof x.apiBaseUrl !== "string") return null;
-      return { key: x.key, label: x.label, apiBaseUrl: x.apiBaseUrl, enabled: !!x.enabled };
-    })
-    .filter((x): x is VendorConfig => x != null);
+  const vendors: VendorConfig[] = r.vendors.flatMap((v) => {
+    if (!v || typeof v !== "object") return [];
+    const x = v as Partial<VendorConfig>;
+    if (!isVendorKey(x.key)) return [];
+    if (typeof x.label !== "string") return [];
+    if (typeof x.apiBaseUrl !== "string") return [];
+    return [{ key: x.key, label: x.label, apiBaseUrl: x.apiBaseUrl, enabled: !!x.enabled }];
+  });
 
-  const placements: PlacementConfig[] = r.placements
-    .map((p) => {
-      if (!p || typeof p !== "object") return null;
-      const x = p as Partial<PlacementConfig>;
-      if (!isPlacement(x.placement)) return null;
-      if (!Array.isArray(x.suppliers)) return null;
-      const splitStrategy =
-        x.splitStrategy === "weighted" || x.splitStrategy === "random" ? x.splitStrategy : undefined;
-      const suppliers: SupplierConfig[] = x.suppliers
-        .map((s) => {
-          if (!s || typeof s !== "object") return null;
-          const y = s as Partial<SupplierConfig>;
-          if (!isVendorKey(y.vendor)) return null;
-          const sid = Number(y.serviceId);
-          const w = Number(y.weight ?? 1);
-          const cap = y.maxPerOrder == null ? undefined : Number(y.maxPerOrder);
-          if (!Number.isFinite(sid) || sid < 0) return null;
-          if (!Number.isFinite(w) || w < 0) return null;
-          if (cap != null && (!Number.isFinite(cap) || cap <= 0)) return null;
-          return { vendor: y.vendor, serviceId: sid, weight: w, maxPerOrder: cap, enabled: !!y.enabled };
-        })
-        .filter((y): y is SupplierConfig => y != null);
-      return { placement: x.placement, splitStrategy, suppliers };
-    })
-    .filter((x): x is PlacementConfig => x != null);
+  const placements: PlacementConfig[] = r.placements.flatMap((p) => {
+    if (!p || typeof p !== "object") return [];
+    const x = p as Partial<PlacementConfig>;
+    if (!isPlacement(x.placement)) return [];
+    if (!Array.isArray(x.suppliers)) return [];
+    const splitStrategy: PlacementConfig["splitStrategy"] =
+      x.splitStrategy === "weighted" || x.splitStrategy === "random" ? x.splitStrategy : undefined;
+    const suppliers: SupplierConfig[] = x.suppliers.flatMap((s) => {
+      if (!s || typeof s !== "object") return [];
+      const y = s as Partial<SupplierConfig>;
+      if (!isVendorKey(y.vendor)) return [];
+      const sid = Number(y.serviceId);
+      const w = Number(y.weight ?? 1);
+      const cap = y.maxPerOrder == null ? undefined : Number(y.maxPerOrder);
+      if (!Number.isFinite(sid) || sid < 0) return [];
+      if (!Number.isFinite(w) || w < 0) return [];
+      if (cap != null && (!Number.isFinite(cap) || cap <= 0)) return [];
+      return [{ vendor: y.vendor, serviceId: sid, weight: w, maxPerOrder: cap, enabled: !!y.enabled }];
+    });
+    return [{ placement: x.placement, splitStrategy, suppliers }];
+  });
 
   return {
     version: 1,
