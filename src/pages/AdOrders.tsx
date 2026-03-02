@@ -157,18 +157,18 @@ export function AdOrdersPage() {
       <div className="topbar">
         <div className="brand">
           <div className="brand-title">
-            {step === "edit" ? "廣告下單" : step === "confirm" ? "確認送出" : "已送出"}
+            {step === "edit" ? "廠商互動下單" : step === "confirm" ? "確認送出" : "已送出"}
           </div>
-          <div className="brand-sub">下單表單 → 確認送出 → 進入處理流程（目前不會真的送到供應商）</div>
+          <div className="brand-sub">填單、確認、送出。</div>
         </div>
 
         <div className="pill">
           <span className="tag">{applicant}</span>
           <button className="btn" onClick={() => nav("/meta-ads-orders")}>
-            Meta 下單
+            Meta官方投廣
           </button>
           <button className="btn" onClick={() => nav("/ad-performance")}>
-            成效頁
+            投放成效
           </button>
           <button className="btn" onClick={() => nav("/settings")}>
             控制設定
@@ -384,12 +384,12 @@ export function AdOrdersPage() {
       {step === "confirm" && (
         <div className="grid">
           <div className="card">
-            <div className="card-hd">
-              <div>
-                <div className="card-title">確認摘要</div>
-                <div className="card-desc">請確認資訊無誤後送出；此版本不會真的送到供應商。</div>
+              <div className="card-hd">
+                <div>
+                  <div className="card-title">確認摘要</div>
+                <div className="card-desc">請確認資料後送出。</div>
+                </div>
               </div>
-            </div>
             <div className="card-bd">
               <div className="row cols2">
                 <div className="field">
@@ -516,13 +516,11 @@ export function AdOrdersPage() {
                   再次下單
                 </button>
                 <button className="btn primary" type="button" onClick={() => nav("/ad-performance")}>
-                  前往成效頁
+                  前往投放成效
                 </button>
               </div>
               <div className="sep" />
-              <div className="hint">
-                若要串接供應商：後續可以在「確認送出」時改成呼叫後端，由後端去打供應商 API，並把結果與錯誤回寫到成效頁。
-              </div>
+              <div className="hint">送出後可到「投放成效」查看進度。</div>
             </div>
           </div>
         </div>

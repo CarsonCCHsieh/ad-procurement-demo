@@ -152,7 +152,6 @@ export function SettingsPage() {
   const calcVendorEstimatedCost = (vendor: VendorKey, serviceId: number, qty: number): number | null => {
     const meta = getServiceMeta(vendor, serviceId);
     if (!meta || meta.rate == null) return null;
-    // Most SMM panels use rate = price per 1000 units.
     return (qty / 1000) * meta.rate;
   };
 
@@ -161,18 +160,18 @@ export function SettingsPage() {
       <div className="topbar">
         <div className="brand">
           <div className="brand-title">控制設定</div>
-          <div className="brand-sub">服務編號（serviceId）對應、拆單方式（隨機/按配比）、供應商服務清單載入與成本試算。</div>
+          <div className="brand-sub">設定定價、拆單、供應商服務清單與 Meta 投放參數。</div>
         </div>
         <div className="pill">
           <span className="tag">{user?.displayName ?? user?.username}</span>
           <button className="btn" onClick={() => nav("/ad-orders")}>
-            下單
+            廠商互動下單
           </button>
           <button className="btn" onClick={() => nav("/meta-ads-orders")}>
-            Meta 下單
+            Meta官方投廣
           </button>
           <button className="btn" onClick={() => nav("/ad-performance")}>
-            成效
+            投放成效
           </button>
           <button
             className="btn danger"
@@ -200,8 +199,8 @@ export function SettingsPage() {
 
         <CollapsibleCard
           accent="blue"
-          title="定價設定（內部顯示）"
-          desc="這裡管理「內部下單頁」顯示的預估金額（給同仁看）。供應商實際採購成本，請用下方成本試算。"
+          title="定價設定"
+          desc="管理下單頁顯示的預估金額。"
           tag="定價"
           storageKey="sec:pricing"
           defaultOpen
@@ -269,7 +268,7 @@ export function SettingsPage() {
             </div>
 
             <details className="dense-details">
-              <summary className="dense-summary">內部金額試算（前台顯示用）</summary>
+              <summary className="dense-summary">金額試算</summary>
               <div className="dense-panel">
                 <div className="dense-toolbar" style={{ marginTop: 10 }}>
                   <div className="field">
@@ -301,7 +300,7 @@ export function SettingsPage() {
                   </div>
                 </div>
                 <div className="hint" style={{ marginTop: 8 }}>
-                  這裡只計算「內部顯示金額」，不代表供應商實際採購成本。
+                  此處僅計算下單頁顯示金額。
                 </div>
               </div>
             </details>
@@ -309,8 +308,8 @@ export function SettingsPage() {
 
         <CollapsibleCard
           accent="green"
-          title="供應商成本試算（公司成本）"
-          desc="用你在「品項對應（拆單設定）」設定的服務編號（serviceId）與拆單配比，估算公司實際採購成本。"
+          title="供應商成本試算"
+          desc="依服務編號與配比估算供應商採購成本。"
           tag="成本"
           storageKey="sec:vendor-cost"
           defaultOpen
@@ -427,7 +426,7 @@ export function SettingsPage() {
         <CollapsibleCard
           accent="amber"
           title="供應商與服務清單"
-          desc="服務清單由 GitHub Actions（自動化）產生為靜態檔；這裡只做載入與清空。你不需要貼上 JSON。"
+          desc="管理供應商狀態、服務清單與 API 金鑰。"
           tag="供應商"
           storageKey="sec:vendors"
           defaultOpen={false}
@@ -480,14 +479,14 @@ export function SettingsPage() {
                           }))
                         }
                       />
-                      <div className="hint">例如：SMM Raja 常見為 /api/v3；Urpanel/JustAnotherPanel 常見為 /api/v2（以文件為準）</div>
+                      <div className="hint">請填入供應商提供的 API 網址。</div>
                     </div>
                   </div>
 
                   {showKeys && (
                     <div className="row cols2" style={{ marginTop: 10 }}>
                       <div className="field">
-                        <div className="label">API 金鑰（僅測試，用於同步狀態）</div>
+                        <div className="label">API 金鑰</div>
                         <input
                           type="password"
                           value={keys[v.key]}
@@ -498,7 +497,7 @@ export function SettingsPage() {
                           }}
                           placeholder="貼上供應商 API 金鑰"
                         />
-                        <div className="hint">正式環境不要放前端，建議由後端代打供應商 API。</div>
+                        <div className="hint">金鑰僅儲存在這台裝置。</div>
                       </div>
                       <div className="field">
                         <div className="label">操作</div>
@@ -509,7 +508,7 @@ export function SettingsPage() {
                             onClick={() => {
                               clearVendorKey(v.key);
                               setKeys((k) => ({ ...k, [v.key]: "" }));
-                              flashMsg("info", `已清除 ${vendorLabel(v.key)} API 金鑰（僅此瀏覽器）。`, 3000);
+                              flashMsg("info", `已清除 ${vendorLabel(v.key)} API 金鑰。`, 3000);
                             }}
                           >
                             清除金鑰
@@ -556,8 +555,8 @@ export function SettingsPage() {
 
         <CollapsibleCard
           accent="slate"
-          title="品項對應（拆單設定）"
-          desc="拆單方式可選「隨機」或「按配比」。配比欄位填寫比例數字即可，不用填 %（例如 2 / 1 / 1 代表約 50% / 25% / 25%）。"
+          title="品項對應"
+          desc="可設定隨機拆單或按配比分配。"
           tag="拆單"
           storageKey="sec:routing"
           defaultOpen={false}

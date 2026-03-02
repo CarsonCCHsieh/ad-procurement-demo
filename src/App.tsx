@@ -5,7 +5,6 @@ import { AdOrdersPage } from "./pages/AdOrders";
 import { AdPerformancePage } from "./pages/AdPerformance";
 import { SettingsPage } from "./pages/Settings";
 import { MetaAdsOrdersPage } from "./pages/MetaAdsOrders";
-import { MetaAdsPerformancePage } from "./pages/MetaAdsPerformance";
 
 export function App() {
   return (
@@ -38,11 +37,7 @@ export function App() {
       />
       <Route
         path="/meta-ads-performance"
-        element={
-          <ProtectedRoute>
-            <MetaAdsPerformancePage />
-          </ProtectedRoute>
-        }
+        element={<Navigate to="/ad-performance" replace />}
       />
       <Route
         path="/settings"

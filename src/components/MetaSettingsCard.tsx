@@ -30,7 +30,7 @@ export function MetaSettingsCard(props: {
     <CollapsibleCard
       accent="blue"
       title="Meta 官方投放設定"
-      desc="先用模擬模式驗證流程；要正式下單時，再切為正式模式並填入 Access Token 與廣告帳號。"
+      desc="設定 Meta 投放帳號與權限資訊。"
       tag="Meta"
       storageKey="sec:meta-settings"
       defaultOpen={false}
@@ -39,8 +39,8 @@ export function MetaSettingsCard(props: {
         <div className="field">
           <div className="label">執行模式</div>
           <select value={cfg.mode} onChange={(e) => setCfg((s) => ({ ...s, mode: e.target.value as "simulate" | "live" }))}>
-            <option value="simulate">模擬模式（不送 Meta）</option>
-            <option value="live">正式模式（送 Meta API）</option>
+            <option value="simulate">模擬模式</option>
+            <option value="live">正式模式</option>
           </select>
         </div>
         <div className="field">
@@ -51,7 +51,7 @@ export function MetaSettingsCard(props: {
 
       <div className="row cols2">
         <div className="field">
-          <div className="label">廣告帳號 ID（不含 act_）</div>
+          <div className="label">廣告帳號 ID</div>
           <input value={cfg.adAccountId} onChange={(e) => setCfg((s) => ({ ...s, adAccountId: e.target.value.trim() }))} placeholder="例如 1234567890" />
         </div>
         <div className="field">
@@ -76,7 +76,7 @@ export function MetaSettingsCard(props: {
       </div>
 
       <div className="field">
-        <div className="label">Access Token</div>
+        <div className="label">Token</div>
         <input
           type={showToken ? "text" : "password"}
           value={cfg.accessToken}
@@ -87,7 +87,7 @@ export function MetaSettingsCard(props: {
           <button className="btn sm" type="button" onClick={() => setShowToken((x) => !x)}>
             {showToken ? "隱藏 Token" : "顯示 Token"}
           </button>
-          <span className="hint">{isLiveReady ? "正式模式設定完整，可送 API。" : "目前仍建議先用模擬模式驗證流程。"}</span>
+          <span className="hint">{isLiveReady ? "設定完整" : "請先完成帳號與 Token"}</span>
         </div>
       </div>
 
