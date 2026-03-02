@@ -29,12 +29,19 @@ export type MetaSubmitResult = {
   requestLogs: Array<{ step: string; ok: boolean; detail: string }>;
 };
 
+export type MetaPerformanceSnapshot = {
+  updatedAt: string; // ISO
+  metrics: Array<{ key: string; label: string; value: number }>;
+  raw?: Record<string, unknown>;
+};
+
 export type MetaOrder = MetaOrderInput & {
   id: string;
   createdAt: string; // ISO
   status: MetaOrderStatus;
   apiStatusText?: string;
   error?: string;
+  performance?: MetaPerformanceSnapshot;
   payloads: {
     campaign: Record<string, unknown>;
     adset: Record<string, unknown>;

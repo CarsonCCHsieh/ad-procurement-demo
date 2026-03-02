@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { getMetaConfig } from "../config/metaConfig";
-import { fetchMetaAdStatus } from "../lib/metaGraphApi";
+import { fetchMetaAdSnapshot } from "../lib/metaGraphApi";
 import { clearMetaOrders, listMetaOrders, updateMetaOrder, type MetaOrder } from "../lib/metaOrdersStore";
 import { META_AD_GOALS } from "../lib/metaGoals";
 
@@ -37,7 +37,7 @@ export function MetaAdsPerformancePage() {
     const key = `sync:${row.id}`;
     setSyncing((s) => ({ ...s, [key]: true }));
     try {
-      const result = await fetchMetaAdStatus({ cfg, adId });
+      const result = await fetchMetaAdSnapshot({ cfg, adId, goal: row.goal });
       if (!result.ok) {
         updateMetaOrder(row.id, (r) => ({ ...r, error: result.detail ?? "同步失敗" }));
         setMsg(`同步失敗：${result.detail ?? "未知錯誤"}`);
@@ -49,6 +49,7 @@ export function MetaAdsPerformancePage() {
         ...r,
         status: mapStatus(statusText),
         apiStatusText: statusText,
+        performance: result.performance,
         error: "",
       }));
       setMsg(`已同步 ad ${adId}：${statusText}`);
@@ -172,6 +173,35 @@ export function MetaAdsPerformancePage() {
                       </div>
                     </div>
 
+                    <div className="sep" />
+                    <div className="hint" style={{ marginBottom: 8 }}>
+                      KPI 定義：{g.kpiDefinition}
+                    </div>
+                    {r.performance?.metrics?.length ? (
+                      <div className="dense-table">
+                        <div className="dense-th">指標</div>
+                        <div className="dense-th">數值</div>
+                        {r.performance.metrics.map((m) => (
+                          <div className="dense-tr" key={`${r.id}-${m.key}`}>
+                            <div className="dense-td">
+                              <div className="dense-title">{m.label}</div>
+                              <div className="dense-meta">{m.key}</div>
+                            </div>
+                            <div className="dense-td">
+                              <div className="dense-title">{m.value.toLocaleString("zh-TW")}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="hint">尚未同步 KPI 數據。</div>
+                    )}
+                    {r.performance?.updatedAt ? (
+                      <div className="hint" style={{ marginTop: 8 }}>
+                        KPI 更新時間：{new Date(r.performance.updatedAt).toLocaleString("zh-TW")}
+                      </div>
+                    ) : null}
+
                     {r.error ? (
                       <div className="hint" style={{ marginTop: 8, color: "rgba(220, 38, 38, 0.95)" }}>
                         {r.error}
@@ -188,6 +218,8 @@ export function MetaAdsPerformancePage() {
                       <textarea rows={5} readOnly value={JSON.stringify(r.payloads.creative, null, 2)} />
                       <div className="hint" style={{ marginTop: 8 }}>Ad</div>
                       <textarea rows={4} readOnly value={JSON.stringify(r.payloads.ad, null, 2)} />
+                      <div className="hint" style={{ marginTop: 8 }}>KPI（原始）</div>
+                      <textarea rows={4} readOnly value={JSON.stringify(r.performance?.raw ?? {}, null, 2)} />
                       <div className="hint" style={{ marginTop: 8 }}>API Log</div>
                       <textarea rows={4} readOnly value={JSON.stringify(r.submitResult?.requestLogs ?? [], null, 2)} />
                     </details>

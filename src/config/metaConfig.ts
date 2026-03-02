@@ -9,7 +9,7 @@ export type MetaConfigV1 = {
   adAccountId: string; // without act_ prefix
   pageId: string;
   instagramActorId: string;
-  currency: string; // TWD
+  currency: "TWD"; // fixed per requirement
   timezone: string; // Asia/Taipei
 };
 
@@ -47,7 +47,7 @@ function normalize(raw: unknown): MetaConfigV1 | null {
     adAccountId: typeof r.adAccountId === "string" ? r.adAccountId.trim() : "",
     pageId: typeof r.pageId === "string" ? r.pageId.trim() : "",
     instagramActorId: typeof r.instagramActorId === "string" ? r.instagramActorId.trim() : "",
-    currency: typeof r.currency === "string" && r.currency.trim() ? r.currency.trim().toUpperCase() : "TWD",
+    currency: "TWD",
     timezone: typeof r.timezone === "string" && r.timezone.trim() ? r.timezone.trim() : "Asia/Taipei",
   };
 }

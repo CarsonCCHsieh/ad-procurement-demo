@@ -74,7 +74,7 @@ function validate(s: FormState): Errors {
   }
 
   const b = Number(s.dailyBudget);
-  if (!Number.isFinite(b) || b <= 0) e.dailyBudget = "日預算需為正數";
+  if (!Number.isFinite(b) || b <= 0) e.dailyBudget = "日預算需為正數；最低金額以 Meta API 規範為準";
 
   if (!s.startTime.trim()) e.startTime = "請填寫開始時間";
   if (s.endTime.trim()) {
@@ -236,6 +236,7 @@ export function MetaAdsOrdersPage() {
                   <div className="hint">
                     平台：{goal.platform === "facebook" ? "Facebook" : "Instagram"} / 目標：{goal.desc}
                   </div>
+                  <div className="hint">KPI 定義：{goal.kpiDefinition}</div>
                   {goal.notes && <div className="hint">{goal.notes}</div>}
                 </div>
 
@@ -245,6 +246,7 @@ export function MetaAdsOrdersPage() {
                     <option value="link">建立連結廣告（Link Ad）</option>
                     <option value="existing">使用既有貼文（需貼文 ID）</option>
                   </select>
+                  <div className="hint">素材欄位與可用格式以 Meta API 最終驗證結果為準。</div>
                 </div>
                 <div className="field">
                   <div className="label">既有貼文 ID</div>
@@ -284,6 +286,7 @@ export function MetaAdsOrdersPage() {
                 <div className="field">
                   <div className="label">日預算（{cfg.currency}）<span className="req">*</span></div>
                   <input value={state.dailyBudget} inputMode="numeric" onChange={(e) => setState((s) => ({ ...s, dailyBudget: e.target.value }))} />
+                  <div className="hint">最低金額由 Meta API 檢核；此頁只先檢查是否為正數。</div>
                   {errors.dailyBudget && <div className="error">{errors.dailyBudget}</div>}
                 </div>
 

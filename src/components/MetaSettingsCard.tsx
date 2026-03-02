@@ -68,9 +68,10 @@ export function MetaSettingsCard(props: {
         <div className="field">
           <div className="label">幣別 / 時區</div>
           <div className="row cols2">
-            <input value={cfg.currency} onChange={(e) => setCfg((s) => ({ ...s, currency: e.target.value.toUpperCase() }))} placeholder="TWD" />
+            <input value="TWD" readOnly />
             <input value={cfg.timezone} onChange={(e) => setCfg((s) => ({ ...s, timezone: e.target.value }))} placeholder="Asia/Taipei" />
           </div>
+          <div className="hint">幣別固定為 TWD；預算模式目前只使用日預算（daily budget）。</div>
         </div>
       </div>
 
