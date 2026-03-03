@@ -1,10 +1,10 @@
-import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+﻿import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { getMetaConfig } from "../config/metaConfig";
 import { buildMetaPayloads } from "../lib/metaPayload";
-import { META_AD_GOALS, listMetaGoals, type MetaAdGoalKey } from "../lib/metaGoals";
-import { addMetaOrder, type MetaOrderInput } from "../lib/metaOrdersStore";
+import { META_AD_GOALS, getGoalPrimaryMetricKey, getGoalPrimaryMetricLabel, listMetaGoals, type MetaAdGoalKey } from "../lib/metaGoals";
+import { addMetaOrder, listMetaOrders, updateMetaOrder, type MetaOrder, type MetaOrderInput } from "../lib/metaOrdersStore";
 import { submitMetaOrderToGraph } from "../lib/metaGraphApi";
 import { isValidUrl } from "../lib/validate";
 
@@ -19,6 +19,8 @@ type FormState = {
   ctaType: string;
   useExistingPost: boolean;
   existingPostId: string;
+  trackingPostId: string;
+  targetValue: string;
   dailyBudget: string;
   startTime: string;
   endTime: string;
@@ -52,6 +54,9 @@ const IG_POSITION_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "profile_feed", label: "Instagram 個人檔案動態消息" },
   { value: "search", label: "Instagram 搜尋結果" },
 ];
+
+const FB_POSITION_LABEL = new Map(FB_POSITION_OPTIONS.map((x) => [x.value, x.label]));
+const IG_POSITION_LABEL = new Map(IG_POSITION_OPTIONS.map((x) => [x.value, x.label]));
 
 const GOAL_PRESETS: Record<
   MetaAdGoalKey,
@@ -138,6 +143,14 @@ function toIsoFromLocalInput(s: string): string {
   return new Date(s).toISOString();
 }
 
+function toInputFromIso(iso?: string): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 16);
+}
+
 function applyGoalPreset(prev: FormState, goal: MetaAdGoalKey): FormState {
   const preset = GOAL_PRESETS[goal];
   return {
@@ -164,6 +177,8 @@ function defaultState(): FormState {
     ctaType: "LEARN_MORE",
     useExistingPost: true,
     existingPostId: "",
+    trackingPostId: "",
+    targetValue: "",
     dailyBudget: "1000",
     startTime: toInputDateTimeLocal(start),
     endTime: "",
@@ -178,6 +193,39 @@ function defaultState(): FormState {
   return applyGoalPreset(seed, seed.goal);
 }
 
+function fromGenderCodes(genders: number[]): FormState["gender"] {
+  if (genders.includes(1)) return "male";
+  if (genders.includes(2)) return "female";
+  return "all";
+}
+
+function formStateFromOrder(row: MetaOrder): FormState {
+  return {
+    title: row.title ?? "",
+    campaignName: row.campaignName ?? "",
+    adsetName: row.adsetName ?? "",
+    adName: row.adName ?? "",
+    goal: row.goal,
+    landingUrl: row.landingUrl ?? "",
+    message: row.message ?? "",
+    ctaType: row.ctaType ?? "LEARN_MORE",
+    useExistingPost: !!row.useExistingPost,
+    existingPostId: row.existingPostId ?? "",
+    trackingPostId: row.trackingPostId ?? row.existingPostId ?? "",
+    targetValue: row.targetValue == null ? "" : String(row.targetValue),
+    dailyBudget: String(row.dailyBudget ?? ""),
+    startTime: toInputFromIso(row.startTime),
+    endTime: toInputFromIso(row.endTime),
+    countriesCsv: row.countries?.join(", ") || "TW",
+    ageMin: String(row.ageMin ?? 18),
+    ageMax: String(row.ageMax ?? 49),
+    gender: fromGenderCodes(row.genders ?? []),
+    detailedTargetingText: row.detailedTargetingText ?? "",
+    fbPositions: row.manualPlacements?.facebook ?? [],
+    igPositions: row.manualPlacements?.instagram ?? [],
+  };
+}
+
 function toGenders(g: FormState["gender"]): number[] {
   if (g === "male") return [1];
   if (g === "female") return [2];
@@ -186,6 +234,13 @@ function toGenders(g: FormState["gender"]): number[] {
 
 function toggleValue(list: string[], value: string): string[] {
   return list.includes(value) ? list.filter((x) => x !== value) : [...list, value];
+}
+
+function formatDateTime(isoOrLocal: string): string {
+  if (!isoOrLocal) return "-";
+  const dt = new Date(isoOrLocal);
+  if (Number.isNaN(dt.getTime())) return "-";
+  return dt.toLocaleString("zh-TW", { hour12: false });
 }
 
 function validate(s: FormState): Errors {
@@ -200,6 +255,15 @@ function validate(s: FormState): Errors {
     else if (!isValidUrl(s.landingUrl.trim())) e.landingUrl = "網址格式不正確";
   } else if (!s.existingPostId.trim()) {
     e.existingPostId = "請填寫貼文編號";
+  }
+
+  const target = Number(s.targetValue);
+  if (s.targetValue.trim() && (!Number.isFinite(target) || target <= 0)) {
+    e.targetValue = "目標數值需為正數";
+  }
+  const trackingPostId = s.trackingPostId.trim() || s.existingPostId.trim();
+  if (s.targetValue.trim() && !trackingPostId) {
+    e.trackingPostId = "有設定目標時，需提供追蹤貼文 ID";
   }
 
   const b = Number(s.dailyBudget);
@@ -225,6 +289,7 @@ function validate(s: FormState): Errors {
 
 export function MetaAdsOrdersPage() {
   const nav = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user, signOut } = useAuth();
   const [step, setStep] = useState<"edit" | "confirm" | "submitted">("edit");
   const [state, setState] = useState<FormState>(() => defaultState());
@@ -232,10 +297,32 @@ export function MetaAdsOrdersPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitMsg, setSubmitMsg] = useState<string | null>(null);
   const [logs, setLogs] = useState<Array<{ step: string; ok: boolean; detail: string }>>([]);
+  const [editingOrderId, setEditingOrderId] = useState<string | null>(null);
 
   const cfg = getMetaConfig();
   const applicant = user?.displayName ?? user?.username ?? "";
   const goal = META_AD_GOALS[state.goal];
+  const targetMetricLabel = getGoalPrimaryMetricLabel(state.goal);
+  const editId = searchParams.get("edit")?.trim() ?? "";
+
+  const clearEditQuery = () => {
+    if (!editId) return;
+    const next = new URLSearchParams(searchParams);
+    next.delete("edit");
+    setSearchParams(next, { replace: true });
+  };
+
+  useEffect(() => {
+    if (!editId) return;
+    const row = listMetaOrders().find((x) => x.id === editId);
+    if (!row) return;
+    setState(formStateFromOrder(row));
+    setErrors({});
+    setStep("edit");
+    setLogs([]);
+    setSubmitMsg(null);
+    setEditingOrderId(row.id);
+  }, [editId]);
 
   const countries = useMemo(
     () =>
@@ -259,6 +346,10 @@ export function MetaAdsOrdersPage() {
       ctaType: state.ctaType.trim() || "LEARN_MORE",
       useExistingPost: state.useExistingPost,
       existingPostId: state.existingPostId.trim() || undefined,
+      trackingPostId: (state.trackingPostId.trim() || state.existingPostId.trim()) || undefined,
+      targetMetricKey: getGoalPrimaryMetricKey(state.goal),
+      targetValue: state.targetValue.trim() ? Number(state.targetValue) : undefined,
+      autoStopByTarget: !!state.targetValue.trim(),
       dailyBudget: Number(state.dailyBudget) || 0,
       startTime: toIsoFromLocalInput(state.startTime),
       endTime: state.endTime.trim() ? toIsoFromLocalInput(state.endTime) : undefined,
@@ -271,12 +362,20 @@ export function MetaAdsOrdersPage() {
         instagram: state.igPositions,
       },
       detailedTargetingText: state.detailedTargetingText.trim() || undefined,
-      mode: cfg.mode,
+      mode: "live",
     }),
-    [applicant, cfg.mode, countries, state],
+    [applicant, countries, state],
   );
 
   const payloads = useMemo(() => buildMetaPayloads(cfg, previewInput), [cfg, previewInput]);
+  const fbPlacementLabels = useMemo(
+    () => previewInput.manualPlacements.facebook.map((x) => FB_POSITION_LABEL.get(x) ?? x),
+    [previewInput.manualPlacements.facebook],
+  );
+  const igPlacementLabels = useMemo(
+    () => previewInput.manualPlacements.instagram.map((x) => IG_POSITION_LABEL.get(x) ?? x),
+    [previewInput.manualPlacements.instagram],
+  );
 
   const goConfirm = () => {
     const e = validate(state);
@@ -290,18 +389,32 @@ export function MetaAdsOrdersPage() {
     setSubmitMsg(null);
     try {
       const res = await submitMetaOrderToGraph({ cfg, input: previewInput, payloads });
-      const status = res.status === "submitted" ? (cfg.mode === "simulate" ? "submitted" : "running") : "failed";
-      addMetaOrder({
+      const status = res.status === "submitted" ? "running" : "failed";
+      const nextRow = {
         ...previewInput,
+        targetCurrentValue: undefined,
+        targetLastCheckedAt: undefined,
+        targetReachedAt: undefined,
         status,
         apiStatusText: res.status === "submitted" ? "已建立投放" : "建立失敗",
         error: res.error,
         payloads,
         submitResult: res.result,
-      });
+      };
+      if (editingOrderId) {
+        const updated = updateMetaOrder(editingOrderId, (old) => ({
+          ...old,
+          ...nextRow,
+        }));
+        if (!updated) addMetaOrder(nextRow);
+      } else {
+        addMetaOrder(nextRow);
+      }
+      setEditingOrderId(null);
+      clearEditQuery();
       setLogs(res.result?.requestLogs ?? []);
       if (res.status === "submitted") {
-        setSubmitMsg(cfg.mode === "simulate" ? "已完成送出流程" : "已送出到 Meta API");
+        setSubmitMsg("已送出到 Meta API");
       } else {
         setSubmitMsg(`送出失敗：${res.error ?? "未知錯誤"}`);
       }
@@ -318,7 +431,7 @@ export function MetaAdsOrdersPage() {
           <div className="brand-title">
             {step === "edit" ? "Meta官方投廣" : step === "confirm" ? "確認送出" : "送出結果"}
           </div>
-          <div className="brand-sub">依投放目標自動帶入常用設定，可直接送出再微調。</div>
+          <div className="brand-sub">依投放目標自動帶入設定，填完可直接確認送出。</div>
         </div>
         <div className="pill">
           <span className="tag">{applicant}</span>
@@ -351,7 +464,7 @@ export function MetaAdsOrdersPage() {
                 <div className="card-title">行銷活動</div>
                 <div className="card-desc">目標會依投放類型自動設定。</div>
               </div>
-              <span className="tag">{cfg.mode === "simulate" ? "模擬模式" : "正式模式"}</span>
+              <span className="tag">正式模式</span>
             </div>
             <div className="card-bd">
               <div className="row cols2">
@@ -518,6 +631,25 @@ export function MetaAdsOrdersPage() {
                   {errors.existingPostId && <div className="error">{errors.existingPostId}</div>}
                 </div>
                 <div className="field">
+                  <div className="label">追蹤貼文 ID</div>
+                  <input
+                    value={state.trackingPostId}
+                    onChange={(e) => setState((s) => ({ ...s, trackingPostId: e.target.value }))}
+                    placeholder="留空時自動使用貼文編號"
+                  />
+                  {errors.trackingPostId && <div className="error">{errors.trackingPostId}</div>}
+                </div>
+                <div className="field">
+                  <div className="label">目標 {targetMetricLabel}</div>
+                  <input
+                    value={state.targetValue}
+                    inputMode="numeric"
+                    onChange={(e) => setState((s) => ({ ...s, targetValue: e.target.value }))}
+                    placeholder="例如 300000"
+                  />
+                  <div className="hint">留空表示不啟用自動停投。</div>
+                  {errors.targetValue && <div className="error">{errors.targetValue}</div>}
+                </div>                <div className="field">
                   <div className="label">網址{state.useExistingPost ? "" : <span className="req">*</span>}</div>
                   <input value={state.landingUrl} onChange={(e) => setState((s) => ({ ...s, landingUrl: e.target.value }))} placeholder="https://..." />
                   {errors.landingUrl && <div className="error">{errors.landingUrl}</div>}
@@ -562,10 +694,15 @@ export function MetaAdsOrdersPage() {
             <div className="card-hd">
               <div>
                 <div className="card-title">確認資料</div>
+                <div className="card-desc">確認無誤後送出至 Meta API。</div>
               </div>
             </div>
             <div className="card-bd">
               <div className="row cols2">
+                <div className="field">
+                  <div className="label">任務名稱</div>
+                  <input value={previewInput.title || "-"} readOnly />
+                </div>
                 <div className="field">
                   <div className="label">行銷活動 / 廣告組合 / 廣告</div>
                   <input value={`${previewInput.campaignName} / ${previewInput.adsetName} / ${previewInput.adName}`} readOnly />
@@ -575,24 +712,44 @@ export function MetaAdsOrdersPage() {
                   <input value={goal.label} readOnly />
                 </div>
                 <div className="field">
-                  <div className="label">模式</div>
-                  <input value={cfg.mode === "simulate" ? "模擬模式" : "正式模式"} readOnly />
+                  <div className="label">預算</div>
+                  <input value={`NT$ ${previewInput.dailyBudget.toLocaleString("zh-TW")}`} readOnly />
                 </div>
                 <div className="field">
                   <div className="label">手動版位</div>
                   <input value={`Facebook ${previewInput.manualPlacements.facebook.length} 項 / Instagram ${previewInput.manualPlacements.instagram.length} 項`} readOnly />
                 </div>
+                <div className="field">
+                  <div className="label">開始時間</div>
+                  <input value={formatDateTime(state.startTime)} readOnly />
+                </div>
+                <div className="field">
+                  <div className="label">結束時間</div>
+                  <input value={state.endTime ? formatDateTime(state.endTime) : "不設定"} readOnly />
+                </div>
+                <div className="field">
+                  <div className="label">追蹤貼文 ID</div>
+                  <input value={previewInput.trackingPostId || "-"} readOnly />
+                </div>
+                <div className="field">
+                  <div className="label">目標 {targetMetricLabel}</div>
+                  <input value={previewInput.targetValue == null ? "-" : previewInput.targetValue.toLocaleString("zh-TW")} readOnly />
+                </div>
               </div>
 
-              <div className="sep" />
-              <div className="hint">Campaign Payload</div>
-              <textarea rows={6} readOnly value={JSON.stringify(payloads.campaign, null, 2)} />
-              <div className="hint" style={{ marginTop: 8 }}>AdSet Payload</div>
-              <textarea rows={8} readOnly value={JSON.stringify(payloads.adset, null, 2)} />
-              <div className="hint" style={{ marginTop: 8 }}>Creative Payload</div>
-              <textarea rows={7} readOnly value={JSON.stringify(payloads.creative, null, 2)} />
-              <div className="hint" style={{ marginTop: 8 }}>Ad Payload</div>
-              <textarea rows={5} readOnly value={JSON.stringify(payloads.ad, null, 2)} />
+              <details className="dense-details" style={{ marginTop: 12 }}>
+                <summary className="dense-summary">技術資料（必要時展開）</summary>
+                <div className="dense-panel">
+                  <div className="hint">Campaign Payload</div>
+                  <textarea rows={6} readOnly value={JSON.stringify(payloads.campaign, null, 2)} />
+                  <div className="hint" style={{ marginTop: 8 }}>AdSet Payload</div>
+                  <textarea rows={8} readOnly value={JSON.stringify(payloads.adset, null, 2)} />
+                  <div className="hint" style={{ marginTop: 8 }}>Creative Payload</div>
+                  <textarea rows={7} readOnly value={JSON.stringify(payloads.creative, null, 2)} />
+                  <div className="hint" style={{ marginTop: 8 }}>Ad Payload</div>
+                  <textarea rows={5} readOnly value={JSON.stringify(payloads.ad, null, 2)} />
+                </div>
+              </details>
 
               <div className="sep" />
               <div className="actions inline">
@@ -632,7 +789,7 @@ export function MetaAdsOrdersPage() {
               </div>
               <div className="sep" />
               <div className="actions inline">
-                <button className="btn" onClick={() => setStep("edit")}>
+                <button className="btn" onClick={() => { setState(defaultState()); setEditingOrderId(null); clearEditQuery(); setStep("edit"); }}>
                   再建一筆
                 </button>
                 <button className="btn primary" onClick={() => nav("/ad-performance")}>
@@ -646,4 +803,5 @@ export function MetaAdsOrdersPage() {
     </div>
   );
 }
+
 

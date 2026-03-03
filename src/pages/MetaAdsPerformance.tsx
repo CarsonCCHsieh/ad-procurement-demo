@@ -72,7 +72,7 @@ export function MetaAdsPerformancePage() {
       <div className="topbar">
         <div className="brand">
           <div className="brand-title">Meta 投放成效</div>
-          <div className="brand-sub">顯示 Meta 投放建立結果與同步狀態（模擬模式只回傳假狀態）。</div>
+          <div className="brand-sub">顯示 Meta 投放建立結果與同步狀態。</div>
         </div>
         <div className="pill">
           <span className="tag">{user?.displayName ?? user?.username}</span>
@@ -107,9 +107,7 @@ export function MetaAdsPerformancePage() {
         <div className="card-hd">
           <div>
             <div className="card-title">Meta 投放紀錄</div>
-            <div className="card-desc">
-              目前模式：{cfg.mode === "simulate" ? "模擬模式" : "正式模式"} / 廣告帳號：{cfg.adAccountId || "(未填)"}
-            </div>
+            <div className="card-desc">目前模式：正式模式 / 廣告帳號：{cfg.adAccountId || "(未填)"}</div>
           </div>
         </div>
         <div className="card-bd">

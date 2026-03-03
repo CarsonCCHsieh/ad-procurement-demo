@@ -1,4 +1,4 @@
-import type { MetaAdGoalKey } from "./metaGoals";
+import type { MetaAdGoalKey, MetaKpiMetricKey } from "./metaGoals";
 
 export type MetaOrderStatus = "draft" | "submitted" | "running" | "paused" | "failed" | "completed";
 
@@ -26,7 +26,14 @@ export type MetaOrderInput = {
     instagram: string[];
   };
   detailedTargetingText?: string;
-  mode: "simulate" | "live";
+  trackingPostId?: string;
+  targetMetricKey?: MetaKpiMetricKey;
+  targetValue?: number;
+  targetCurrentValue?: number;
+  targetLastCheckedAt?: string;
+  targetReachedAt?: string;
+  autoStopByTarget?: boolean;
+  mode: "live";
 };
 
 export type MetaSubmitResult = {

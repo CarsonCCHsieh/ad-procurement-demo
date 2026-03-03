@@ -1,4 +1,4 @@
-export type MetaAdGoalKey =
+﻿export type MetaAdGoalKey =
   | "fb_post_likes"
   | "fb_post_engagement"
   | "fb_reach"
@@ -217,3 +217,24 @@ export function listMetaGoals(): MetaAdGoalTemplate[] {
   return (Object.keys(META_AD_GOALS) as MetaAdGoalKey[]).map((k) => META_AD_GOALS[k]);
 }
 
+const GOAL_PRIMARY_METRIC: Record<MetaAdGoalKey, MetaKpiMetricKey> = {
+  fb_post_likes: "likes",
+  fb_post_engagement: "interactions_total",
+  fb_reach: "reach",
+  fb_video_views: "video_3s_views",
+  ig_post_spread: "followers",
+  ig_reels_spread: "followers",
+  ig_video_views: "video_3s_views",
+  ig_engagement: "interactions_total",
+  ig_followers: "followers",
+};
+
+export function getGoalPrimaryMetricKey(goal: MetaAdGoalKey): MetaKpiMetricKey {
+  return GOAL_PRIMARY_METRIC[goal];
+}
+
+export function getGoalPrimaryMetricLabel(goal: MetaAdGoalKey): string {
+  const key = getGoalPrimaryMetricKey(goal);
+  const tpl = META_AD_GOALS[goal];
+  return tpl.reportMetrics.find((m) => m.key === key)?.label ?? key;
+}

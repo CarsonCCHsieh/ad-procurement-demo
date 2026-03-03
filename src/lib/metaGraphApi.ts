@@ -1,4 +1,4 @@
-import type { MetaConfigV1 } from "../config/metaConfig";
+﻿import type { MetaConfigV1 } from "../config/metaConfig";
 import { META_AD_GOALS, type MetaAdGoalKey, type MetaKpiMetricKey } from "./metaGoals";
 import type { MetaOrderInput, MetaPerformanceSnapshot, MetaSubmitResult } from "./metaOrdersStore";
 
@@ -51,9 +51,13 @@ async function graphPost(
 }
 
 async function graphGet(cfg: MetaConfigV1, token: string, path: string, fields?: string): Promise<Record<string, unknown>> {
-  const url = fields
-    ? `${graphBase(cfg)}${path}?fields=${encodeURIComponent(fields)}&access_token=${encodeURIComponent(token)}`
-    : `${graphBase(cfg)}${path}?access_token=${encodeURIComponent(token)}`;
+  const hasQuery = path.includes("?");
+  const base = `${graphBase(cfg)}${path}`;
+  const withFields = fields
+    ? `${base}${hasQuery ? "&" : "?"}fields=${encodeURIComponent(fields)}`
+    : base;
+  const url = `${withFields}${withFields.includes("?") ? "&" : "?"}access_token=${encodeURIComponent(token)}`;
+
   const res = await fetch(url, { method: "GET" });
   const json = (await res.json()) as Record<string, unknown>;
   if (!res.ok || json.error) {
@@ -64,6 +68,11 @@ async function graphGet(cfg: MetaConfigV1, token: string, path: string, fields?:
     throw new Error(msg);
   }
   return json;
+}
+
+function asRecord(v: unknown): Record<string, unknown> | null {
+  if (!v || typeof v !== "object") return null;
+  return v as Record<string, unknown>;
 }
 
 function toNumber(v: unknown): number {
@@ -77,9 +86,7 @@ function toNumber(v: unknown): number {
 
 function asActions(v: unknown): ActionValue[] {
   if (!Array.isArray(v)) return [];
-  return v
-    .filter((x) => x && typeof x === "object")
-    .map((x) => x as ActionValue);
+  return v.filter((x) => x && typeof x === "object").map((x) => x as ActionValue);
 }
 
 function sumActions(v: unknown, actionTypes: string[]): number {
@@ -108,6 +115,14 @@ function firstInsightRow(raw: Record<string, unknown>): Record<string, unknown> 
   const row = data[0];
   if (!row || typeof row !== "object") return null;
   return row as Record<string, unknown>;
+}
+
+function readInsightValue(data: unknown, name: string): number {
+  if (!Array.isArray(data)) return 0;
+  const row = data.find((x) => asRecord(x)?.name === name);
+  const values = asRecord(row)?.values;
+  if (!Array.isArray(values) || values.length === 0) return 0;
+  return toNumber(asRecord(values[0])?.value);
 }
 
 function extractMetricValues(row: Record<string, unknown>): Record<MetaKpiMetricKey, number> {
@@ -153,34 +168,6 @@ function extractMetricValues(row: Record<string, unknown>): Record<MetaKpiMetric
   };
 }
 
-function simulateMetricValues(): Record<MetaKpiMetricKey, number> {
-  const impressions = 4000 + Math.floor(Math.random() * 8000);
-  const reach = Math.floor(impressions * (0.42 + Math.random() * 0.35));
-  const likes = 80 + Math.floor(Math.random() * 320);
-  const allClicks = 120 + Math.floor(Math.random() * 600);
-  const comments = 10 + Math.floor(Math.random() * 90);
-  const shares = 8 + Math.floor(Math.random() * 80);
-  const followers = 5 + Math.floor(Math.random() * 40);
-  const profileVisits = 40 + Math.floor(Math.random() * 200);
-  const video3s = 120 + Math.floor(Math.random() * 1200);
-  const thruplays = Math.max(0, video3s - Math.floor(Math.random() * 180));
-  const spend = 150 + Math.floor(Math.random() * 3000);
-  return {
-    likes,
-    all_clicks: allClicks,
-    comments,
-    shares,
-    interactions_total: likes + allClicks + comments + shares,
-    impressions,
-    reach,
-    video_3s_views: video3s,
-    thruplays,
-    followers,
-    profile_visits: profileVisits,
-    spend,
-  };
-}
-
 function buildPerformance(goal: MetaAdGoalKey, values: Record<MetaKpiMetricKey, number>, raw?: Record<string, unknown>): MetaPerformanceSnapshot {
   const tpl = META_AD_GOALS[goal];
   return {
@@ -192,10 +179,6 @@ function buildPerformance(goal: MetaAdGoalKey, values: Record<MetaKpiMetricKey, 
     })),
     raw,
   };
-}
-
-function mockId(prefix: string): string {
-  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 }
 
 export async function submitMetaOrderToGraph(params: {
@@ -213,22 +196,8 @@ export async function submitMetaOrderToGraph(params: {
 
   const token = cfg.accessToken.trim();
   const accountId = cfg.adAccountId.trim().replace(/^act_/, "");
-  const simulate = cfg.mode === "simulate" || !token || !accountId;
-
-  if (simulate) {
-    const result: MetaSubmitResult = {
-      campaignId: mockId("cmp"),
-      adsetId: mockId("set"),
-      creativeId: mockId("cr"),
-      adId: mockId("ad"),
-      requestLogs: [
-        { step: "campaign", ok: true, detail: "模擬模式：已建立 campaign" },
-        { step: "adset", ok: true, detail: "模擬模式：已建立 adset" },
-        { step: "creative", ok: true, detail: "模擬模式：已建立 creative" },
-        { step: "ad", ok: true, detail: "模擬模式：已建立 ad" },
-      ],
-    };
-    return { status: "submitted", result };
+  if (!token || !accountId) {
+    return { status: "failed", error: "請先完成 Meta Access Token 與廣告帳號 ID 設定" };
   }
 
   try {
@@ -268,14 +237,8 @@ export async function fetchMetaAdSnapshot(params: {
 }): Promise<{ ok: boolean; statusText?: string; detail?: string; performance?: MetaPerformanceSnapshot }> {
   const { cfg, adId, goal } = params;
   const token = cfg.accessToken.trim();
-  const simulate = cfg.mode === "simulate" || !token;
-  if (simulate) {
-    return {
-      ok: true,
-      statusText: "PAUSED",
-      detail: "模擬模式：未呼叫 Meta API",
-      performance: buildPerformance(goal, simulateMetricValues(), { mode: "simulate" }),
-    };
+  if (!token) {
+    return { ok: false, detail: "請先在控制設定填入 Meta Access Token" };
   }
 
   try {
@@ -293,7 +256,7 @@ export async function fetchMetaAdSnapshot(params: {
 
     return { ok: true, statusText, performance: perf };
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "讀取狀態失敗";
+    const msg = e instanceof Error ? e.message : "讀取投放狀態失敗";
     return { ok: false, detail: msg };
   }
 }
@@ -304,9 +267,8 @@ export async function fetchMetaAdStatus(params: {
 }): Promise<{ ok: boolean; statusText?: string; detail?: string; raw?: Record<string, unknown> }> {
   const { cfg, adId } = params;
   const token = cfg.accessToken.trim();
-  const simulate = cfg.mode === "simulate" || !token;
-  if (simulate) {
-    return { ok: true, statusText: "PAUSED", detail: "模擬模式：未呼叫 Meta API" };
+  if (!token) {
+    return { ok: false, detail: "請先在控制設定填入 Meta Access Token" };
   }
 
   try {
@@ -314,8 +276,102 @@ export async function fetchMetaAdStatus(params: {
     const statusText = String(raw.effective_status ?? raw.status ?? "UNKNOWN");
     return { ok: true, statusText, raw };
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "讀取狀態失敗";
+    const msg = e instanceof Error ? e.message : "讀取投放狀態失敗";
     return { ok: false, detail: msg };
   }
 }
 
+export async function fetchMetaPostMetrics(params: {
+  cfg: MetaConfigV1;
+  postId: string;
+}): Promise<{
+  ok: boolean;
+  detail?: string;
+  values?: Partial<Record<MetaKpiMetricKey, number>>;
+  raw?: Record<string, unknown>;
+}> {
+  const { cfg } = params;
+  const token = cfg.accessToken.trim();
+  const postId = params.postId.trim().replace(/^https?:\/\/[^/]+\//i, "");
+  if (!token) {
+    return { ok: false, detail: "請先在控制設定填入 Meta Access Token" };
+  }
+  if (!postId) {
+    return { ok: false, detail: "缺少貼文 ID" };
+  }
+
+  try {
+    const base = await graphGet(
+      cfg,
+      token,
+      `/${encodeURIComponent(postId)}`,
+      "id,shares,reactions.summary(true),comments.summary(true)",
+    );
+
+    let insightData: unknown[] = [];
+    try {
+      const insightRaw = await graphGet(
+        cfg,
+        token,
+        `/${encodeURIComponent(postId)}/insights?metric=post_impressions,post_impressions_unique,post_video_views,post_clicks`,
+      );
+      insightData = Array.isArray(insightRaw.data) ? insightRaw.data : [];
+    } catch {
+      insightData = [];
+    }
+
+    const shares = toNumber(asRecord(base.shares)?.count);
+    const likes = toNumber(asRecord(asRecord(base.reactions)?.summary)?.total_count);
+    const comments = toNumber(asRecord(asRecord(base.comments)?.summary)?.total_count);
+    const allClicks = readInsightValue(insightData, "post_clicks");
+    const impressions = readInsightValue(insightData, "post_impressions");
+    const reach = readInsightValue(insightData, "post_impressions_unique");
+    const videoViews = readInsightValue(insightData, "post_video_views");
+
+    const values: Partial<Record<MetaKpiMetricKey, number>> = {
+      likes,
+      comments,
+      shares,
+      all_clicks: allClicks,
+      interactions_total: likes + comments + shares + allClicks,
+      impressions,
+      reach,
+      video_3s_views: videoViews,
+      thruplays: videoViews,
+    };
+
+    return {
+      ok: true,
+      values,
+      raw: {
+        base,
+        insights: insightData,
+      },
+    };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "讀取貼文指標失敗";
+    return { ok: false, detail: msg };
+  }
+}
+
+export async function updateMetaAdDelivery(params: {
+  cfg: MetaConfigV1;
+  adId: string;
+  status: "PAUSED" | "ACTIVE";
+}): Promise<{ ok: boolean; statusText?: string; detail?: string; raw?: Record<string, unknown> }> {
+  const { cfg, adId, status } = params;
+  const token = cfg.accessToken.trim();
+  if (!token) {
+    return { ok: false, detail: "請先在控制設定填入 Meta Access Token" };
+  }
+
+  try {
+    await graphPost(cfg, token, `/${encodeURIComponent(adId)}`, { status });
+    const raw = await graphGet(cfg, token, `/${encodeURIComponent(adId)}`, "id,name,status,effective_status,updated_time");
+    const statusText = String(raw.effective_status ?? raw.status ?? status);
+    return { ok: true, statusText, raw };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "更新投放狀態失敗";
+    return { ok: false, detail: msg };
+  }
+}

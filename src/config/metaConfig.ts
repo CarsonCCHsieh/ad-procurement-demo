@@ -1,4 +1,4 @@
-export type MetaRuntimeMode = "simulate" | "live";
+export type MetaRuntimeMode = "live";
 
 export type MetaConfigV1 = {
   version: 1;
@@ -23,7 +23,7 @@ export const DEFAULT_META_CONFIG: MetaConfigV1 = {
   version: 1,
   updatedAt: isoNow(),
   apiVersion: "v23.0",
-  mode: "simulate",
+  mode: "live",
   accessToken: "",
   adAccountId: "",
   pageId: "",
@@ -37,12 +37,11 @@ function normalize(raw: unknown): MetaConfigV1 | null {
   const r = raw as Partial<MetaConfigV1>;
   if (r.version !== 1) return null;
   if (typeof r.apiVersion !== "string") return null;
-  if (r.mode !== "simulate" && r.mode !== "live") return null;
   return {
     version: 1,
     updatedAt: typeof r.updatedAt === "string" ? r.updatedAt : isoNow(),
     apiVersion: r.apiVersion.trim() || "v23.0",
-    mode: r.mode,
+    mode: "live",
     accessToken: typeof r.accessToken === "string" ? r.accessToken.trim() : "",
     adAccountId: typeof r.adAccountId === "string" ? r.adAccountId.trim() : "",
     pageId: typeof r.pageId === "string" ? r.pageId.trim() : "",

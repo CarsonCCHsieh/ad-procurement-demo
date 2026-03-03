@@ -12,95 +12,108 @@ export function MetaSettingsCard(props: {
   const [showToken, setShowToken] = useState(false);
 
   const save = () => {
-    saveMetaConfig(cfg);
+    // Meta orders are always live mode now.
+    saveMetaConfig({ ...cfg, mode: "live" });
     setCfg(getMetaConfig());
     const t = new Date().toLocaleTimeString("zh-TW", { hour12: false });
-    onNotice("success", `Meta 設定已儲存（${t}）。`, 3200);
+    onNotice("success", `Meta settings saved (${t})`, 3200);
   };
 
   const reset = () => {
     resetMetaConfig();
     setCfg(getMetaConfig());
-    onNotice("info", "Meta 設定已重設為預設值。", 3200);
+    onNotice("info", "Meta settings reset to default", 3200);
   };
 
-  const isLiveReady = cfg.mode === "live" && !!cfg.accessToken && !!cfg.adAccountId;
+  const isReady = !!cfg.accessToken && !!cfg.adAccountId;
 
   return (
     <CollapsibleCard
       accent="blue"
-      title="Meta 官方投放設定"
-      desc="設定 Meta 投放帳號與權限資訊。"
+      title="Meta Official Ads Settings"
+      desc="Configure Meta account and access credentials for live campaign creation."
       tag="Meta"
       storageKey="sec:meta-settings"
       defaultOpen={false}
     >
-      <div className="row cols2">
+      <div className="row">
         <div className="field">
-          <div className="label">執行模式</div>
-          <select value={cfg.mode} onChange={(e) => setCfg((s) => ({ ...s, mode: e.target.value as "simulate" | "live" }))}>
-            <option value="simulate">模擬模式</option>
-            <option value="live">正式模式</option>
-          </select>
-        </div>
-        <div className="field">
-          <div className="label">Graph API 版本</div>
-          <input value={cfg.apiVersion} onChange={(e) => setCfg((s) => ({ ...s, apiVersion: e.target.value.trim() }))} placeholder="v23.0" />
+          <div className="label">Graph API Version</div>
+          <input
+            value={cfg.apiVersion}
+            onChange={(e) => setCfg((s) => ({ ...s, apiVersion: e.target.value.trim() }))}
+            placeholder="v23.0"
+          />
         </div>
       </div>
 
       <div className="row cols2">
         <div className="field">
-          <div className="label">廣告帳號 ID</div>
-          <input value={cfg.adAccountId} onChange={(e) => setCfg((s) => ({ ...s, adAccountId: e.target.value.trim() }))} placeholder="例如 1234567890" />
+          <div className="label">Ad Account ID</div>
+          <input
+            value={cfg.adAccountId}
+            onChange={(e) => setCfg((s) => ({ ...s, adAccountId: e.target.value.trim() }))}
+            placeholder="e.g. 1234567890"
+          />
         </div>
         <div className="field">
-          <div className="label">粉專 Page ID</div>
-          <input value={cfg.pageId} onChange={(e) => setCfg((s) => ({ ...s, pageId: e.target.value.trim() }))} placeholder="例如 1122334455" />
+          <div className="label">Facebook Page ID</div>
+          <input
+            value={cfg.pageId}
+            onChange={(e) => setCfg((s) => ({ ...s, pageId: e.target.value.trim() }))}
+            placeholder="e.g. 1122334455"
+          />
         </div>
       </div>
 
       <div className="row cols2">
         <div className="field">
           <div className="label">Instagram Actor ID</div>
-          <input value={cfg.instagramActorId} onChange={(e) => setCfg((s) => ({ ...s, instagramActorId: e.target.value.trim() }))} placeholder="例如 9988776655" />
+          <input
+            value={cfg.instagramActorId}
+            onChange={(e) => setCfg((s) => ({ ...s, instagramActorId: e.target.value.trim() }))}
+            placeholder="e.g. 9988776655"
+          />
         </div>
         <div className="field">
-          <div className="label">幣別 / 時區</div>
+          <div className="label">Currency / Timezone</div>
           <div className="row cols2">
             <input value="TWD" readOnly />
-            <input value={cfg.timezone} onChange={(e) => setCfg((s) => ({ ...s, timezone: e.target.value }))} placeholder="Asia/Taipei" />
+            <input
+              value={cfg.timezone}
+              onChange={(e) => setCfg((s) => ({ ...s, timezone: e.target.value }))}
+              placeholder="Asia/Taipei"
+            />
           </div>
-          <div className="hint">幣別固定為 TWD；預算模式目前只使用日預算（daily budget）。</div>
+          <div className="hint">Currency is fixed to TWD. Budget type is daily budget.</div>
         </div>
       </div>
 
       <div className="field">
-        <div className="label">Token</div>
+        <div className="label">Access Token</div>
         <input
           type={showToken ? "text" : "password"}
           value={cfg.accessToken}
           onChange={(e) => setCfg((s) => ({ ...s, accessToken: e.target.value.trim() }))}
-          placeholder="貼上 Meta System User / Long-lived token"
+          placeholder="Paste Meta system user token"
         />
         <div className="actions inline">
           <button className="btn sm" type="button" onClick={() => setShowToken((x) => !x)}>
-            {showToken ? "隱藏 Token" : "顯示 Token"}
+            {showToken ? "Hide Token" : "Show Token"}
           </button>
-          <span className="hint">{isLiveReady ? "設定完整" : "請先完成帳號與 Token"}</span>
+          <span className="hint">{isReady ? "Ready" : "Please fill Ad Account ID and Token"}</span>
         </div>
       </div>
 
       <div className="sep" />
       <div className="actions inline">
         <button className="btn" type="button" onClick={reset}>
-          重設 Meta 設定
+          Reset Meta Settings
         </button>
         <button className="btn primary" type="button" onClick={save}>
-          儲存 Meta 設定
+          Save Meta Settings
         </button>
       </div>
     </CollapsibleCard>
   );
 }
-

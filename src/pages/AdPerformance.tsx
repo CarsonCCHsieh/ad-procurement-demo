@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { PRICING } from "../lib/pricing";
@@ -6,11 +6,11 @@ import { getConfig, getVendorLabel, type VendorKey } from "../config/appConfig";
 import { findServiceName } from "../config/serviceCatalog";
 import { getVendorKey } from "../config/vendorKeys";
 import { normalizeStatusResponse, postSmmPanel, statusParamFor } from "../lib/vendorApi";
-import { clearOrders, listOrders, updateOrder } from "../lib/ordersStore";
+import { clearOrders, listOrders, updateOrder, type VendorSplitExec } from "../lib/ordersStore";
 import { clearMetaOrders, listMetaOrders, updateMetaOrder, type MetaOrder } from "../lib/metaOrdersStore";
 import { getMetaConfig } from "../config/metaConfig";
-import { fetchMetaAdSnapshot } from "../lib/metaGraphApi";
-import { META_AD_GOALS } from "../lib/metaGoals";
+import { fetchMetaAdSnapshot, fetchMetaPostMetrics, updateMetaAdDelivery } from "../lib/metaGraphApi";
+import { getGoalPrimaryMetricKey, getGoalPrimaryMetricLabel, META_AD_GOALS, type MetaKpiMetricKey } from "../lib/metaGoals";
 
 function mapMetaStatus(s: string): MetaOrder["status"] {
   const v = s.toUpperCase();
@@ -20,12 +20,46 @@ function mapMetaStatus(s: string): MetaOrder["status"] {
   return "submitted";
 }
 
+const VENDOR_TERMINAL_STATUS = [
+  "complete",
+  "completed",
+  "done",
+  "success",
+  "successful",
+  "partial",
+  "cancel",
+  "canceled",
+  "cancelled",
+  "refund",
+  "refunded",
+  "fail",
+  "failed",
+  "error",
+];
+
+function isVendorSplitDone(split: VendorSplitExec): boolean {
+  const status = String(split.vendorStatus ?? "").trim().toLowerCase();
+  if (status && VENDOR_TERMINAL_STATUS.some((k) => status.includes(k))) return true;
+  if (typeof split.remains === "number" && split.remains <= 0) return true;
+  return false;
+}
+
+const META_AUTO_CHECK_INTERVAL_MS = 5 * 60 * 1000;
+
+function metricValueFromPerformance(row: MetaOrder, key: MetaKpiMetricKey): number | null {
+  const hit = row.performance?.metrics?.find((m) => m.key === key);
+  return typeof hit?.value === "number" ? hit.value : null;
+}
+
 export function AdPerformancePage() {
   const nav = useNavigate();
   const { user, signOut } = useAuth();
   const [refresh, setRefresh] = useState(0);
   const [msg, setMsg] = useState<string | null>(null);
   const [syncing, setSyncing] = useState<Record<string, boolean>>({});
+  const [vendorRefreshing, setVendorRefreshing] = useState(false);
+  const [metaAutoEnabled, setMetaAutoEnabled] = useState(true);
+  const [metaAutoRunning, setMetaAutoRunning] = useState(false);
 
   const orders = useMemo(() => {
     void refresh;
@@ -41,34 +75,38 @@ export function AdPerformancePage() {
 
   const setSyncFlag = (k: string, v: boolean) => setSyncing((s) => ({ ...s, [k]: v }));
 
-  const syncVendor = async (vendor: VendorKey) => {
+  const syncVendor = async (
+    vendor: VendorKey,
+    options?: { silent?: boolean },
+  ): Promise<{ syncedCount: number; skipped: boolean; error?: string }> => {
     const vendorCfg = cfg.vendors.find((v) => v.key === vendor);
     if (!vendorCfg || !vendorCfg.enabled) {
-      setMsg(`${getVendorLabel(vendor)} 已停用`);
-      setTimeout(() => setMsg(null), 2500);
-      return;
+      return { syncedCount: 0, skipped: true };
     }
 
     const key = getVendorKey(vendor);
     if (!key) {
-      setMsg(`缺少 ${getVendorLabel(vendor)} API 金鑰`);
-      setTimeout(() => setMsg(null), 3000);
-      return;
+      const error = `缺少 ${getVendorLabel(vendor)} API 金鑰`;
+      if (!options?.silent) {
+        setMsg(error);
+        setTimeout(() => setMsg(null), 3000);
+      }
+      return { syncedCount: 0, skipped: false, error };
     }
 
     const ids: number[] = [];
     for (const o of orders) {
       for (const ln of o.lines) {
         for (const sp of ln.splits) {
-          if (sp.vendor === vendor && sp.vendorOrderId) ids.push(sp.vendorOrderId);
+          if (sp.vendor !== vendor || !sp.vendorOrderId) continue;
+          if (isVendorSplitDone(sp)) continue;
+          ids.push(sp.vendorOrderId);
         }
       }
     }
     const uniq = Array.from(new Set(ids)).filter((n) => Number.isFinite(n) && n > 0);
     if (uniq.length === 0) {
-      setMsg(`${getVendorLabel(vendor)} 尚無可同步訂單`);
-      setTimeout(() => setMsg(null), 2500);
-      return;
+      return { syncedCount: 0, skipped: true };
     }
 
     const syncKey = `sync:${vendor}`;
@@ -90,6 +128,7 @@ export function AdPerformancePage() {
             ...ln,
             splits: ln.splits.map((sp) => {
               if (sp.vendor !== vendor || !sp.vendorOrderId) return sp;
+              if (isVendorSplitDone(sp)) return sp;
               const st = mapped[sp.vendorOrderId];
               if (!st) return { ...sp, lastSyncAt: new Date().toISOString(), error: "No status" };
               return {
@@ -107,15 +146,56 @@ export function AdPerformancePage() {
         }));
       }
 
-      setMsg(`已同步 ${getVendorLabel(vendor)}：${uniq.length.toLocaleString()} 筆`);
-      setTimeout(() => setMsg(null), 2500);
-      setRefresh((x) => x + 1);
+      if (!options?.silent) {
+        setMsg(`已同步 ${getVendorLabel(vendor)}：${uniq.length.toLocaleString()} 筆`);
+        setTimeout(() => setMsg(null), 2500);
+        setRefresh((x) => x + 1);
+      }
+      return { syncedCount: uniq.length, skipped: false };
     } catch (e) {
       const m = e instanceof Error ? e.message : "未知錯誤";
-      setMsg(`同步失敗：${m}`);
-      setTimeout(() => setMsg(null), 3500);
+      if (!options?.silent) {
+        setMsg(`同步失敗：${m}`);
+        setTimeout(() => setMsg(null), 3500);
+      }
+      return { syncedCount: 0, skipped: false, error: m };
     } finally {
       setSyncFlag(syncKey, false);
+    }
+  };
+
+  const refreshVendorTracking = async () => {
+    if (vendorRefreshing) return;
+    setVendorRefreshing(true);
+    try {
+      const vendors: VendorKey[] = ["smmraja", "urpanel", "justanotherpanel"];
+      let syncedCount = 0;
+      const errors: string[] = [];
+
+      for (const vendor of vendors) {
+        // eslint-disable-next-line no-await-in-loop
+        const result = await syncVendor(vendor, { silent: true });
+        syncedCount += result.syncedCount;
+        if (result.error) errors.push(`${getVendorLabel(vendor)}: ${result.error}`);
+      }
+
+      setRefresh((x) => x + 1);
+
+      if (errors.length > 0) {
+        setMsg(`同步完成，但有錯誤：${errors.join(" / ")}`);
+        setTimeout(() => setMsg(null), 4000);
+        return;
+      }
+      if (syncedCount === 0) {
+        setMsg("目前沒有需要追蹤的廠商進行中案件。");
+        setTimeout(() => setMsg(null), 2500);
+        return;
+      }
+
+      setMsg(`已同步 ${syncedCount.toLocaleString()} 筆廠商進行中案件。`);
+      setTimeout(() => setMsg(null), 2500);
+    } finally {
+      setVendorRefreshing(false);
     }
   };
 
@@ -135,32 +215,136 @@ export function AdPerformancePage() {
     setRefresh((x) => x + 1);
   };
 
-  const syncMetaOne = async (row: MetaOrder) => {
+  const syncMetaOne = async (
+    row: MetaOrder,
+    options?: { silent?: boolean; fromAutoLoop?: boolean },
+  ): Promise<{ ok: boolean; pausedByTarget?: boolean }> => {
     const adId = row.submitResult?.adId;
     if (!adId) {
-      setMsg("此筆缺少 ad_id");
-      setTimeout(() => setMsg(null), 2500);
-      return;
+      if (!options?.silent) {
+        setMsg("此筆缺少 ad_id");
+        setTimeout(() => setMsg(null), 2500);
+      }
+      return { ok: false };
     }
     const syncKey = `meta:${row.id}`;
     setSyncFlag(syncKey, true);
     try {
       const result = await fetchMetaAdSnapshot({ cfg: metaCfg, adId, goal: row.goal });
       if (!result.ok) {
-        updateMetaOrder(row.id, (r) => ({ ...r, error: result.detail ?? "同步失敗" }));
-        setMsg(`Meta 同步失敗：${result.detail ?? "未知錯誤"}`);
+        updateMetaOrder(row.id, (r) => ({ ...r, error: result.detail ?? "同步失敗", targetLastCheckedAt: new Date().toISOString() }));
+        if (!options?.silent) {
+          setMsg(`Meta 同步失敗：${result.detail ?? "未知錯誤"}`);
+          setTimeout(() => setMsg(null), 3500);
+        }
+        return { ok: false };
+      }
+      const statusText = result.statusText ?? "UNKNOWN";
+      const metricKey = row.targetMetricKey ?? getGoalPrimaryMetricKey(row.goal);
+      const target = row.targetValue ?? 0;
+      let targetCurrent = metricValueFromPerformance({ ...row, performance: result.performance }, metricKey);
+      let postError = "";
+
+      if (row.trackingPostId) {
+        const postMetrics = await fetchMetaPostMetrics({ cfg: metaCfg, postId: row.trackingPostId });
+        if (postMetrics.ok) {
+          const value = postMetrics.values?.[metricKey];
+          if (typeof value === "number") targetCurrent = value;
+        } else {
+          postError = postMetrics.detail ?? "";
+        }
+      }
+
+      const nowIso = new Date().toISOString();
+      let nextStatus = mapMetaStatus(statusText);
+      let nextApiStatus = statusText;
+      let pausedByTarget = false;
+      let reachedAt = row.targetReachedAt;
+
+      const shouldCheckTarget = !!row.autoStopByTarget && target > 0 && targetCurrent != null;
+      if (shouldCheckTarget && targetCurrent >= target) {
+        const pauseResult = await updateMetaAdDelivery({ cfg: metaCfg, adId, status: "PAUSED" });
+        if (pauseResult.ok) {
+          pausedByTarget = true;
+          nextStatus = "paused";
+          nextApiStatus = pauseResult.statusText ?? "PAUSED";
+          reachedAt = nowIso;
+        } else if (!postError) {
+          postError = pauseResult.detail ?? "達標停投失敗";
+        }
+      } else if (row.targetReachedAt) {
+        reachedAt = undefined;
+      }
+
+      updateMetaOrder(row.id, (r) => ({
+        ...r,
+        status: nextStatus,
+        apiStatusText: nextApiStatus,
+        performance: result.performance,
+        targetMetricKey: metricKey,
+        targetCurrentValue: targetCurrent ?? undefined,
+        targetLastCheckedAt: nowIso,
+        targetReachedAt: reachedAt,
+        error: postError,
+      }));
+      if (!options?.silent) {
+        setMsg(pausedByTarget ? "已達目標，自動暫停該筆 Meta 投放。" : `Meta 已同步：${adId}`);
+        setTimeout(() => setMsg(null), 2200);
+      }
+      if (!options?.fromAutoLoop) setRefresh((x) => x + 1);
+      return { ok: true, pausedByTarget };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "同步失敗";
+      updateMetaOrder(row.id, (r) => ({
+        ...r,
+        error: msg,
+        targetLastCheckedAt: new Date().toISOString(),
+      }));
+      if (!options?.silent) {
+        setMsg(`Meta 同步失敗：${msg}`);
+        setTimeout(() => setMsg(null), 3500);
+      }
+      return { ok: false };
+    } finally {
+      setSyncFlag(syncKey, false);
+    }
+  };
+
+  const syncAllMeta = async () => {
+    const activeRows = metaRows.filter((row) => {
+      if (!row.submitResult?.adId) return false;
+      return row.status === "running" || row.status === "submitted" || row.status === "paused";
+    });
+    for (const row of activeRows) {
+      // eslint-disable-next-line no-await-in-loop
+      await syncMetaOne(row);
+    }
+  };
+
+  const updateMetaDeliveryStatus = async (row: MetaOrder, nextStatus: "PAUSED" | "ACTIVE") => {
+    const adId = row.submitResult?.adId;
+    if (!adId) {
+      setMsg("此筆缺少 ad_id，無法切換狀態。");
+      setTimeout(() => setMsg(null), 2500);
+      return;
+    }
+
+    const syncKey = `meta:${row.id}`;
+    setSyncFlag(syncKey, true);
+    try {
+      const result = await updateMetaAdDelivery({ cfg: metaCfg, adId, status: nextStatus });
+      if (!result.ok) {
+        setMsg(`Meta 狀態更新失敗：${result.detail ?? "未知錯誤"}`);
         setTimeout(() => setMsg(null), 3500);
         return;
       }
-      const statusText = result.statusText ?? "UNKNOWN";
       updateMetaOrder(row.id, (r) => ({
         ...r,
-        status: mapMetaStatus(statusText),
-        apiStatusText: statusText,
-        performance: result.performance,
+        status: mapMetaStatus(result.statusText ?? nextStatus),
+        apiStatusText: result.statusText ?? nextStatus,
         error: "",
       }));
-      setMsg(`Meta 已同步：${adId}`);
+      setMsg(nextStatus === "PAUSED" ? "已暫停 Meta 投放。" : "已重新啟用 Meta 投放。");
       setTimeout(() => setMsg(null), 2200);
       setRefresh((x) => x + 1);
     } finally {
@@ -168,12 +352,43 @@ export function AdPerformancePage() {
     }
   };
 
-  const syncAllMeta = async () => {
-    for (const row of metaRows) {
-      // eslint-disable-next-line no-await-in-loop
-      await syncMetaOne(row);
-    }
-  };
+  useEffect(() => {
+    if (!metaAutoEnabled || metaAutoRunning) return;
+
+    const tick = async () => {
+      if (!metaAutoEnabled || metaAutoRunning) return;
+      const candidates = listMetaOrders().filter((row) => {
+        if (!row.submitResult?.adId) return false;
+        if (!(row.status === "running" || row.status === "submitted")) return false;
+        return !!row.autoStopByTarget && (row.targetValue ?? 0) > 0 && !!row.trackingPostId;
+      });
+      if (candidates.length === 0) return;
+
+      setMetaAutoRunning(true);
+      try {
+        let pausedCount = 0;
+        for (const row of candidates) {
+          // eslint-disable-next-line no-await-in-loop
+          const result = await syncMetaOne(row, { silent: true, fromAutoLoop: true });
+          if (result.pausedByTarget) pausedCount += 1;
+        }
+        if (pausedCount > 0) {
+          setMsg(`自動監控達標，已暫停 ${pausedCount} 筆 Meta 投放。`);
+          setTimeout(() => setMsg(null), 3000);
+        }
+        setRefresh((x) => x + 1);
+      } finally {
+        setMetaAutoRunning(false);
+      }
+    };
+
+    void tick();
+    const timer = window.setInterval(() => {
+      void tick();
+    }, META_AUTO_CHECK_INTERVAL_MS);
+
+    return () => window.clearInterval(timer);
+  }, [metaAutoEnabled, metaAutoRunning]);
 
   return (
     <div className="container">
@@ -223,14 +438,8 @@ export function AdPerformancePage() {
             <button className="btn" type="button" onClick={() => setRefresh((x) => x + 1)}>
               重新整理
             </button>
-            <button className="btn" type="button" onClick={() => syncVendor("smmraja")} disabled={!!syncing["sync:smmraja"]}>
-              同步 SMM Raja
-            </button>
-            <button className="btn" type="button" onClick={() => syncVendor("urpanel")} disabled={!!syncing["sync:urpanel"]}>
-              同步 Urpanel
-            </button>
-            <button className="btn" type="button" onClick={() => syncVendor("justanotherpanel")} disabled={!!syncing["sync:justanotherpanel"]}>
-              同步 JAP
+            <button className="btn" type="button" onClick={refreshVendorTracking} disabled={vendorRefreshing}>
+              {vendorRefreshing ? "同步中" : "同步執行中案件"}
             </button>
             <button
               className="btn danger"
@@ -339,6 +548,9 @@ export function AdPerformancePage() {
             <button className="btn" onClick={syncAllMeta}>
               全部同步
             </button>
+            <button className="btn" onClick={() => setMetaAutoEnabled((v) => !v)}>
+              {metaAutoEnabled ? "自動停投：開啟" : "自動停投：關閉"}
+            </button>
             <button
               className="btn danger"
               onClick={() => {
@@ -352,6 +564,11 @@ export function AdPerformancePage() {
 
           <div className="sep" />
 
+          <div className="hint" style={{ marginBottom: 8 }}>
+            目標停投每 5 分鐘檢查一次執行中案件，達標後自動暫停投放。
+            {metaAutoRunning ? "（檢查中）" : ""}
+          </div>
+
           {metaRows.length === 0 ? (
             <div className="hint">尚無 Meta 官方投廣紀錄。</div>
           ) : (
@@ -359,6 +576,10 @@ export function AdPerformancePage() {
               {metaRows.map((r) => {
                 const g = META_AD_GOALS[r.goal];
                 const syncKey = `meta:${r.id}`;
+                const adId = r.submitResult?.adId;
+                const canPause = !!adId && r.status !== "paused";
+                const canResume = !!adId && r.status === "paused";
+                const metricLabel = getGoalPrimaryMetricLabel(r.goal);
                 return (
                   <div className="item" key={r.id}>
                     <div className="item-hd">
@@ -380,10 +601,30 @@ export function AdPerformancePage() {
                         <input value={`${r.submitResult?.campaignId ?? "-"} / ${r.submitResult?.adsetId ?? "-"} / ${r.submitResult?.adId ?? "-"}`} readOnly />
                       </div>
                       <div className="field">
+                        <div className="label">追蹤貼文 ID</div>
+                        <input value={r.trackingPostId ?? "-"} readOnly />
+                      </div>
+                      <div className="field">
+                        <div className="label">目標進度</div>
+                        <input
+                          value={r.targetValue ? `${(r.targetCurrentValue ?? 0).toLocaleString("zh-TW")} / ${r.targetValue.toLocaleString("zh-TW")} ${metricLabel}` : "未設定"}
+                          readOnly
+                        />
+                      </div>
+                      <div className="field">
                         <div className="label">操作</div>
                         <div className="actions inline">
                           <button className="btn" onClick={() => syncMetaOne(r)} disabled={!!syncing[syncKey]}>
                             {syncing[syncKey] ? "同步中" : "同步"}
+                          </button>
+                          <button className="btn" onClick={() => updateMetaDeliveryStatus(r, "PAUSED")} disabled={!canPause || !!syncing[syncKey]}>
+                            暫停
+                          </button>
+                          <button className="btn" onClick={() => updateMetaDeliveryStatus(r, "ACTIVE")} disabled={!canResume || !!syncing[syncKey]}>
+                            重新啟用
+                          </button>
+                          <button className="btn" onClick={() => nav(`/meta-ads-orders?edit=${encodeURIComponent(r.id)}`)}>
+                            重新編輯
                           </button>
                         </div>
                       </div>
@@ -407,6 +648,16 @@ export function AdPerformancePage() {
                           ))}
                         </div>
                         {r.performance.updatedAt && <div className="hint" style={{ marginTop: 8 }}>{new Date(r.performance.updatedAt).toLocaleString("zh-TW")}</div>}
+                        {r.targetLastCheckedAt && (
+                          <div className="hint" style={{ marginTop: 6 }}>
+                            目標檢查時間：{new Date(r.targetLastCheckedAt).toLocaleString("zh-TW")}
+                          </div>
+                        )}
+                        {r.targetReachedAt && (
+                          <div className="hint" style={{ marginTop: 6, color: "rgba(16, 185, 129, 0.95)" }}>
+                            已達標並自動停投：{new Date(r.targetReachedAt).toLocaleString("zh-TW")}
+                          </div>
+                        )}
                       </>
                     ) : (
                       <div className="hint" style={{ marginTop: 8 }}>尚未同步 KPI</div>
