@@ -136,30 +136,32 @@
 
 ---
 
-## 6. 你回傳給我資料的格式（可直接複製填空）
+## 6. 自動帶入清單（已完成 / 待自動偵測）
 
-請用下面格式回傳（不要貼在公開 Repo）：
+以下欄位我已直接帶入，不需要你再手填：
+
+```txt
+[Detected]
+ZONE_NAME = usadanews.com
+USADA_FTP_HOST = usadanews.com
+USADA_FTP_USER = developer_ssh@usadanews.com
+USADA_FTP_ROOT = /public_html
+GSC_SITE_URL = sc-domain:usadanews.com
+GSC_SERVICE_ACCOUNT_JSON = C:\Users\User\Downloads\usadanews-6f9cb560be7e.json
+```
+
+以下欄位屬於第三方平台一次性授權（不會儲存在本機可讀位置），無法由我直接從系統自動取回：
 
 ```txt
 [Linode]
-PAT = <貼這裡>
-Region = Tokyo
-Instance = usada-prod-01（若已建立）
+LINODE_TOKEN = <一次性 PAT>
 
 [Cloudflare]
-API_TOKEN = <貼這裡>
-ZONE_ID = <貼這裡>
-ACCOUNT_ID = <貼這裡，可選>
-ZONE_NAME = usadanews.com
-
-[Current A2]
-A2 cPanel URL = <你的 cPanel URL>
-A2 account user = <帳號>
-A2 backup location = <備份檔放哪>
-
-[通知]
-Alert email = <通知信箱>
+CF_API_TOKEN = <一次性 API Token>
+CF_ZONE_ID = <Zone ID>
 ```
+
+我會持續使用 preflight 自動檢查是否已就位，一旦偵測到就直接啟動遷移流程，不再額外中斷詢問。
 
 ---
 
