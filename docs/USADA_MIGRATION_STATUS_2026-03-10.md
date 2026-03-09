@@ -22,6 +22,16 @@
    - `/`、`/vtuber/`、`/sitemap_index.xml` 皆返回 200
 6. Cloudflare 區域內已更新：
    - `A usadanews.com -> 172.105.219.46`
+7. Linode 生產化強化：
+   - 啟用 `ufw`（只開放 22/80/443）
+   - 啟用 `fail2ban`
+   - 啟用系統 cron 取代 WP 內建 cron
+   - cron 加入 `flock + timeout 180s`（避免卡死/重入）
+8. Linode 本機備份機制：
+   - 每日 03:20 自動備份 DB + `wp-content`
+   - DB 保留 7 份
+   - 大型 `wp-content` 備份保留 1 份（避免磁碟爆滿）
+   - 已清理遷移暫存檔，磁碟使用率已降回安全範圍
 
 ## 尚未完成（切流阻塞）
 1. 目前權威 NS 仍是 A2：
@@ -38,9 +48,13 @@
    - 首頁、`/vtuber/`、主要單頁
    - `sitemap_index.xml` 與 `vtuber-sitemap.xml`
    - 後台登入與 `vt-maint.php` 端點
+4. 可用自動監看腳本（本機）：
+   - `scripts/watch_dns_cutover.ps1`
+   - 會持續檢查：
+     - NS 是否改為 Cloudflare（`leia/rory.ns.cloudflare.com`）
+     - 切流標記 URL 是否回應新站內容
 
 ## 風險與觀察
 1. SQL dump 內有少量 transient 損壞語句（已跳過，不影響主功能）。
 2. Cloudflare Purge API 權限目前回傳 403（不影響 DNS 設定，但影響主動清快取）。
 3. 建議正式切流窗口選低流量時段，並保留 A2 回切方案 24 小時。
-
