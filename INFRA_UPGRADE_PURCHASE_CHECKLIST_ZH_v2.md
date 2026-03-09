@@ -48,10 +48,10 @@
 
 ## 2. 推薦給我的授權方式（最適合）
 
-結論：**都用 API Token（最小權限）**，不要給主帳密碼。
+結論：**優先用 API Token（最小權限）**，必要時可暫用 Global API Key。
 
 - Linode：Personal Access Token（PAT）
-- Cloudflare：API Token（Zone scoped）
+- Cloudflare：API Token（Zone scoped，優先）或 Global API Key（備援）
 
 優點：
 - 權限可控（只給必要範圍）
@@ -90,7 +90,7 @@
 
 ---
 
-## 4. Cloudflare API Token 建立步驟（詳細）
+## 4. Cloudflare API Token 建立步驟（詳細，優先）
 
 官方參考：
 - Create token：https://developers.cloudflare.com/fundamentals/api/get-started/create-token/
@@ -119,6 +119,11 @@
 - Cloudflare API Token（上述權限）
 - Cloudflare Zone ID（`usadanews.com` 的 Zone ID）
 - Cloudflare Account ID（可選，但建議給）
+
+備援（若 API Token 權限反覆異常）：
+- `CF_AUTH_EMAIL`（Cloudflare 登入信箱）
+- `CF_GLOBAL_API_KEY`（Global API Key）
+- preflight 已支援 Global API Key 模式，不需額外改腳本
 
 ---
 

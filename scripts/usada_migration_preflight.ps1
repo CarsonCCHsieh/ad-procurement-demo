@@ -72,7 +72,6 @@ Load-EnvFile ".env.migration.local"
 Step "Check required environment variables"
 $required = @(
     "LINODE_TOKEN",
-    "CF_API_TOKEN",
     "CF_ZONE_ID",
     "CF_ZONE_NAME"
 )
@@ -87,11 +86,30 @@ foreach ($k in $required) {
     }
 }
 
+# Cloudflare auth mode check (either API Token OR Global API Key + Email)
+$cfApiToken = Get-Env "CF_API_TOKEN"
+$cfAuthEmail = Get-Env "CF_AUTH_EMAIL"
+$cfGlobalApiKey = Get-Env "CF_GLOBAL_API_KEY"
+$hasCfToken = -not [string]::IsNullOrWhiteSpace($cfApiToken)
+$hasCfGlobal = (-not [string]::IsNullOrWhiteSpace($cfAuthEmail)) -and (-not [string]::IsNullOrWhiteSpace($cfGlobalApiKey))
+if ($hasCfToken) {
+    Ok "Cloudflare auth mode available: API Token"
+}
+if ($hasCfGlobal) {
+    Ok "Cloudflare auth mode available: Global API Key"
+}
+if (-not $hasCfToken -and -not $hasCfGlobal) {
+    Fail "Cloudflare auth missing. Provide either CF_API_TOKEN OR (CF_AUTH_EMAIL + CF_GLOBAL_API_KEY)"
+    $failed++
+}
+
 # Optional env vars for migration automation
 $optional = @(
     "USADA_FTP_HOST",
     "USADA_FTP_USER",
     "USADA_FTP_PASS",
+    "CF_AUTH_EMAIL",
+    "CF_GLOBAL_API_KEY",
     "USADA_A2_CPANEL_URL",
     "USADA_BACKUP_PATH"
 )
@@ -127,28 +145,52 @@ if (-not [string]::IsNullOrWhiteSpace($linodeToken)) {
     }
 }
 
-# 3) Cloudflare token validation
-$cfToken = Get-Env "CF_API_TOKEN"
-if (-not [string]::IsNullOrWhiteSpace($cfToken)) {
+# 3) Cloudflare auth + zone access validation (API Token preferred, fallback to Global API Key)
+$cfHeaders = $null
+$cfMode = ""
+
+if ($hasCfToken) {
     Step "Validate Cloudflare API token"
-    $headers = @{ Authorization = "Bearer $cfToken" }
+    $headers = @{ Authorization = "Bearer $cfApiToken" }
     $verify = Test-HttpJson -Url "https://api.cloudflare.com/client/v4/user/tokens/verify" -Headers $headers
-    if (-not $verify.ok) {
-        Fail "Cloudflare token verify failed: $($verify.err)"
-        $failed++
-    }
-    elseif (-not $verify.data.success) {
-        Fail "Cloudflare token verify response indicates failure"
-        $failed++
+    if ($verify.ok -and $verify.data.success) {
+        Ok "Cloudflare API token valid"
+        $cfHeaders = $headers
+        $cfMode = "token"
     }
     else {
-        Ok "Cloudflare token valid"
+        Warn "Cloudflare API token verify failed: $($verify.err)"
+        $warned++
     }
+}
 
+if (-not $cfHeaders -and $hasCfGlobal) {
+    Step "Validate Cloudflare Global API Key"
+    $headers = @{
+        "X-Auth-Email" = $cfAuthEmail
+        "X-Auth-Key"   = $cfGlobalApiKey
+    }
+    $user = Test-HttpJson -Url "https://api.cloudflare.com/client/v4/user" -Headers $headers
+    if ($user.ok -and $user.data.success) {
+        Ok "Cloudflare Global API Key valid"
+        $cfHeaders = $headers
+        $cfMode = "global"
+    }
+    else {
+        Fail "Cloudflare Global API Key verify failed: $($user.err)"
+        $failed++
+    }
+}
+
+if (-not $cfHeaders) {
+    Fail "No usable Cloudflare auth mode. Cannot continue zone validation."
+    $failed++
+}
+else {
     $zoneId = Get-Env "CF_ZONE_ID"
     if (-not [string]::IsNullOrWhiteSpace($zoneId)) {
-        Step "Check Cloudflare zone access"
-        $zone = Test-HttpJson -Url "https://api.cloudflare.com/client/v4/zones/$zoneId" -Headers $headers
+        Step "Check Cloudflare zone access (mode=$cfMode)"
+        $zone = Test-HttpJson -Url "https://api.cloudflare.com/client/v4/zones/$zoneId" -Headers $cfHeaders
         if (-not $zone.ok) {
             Fail "Cloudflare zone read failed: $($zone.err)"
             $failed++
