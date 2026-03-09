@@ -37,6 +37,9 @@
 10. 自動切流監看（本機）：
    - `scripts/watch_dns_cutover.ps1`
    - 監看 Cloudflare NS 是否生效，並檢查切流標記網址是否回應新站內容
+11. 切流後一鍵驗證（本機）：
+   - `scripts/post_cutover_verify.ps1`
+   - 會輸出核心網址、sitemap、header 與 NS 檢查報告到 `reports/`
 
 ## 尚未完成（切流阻塞）
 1. 目前權威 NS 仍是 A2：
@@ -54,9 +57,9 @@
    - `sitemap_index.xml`、`vtuber-sitemap.xml`
    - 後台登入與 `vt-maint.php` 端點
 4. 驗證 `reports/dns_cutover_watch_*.log` 出現 `CUTOVER_CONFIRMED`。
+5. 觸發 `scripts/post_cutover_verify.ps1` 生成切流後驗證報告。
 
 ## 風險與建議
 1. SQL dump 中有少量 transient 破損語句（已跳過，不影響主功能）。
 2. Cloudflare Purge API 權限目前回傳 403（不影響 DNS 設定，但影響主動清快取）。
 3. 建議切流窗口選低流量時段，並保留 A2 回切方案 24 小時。
-
