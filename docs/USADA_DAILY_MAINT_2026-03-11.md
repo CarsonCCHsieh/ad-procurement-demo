@@ -46,3 +46,50 @@
 ## 安全修正（本輪新增）
 - `run_maint_actions.py` 已修改：log 內的 `?key=` 參數自動遮罩為 `***`
 - 已同步清理既有 `maint_actions_*.log` 的 key 明文
+
+---
+
+## 第二輪（流量停滯改善：索引層 + CTR 層）
+執行時間（台灣）: 2026-03-11 01:30 ~ 01:57
+
+### 已執行
+1. server 維運 cycle 重跑（`VT_CYCLE_MAX_SECONDS=1500`）
+- `status_fix` 更新 30（第二迭代歸零）
+- `enrich_full_intro_raw` 更新 160
+- `sync_translation_content_raw` 更新 48
+- `http_health_scan bad_count=0`
+- `stats: VTubers=54,578`
+
+2. sitemap 資產上傳（補跑）
+- `upload_dynamic_sitemap_assets.py` 成功上傳：
+  - `sitemap.xml`
+  - `sitemap_index.xml`
+  - `vtuber-sitemap-index.php`
+  - `vtuber-sitemap-dynamic.php`
+
+3. GSC 查詢檔上傳（補跑）
+- `upload_gsc_queries.py` 成功上傳：
+  - `reports/gsc_queries_latest.json`
+  - 遠端位置：`/public_html/wp-content/uploads/vt-logs/gsc-queries.json`
+
+4. 低 CTR 第一輪強化（定向）
+- `build_gsc_low_ctr_targets.py`：
+  - `source_rows=4405`
+  - `opportunity_rows=27`
+  - `target_ids_count=25`
+- `enrich_moegirl_ids_raw`（target IDs）：
+  - `processed=25`
+  - `updated=1`
+  - `skipped=24`
+  - `errors=0`
+
+5. Google Sitemap 刷新檢查
+- `google_sitemap_refresh.py` 檢查通過：
+  - `sitemap_index.xml` / `sitemap.xml` 可讀、格式正確、`loc_count=40`
+  - `site_audit_raw: pass=27 fail=0`
+  - 使用 service account 提交 GSC 成功（HTTP 204）
+
+### 本輪程式修正（已提交）
+- `usadanews-code-snapshot/ops/run_maint_cycle.py`
+  - `run_proc` 增加敏感資訊遮罩（`--app-pass`/token/password 等）
+  - low-CTR 管線新增 fallback：即使缺 `VT_WP_USER/VT_WP_APP_PASS`，仍可使用既有 `gsc_low_ctr_targets.json` 執行定向 `enrich_moegirl_ids_raw`

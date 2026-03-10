@@ -120,6 +120,47 @@ def progress(msg: str) -> None:
 
 
 def run_proc(cmd: list[str], timeout_s: int = 300) -> str:
+    def _sanitized_cmd(parts: list[str]) -> str:
+        if not parts:
+            return ""
+        secret_flags = {
+            "--app-pass",
+            "--password",
+            "--pass",
+            "--token",
+            "--api-key",
+            "--secret",
+            "--key",
+        }
+        env_secrets = [
+            (os.environ.get("VT_WP_APP_PASS") or "").strip(),
+            (os.environ.get("VT_MAINT_KEY") or "").strip(),
+            (os.environ.get("USADA_FTP_PASS") or "").strip(),
+            (os.environ.get("CLOUDFLARE_API_TOKEN") or "").strip(),
+            (os.environ.get("LINODE_TOKEN") or "").strip(),
+        ]
+        env_secrets = [s for s in env_secrets if s]
+
+        out: list[str] = []
+        skip_next = False
+        for i, p in enumerate(parts):
+            if skip_next:
+                out.append("****")
+                skip_next = False
+                continue
+            if p in secret_flags:
+                out.append(p)
+                if i + 1 < len(parts):
+                    skip_next = True
+                continue
+            safe = p
+            for sec in env_secrets:
+                if sec and sec in safe:
+                    safe = safe.replace(sec, "****")
+            out.append(safe)
+        return " ".join(out)
+
+    safe_cmd = _sanitized_cmd(cmd)
     try:
         p = subprocess.run(
             cmd,
@@ -130,9 +171,9 @@ def run_proc(cmd: list[str], timeout_s: int = 300) -> str:
         )
         return (p.stdout or p.stderr or "").strip()
     except subprocess.TimeoutExpired:
-        return f"TIMEOUT {' '.join(cmd)} after {timeout_s}s"
+        return f"TIMEOUT {safe_cmd} after {timeout_s}s"
     except Exception as e:  # noqa: BLE001
-        return f"ERROR {' '.join(cmd)} {e}"
+        return f"ERROR {safe_cmd} {e}"
 
 
 def resolve_script(*candidates: str) -> str:
@@ -422,6 +463,7 @@ def main() -> int:
         wp_user = (os.environ.get("VT_WP_USER") or "").strip()
         wp_app_pass = (os.environ.get("VT_WP_APP_PASS") or "").strip()
         if cfg.get("run_low_ctr_enrich", True):
+            ids: list[str] = []
             if wp_user and wp_app_pass and can_run("low_ctr_pipeline", 180):
                 t0 = time.time()
                 progress("action build_gsc_low_ctr_targets start")
@@ -457,22 +499,6 @@ def main() -> int:
                 log_write(log, head_line(txt))
 
                 ids = read_target_ids_from_json("reports/gsc_low_ctr_targets.json", limit=50)
-                if ids and can_run("enrich_moegirl_ids_raw_low_ctr", 120):
-                    t0 = time.time()
-                    progress(f"action enrich_moegirl_ids_raw low_ctr start ids={len(ids)}")
-                    try:
-                        txt = fetch(
-                            "enrich_moegirl_ids_raw",
-                            timeout=budget_timeout(360, reserve_s=120, floor_s=90),
-                            extra={"ids": ",".join(ids), "force": 0, "min_len": 110},
-                        )
-                    except Exception as e:  # noqa: BLE001
-                        txt = f"ERROR enrich_moegirl_ids_raw {e}"
-                    progress(f"action enrich_moegirl_ids_raw low_ctr done: {head_line(txt)}")
-                    log_write(log, "\n" + "=" * 70)
-                    log_write(log, f"action=enrich_moegirl_ids_raw(low_ctr) seconds={time.time()-t0:.1f}")
-                    log_write(log, head_line(txt))
-
                 if ids and can_run("enrich_low_ctr_from_hololist", 120):
                     t0 = time.time()
                     progress("action enrich_low_ctr_from_hololist start")
@@ -500,22 +526,35 @@ def main() -> int:
                     log_write(log, "\n" + "=" * 70)
                     log_write(log, f"action=enrich_low_ctr_from_hololist seconds={time.time()-t0:.1f}")
                     log_write(log, head_line(txt))
-                elif not ids:
-                    progress("action enrich_low_ctr skip: no target ids")
-                    log_write(log, "\n" + "=" * 70)
-                    log_write(log, "action=enrich_low_ctr skip=no_target_ids")
-                else:
-                    progress("action enrich_low_ctr skip: budget")
-                    log_write(log, "\n" + "=" * 70)
-                    log_write(log, "action=enrich_low_ctr skip=budget")
             elif not (wp_user and wp_app_pass):
-                progress("action enrich_low_ctr skip: missing VT_WP_USER/VT_WP_APP_PASS")
+                ids = read_target_ids_from_json("reports/gsc_low_ctr_targets.json", limit=50)
+                progress("action enrich_low_ctr fallback: reuse existing target ids (missing WP auth)")
                 log_write(log, "\n" + "=" * 70)
-                log_write(log, "action=enrich_low_ctr skip=missing_wp_auth")
+                log_write(log, "action=enrich_low_ctr fallback=existing_target_ids")
             else:
                 progress("action enrich_low_ctr skip: budget")
                 log_write(log, "\n" + "=" * 70)
                 log_write(log, "action=enrich_low_ctr skip=budget")
+
+            if ids and can_run("enrich_moegirl_ids_raw_low_ctr", 120):
+                t0 = time.time()
+                progress(f"action enrich_moegirl_ids_raw low_ctr start ids={len(ids)}")
+                try:
+                    txt = fetch(
+                        "enrich_moegirl_ids_raw",
+                        timeout=budget_timeout(360, reserve_s=120, floor_s=90),
+                        extra={"ids": ",".join(ids), "force": 0, "min_len": 110},
+                    )
+                except Exception as e:  # noqa: BLE001
+                    txt = f"ERROR enrich_moegirl_ids_raw {e}"
+                progress(f"action enrich_moegirl_ids_raw low_ctr done: {head_line(txt)}")
+                log_write(log, "\n" + "=" * 70)
+                log_write(log, f"action=enrich_moegirl_ids_raw(low_ctr) seconds={time.time()-t0:.1f}")
+                log_write(log, head_line(txt))
+            elif not ids:
+                progress("action enrich_low_ctr skip: no target ids")
+                log_write(log, "\n" + "=" * 70)
+                log_write(log, "action=enrich_low_ctr skip=no_target_ids")
         else:
             progress("action enrich_low_ctr skipped by profile")
             log_write(log, "\n" + "=" * 70)
