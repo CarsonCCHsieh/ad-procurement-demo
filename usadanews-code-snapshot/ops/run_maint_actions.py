@@ -57,6 +57,11 @@ def build_url(base, key, action, extra_qs=None):
         qs.extend(extra_qs)
     return f'{base}?{urllib.parse.urlencode(qs)}'
 
+def redact_url_secret(url: str) -> str:
+    if not url:
+        return ''
+    return re.sub(r'([?&]key=)[^&]+', r'\1***', url)
+
 
 def main():
     key = read_key()
@@ -108,19 +113,20 @@ def main():
         log.write(f'utc={datetime.now(timezone.utc).isoformat()}\n')
         for act, to, extra_qs in actions:
             url = build_url(base, key, act, extra_qs)
+            safe_url = redact_url_secret(url)
             t0 = time.time()
             try:
                 body = fetch(url, timeout=to)
                 dt = time.time() - t0
                 txt = body.decode('utf-8-sig', 'ignore')
                 log.write('\n' + '=' * 60 + '\n')
-                log.write(f'action={act} seconds={dt:.1f} url={url}\n')
+                log.write(f'action={act} seconds={dt:.1f} url={safe_url}\n')
                 log.write(txt.strip() + '\n')
                 print('ok', act, f'{dt:.1f}s')
             except Exception as e:
                 dt = time.time() - t0
                 log.write('\n' + '=' * 60 + '\n')
-                log.write(f'action={act} seconds={dt:.1f} url={url} ERROR {e}\n')
+                log.write(f'action={act} seconds={dt:.1f} url={safe_url} ERROR {e}\n')
                 print('err', act, e)
 
     print('log', log_path)
