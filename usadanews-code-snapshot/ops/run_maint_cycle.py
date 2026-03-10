@@ -50,7 +50,9 @@ def load_cycle_config() -> dict:
         "run_site_audit": profile == "local",
         "run_http_health_scan": True,
         "run_gsc_sync": True,
-        "run_low_ctr_enrich": profile == "local",
+        # Run low-CTR enrichment on both local/server.
+        # Server mode is still bounded by max_seconds and stricter time budget.
+        "run_low_ctr_enrich": True,
     }
 
     # Optional overrides (for CI/server tuning without code change).
@@ -445,7 +447,7 @@ def main() -> int:
                         "--max-ctr",
                         "0.05",
                         "--max-pages",
-                        "40",
+                        str(40 if cfg["profile"] == "local" else 20),
                     ],
                     timeout_s=budget_timeout(240, reserve_s=150, floor_s=60),
                 )

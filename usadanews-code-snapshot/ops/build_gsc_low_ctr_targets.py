@@ -8,6 +8,13 @@ import requests
 
 
 BASE = "https://usadanews.com"
+NOISE_QUERY_PATTERNS = [
+    # Common low-value/garbage patterns observed in GSC exports.
+    r"\byoutube\s*[-_:/]?\s*\d{4,}\b",
+    r"\byoutuber\s*[-_:/]?\s*\d{4,}\b",
+    r"\byt\s*[-_:/]?\s*\d{4,}\b",
+    r"\bchannel\s*[-_:/]?\s*uc[a-z0-9_-]{6,}\b",
+]
 
 
 def load_gsc_rows(path: Path):
@@ -47,9 +54,16 @@ def is_noise_query(q: str):
     ql = (q or "").strip().lower()
     if not ql:
         return True
-    if re.search(r"\byoutube\s*\d{5,}\b", ql):
-        return True
+    ql = re.sub(r"\s+", " ", ql)
+    for pat in NOISE_QUERY_PATTERNS:
+        if re.search(pat, ql):
+            return True
     if re.fullmatch(r"[\d\W_]+", ql):
+        return True
+    # Very digit-heavy one-token queries are usually noisy for our use case.
+    digit_count = len(re.findall(r"\d", ql))
+    token_count = len(re.findall(r"[a-z\u4e00-\u9fff]+", ql))
+    if digit_count >= 5 and token_count <= 1:
         return True
     return False
 
