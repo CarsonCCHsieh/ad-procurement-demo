@@ -1716,8 +1716,9 @@ if ($action === 'enrich_full_intro' || $action === 'enrich_full_intro_raw') {
         $batch   = isset($_GET['batch']) ? intval($_GET['batch']) : 40;
         $force   = isset($_GET['force']) ? intval($_GET['force']) : 0;
         $min_len = isset($_GET['min_len']) ? intval($_GET['min_len']) : 180;
-        $res = vt_maint_enrich_full_intro_run($batch, $force, $min_len);
-        vt_log("enrich_full_intro triggered via vt-maint.php batch=$batch force=$force min_len=$min_len");
+        $origin  = isset($_GET['origin']) ? sanitize_key((string) $_GET['origin']) : '';
+        $res = vt_maint_enrich_full_intro_run($batch, $force, $min_len, $origin);
+        vt_log("enrich_full_intro triggered via vt-maint.php batch=$batch force=$force min_len=$min_len origin=$origin");
         if ($action === 'enrich_full_intro_raw') {
             header('Content-Type: application/json; charset=utf-8');
             echo json_encode($res, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n";

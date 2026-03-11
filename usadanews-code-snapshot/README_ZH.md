@@ -21,8 +21,12 @@
   - `run_maint_cycle.py`, `run_maint_actions.py`
   - `run_sync_sheet*.py`, `run_avatar_*.py`, `run_site_audit.py`
   - `build_gsc_low_ctr_targets.py`, `update_latest_vtubers.py`（已改環境變數）
+  - `jpen_source_registry.json`, `probe_jpen_sources.py`（日英來源健康檢查與語系優先圖）
+  - `execute_jpen_intro_round.py`（日英優先完整介紹補齊實跑）
+  - `deploy_maint_plugin.py`（安全部署 vt-maint + runner，先自動備份再上傳）
 - `docs/`
   - `MAINTAIN_SYSTEM.md`（原始快照）
+  - `JP_EN_TO_MULTILINGUAL_PIPELINE_ZH.md`（日英優先到全語系內容流程）
 
 ## 快照去敏處理
 - `theme/vt-status.php`

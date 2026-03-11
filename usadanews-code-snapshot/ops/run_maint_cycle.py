@@ -5,6 +5,7 @@ import sys
 import time
 import urllib.parse
 import urllib.request
+import json
 from datetime import datetime, timezone
 
 
@@ -29,6 +30,10 @@ def load_cycle_config() -> dict:
         "status_fix_iters": 20 if profile == "local" else 6,
         "sync_translation_meta_iters": 3 if profile == "local" else 2,
         "sync_translation_meta_batch": 10 if profile == "local" else 6,
+        "sync_sheet_iters": 2 if profile == "local" else 1,
+        "sync_sheet_sources": 2 if profile == "local" else 1,
+        "sync_hololist_iters": 3 if profile == "local" else 1,
+        "sync_hololist_batch": 80 if profile == "local" else 60,
         "enrich_terms_iters": 30 if profile == "local" else 8,
         "fillthumbs_iters": 20 if profile == "local" else 8,
         "fill_metrics_iters": 12 if profile == "local" else 4,
@@ -50,6 +55,7 @@ def load_cycle_config() -> dict:
         "run_site_audit": profile == "local",
         "run_http_health_scan": True,
         "run_gsc_sync": True,
+        "run_jpen_source_probe": True,
         # Run low-CTR enrichment on both local/server.
         # Server mode is still bounded by max_seconds and stricter time budget.
         "run_low_ctr_enrich": True,
@@ -59,12 +65,17 @@ def load_cycle_config() -> dict:
     cfg["max_seconds"] = int_env("VT_CYCLE_MAX_SECONDS", cfg["max_seconds"])
     cfg["fillthumbs_iters"] = int_env("VT_CYCLE_FILLTHUMBS_ITERS", cfg["fillthumbs_iters"])
     cfg["fill_metrics_iters"] = int_env("VT_CYCLE_FILL_METRICS_ITERS", cfg["fill_metrics_iters"])
+    cfg["sync_sheet_iters"] = int_env("VT_CYCLE_SYNC_SHEET_ITERS", cfg["sync_sheet_iters"])
+    cfg["sync_sheet_sources"] = int_env("VT_CYCLE_SYNC_SHEET_SOURCES", cfg["sync_sheet_sources"])
+    cfg["sync_hololist_iters"] = int_env("VT_CYCLE_SYNC_HOLOLIST_ITERS", cfg["sync_hololist_iters"])
+    cfg["sync_hololist_batch"] = int_env("VT_CYCLE_SYNC_HOLOLIST_BATCH", cfg["sync_hololist_batch"])
     cfg["enrich_full_intro_iters"] = int_env("VT_CYCLE_ENRICH_FULL_INTRO_ITERS", cfg["enrich_full_intro_iters"])
     cfg["ensure_translations_iters"] = int_env("VT_CYCLE_ENSURE_TRANSLATIONS_ITERS", cfg["ensure_translations_iters"])
     cfg["sync_translation_content_iters"] = int_env("VT_CYCLE_SYNC_TRANSLATION_CONTENT_ITERS", cfg["sync_translation_content_iters"])
     cfg["run_site_audit"] = (os.environ.get("VT_CYCLE_RUN_SITE_AUDIT", "1" if cfg["run_site_audit"] else "0").strip() == "1")
     cfg["run_http_health_scan"] = (os.environ.get("VT_CYCLE_RUN_HEALTH_SCAN", "1" if cfg["run_http_health_scan"] else "0").strip() == "1")
     cfg["run_gsc_sync"] = (os.environ.get("VT_CYCLE_RUN_GSC_SYNC", "1" if cfg["run_gsc_sync"] else "0").strip() == "1")
+    cfg["run_jpen_source_probe"] = (os.environ.get("VT_CYCLE_RUN_JPEN_SOURCE_PROBE", "1" if cfg["run_jpen_source_probe"] else "0").strip() == "1")
     cfg["run_low_ctr_enrich"] = (os.environ.get("VT_CYCLE_RUN_LOW_CTR", "1" if cfg["run_low_ctr_enrich"] else "0").strip() == "1")
     return cfg
 
@@ -229,8 +240,6 @@ def contains_all(txt: str, needles: list[str]) -> bool:
 
 def read_target_ids_from_json(path: str, limit: int = 80) -> list[str]:
     try:
-        import json
-
         if not os.path.exists(path):
             return []
         with open(path, "r", encoding="utf-8", errors="ignore") as f:
@@ -247,6 +256,64 @@ def read_target_ids_from_json(path: str, limit: int = 80) -> list[str]:
         return out
     except Exception:
         return []
+
+
+def read_json_file(path: str) -> dict:
+    try:
+        if not os.path.exists(path):
+            return {}
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def jpen_source_rank(report: dict, lang: str, source_id: str) -> int | None:
+    if not report:
+        return None
+    rows = (report.get("language_plan") or {}).get(lang) or []
+    if not isinstance(rows, list):
+        return None
+    for idx, row in enumerate(rows):
+        if str((row or {}).get("id") or "") == source_id:
+            return idx
+    return None
+
+
+def compute_jpen_plan(report: dict, cfg: dict) -> dict:
+    hololist_rank_ja = jpen_source_rank(report, "ja", "hololist_category")
+    hololist_rank_en = jpen_source_rank(report, "en", "hololist_category")
+
+    boost = 0
+    if hololist_rank_ja is not None and hololist_rank_ja <= 2:
+        boost += 1
+    if hololist_rank_en is not None and hololist_rank_en <= 2:
+        boost += 1
+
+    sync_hololist_iters = max(1, int(cfg["sync_hololist_iters"]) + boost)
+    sync_hololist_iters = min(sync_hololist_iters, int(cfg["sync_hololist_iters"]) + 2)
+
+    intro_origins: list[str] = []
+    if hololist_rank_ja is not None or hololist_rank_en is not None:
+        intro_origins.append("hololist")
+    intro_origins.extend(["global_import", "tw_sheet", "all"])
+
+    deduped: list[str] = []
+    for x in intro_origins:
+        sx = str(x).strip().lower()
+        if not sx:
+            continue
+        if sx not in deduped:
+            deduped.append(sx)
+
+    return {
+        "sync_hololist_iters": sync_hololist_iters,
+        "sync_hololist_batch": int(cfg["sync_hololist_batch"]),
+        "intro_origin_plan": deduped or ["all"],
+        "hololist_rank_ja": hololist_rank_ja,
+        "hololist_rank_en": hololist_rank_en,
+    }
 
 
 def main() -> int:
@@ -326,6 +393,104 @@ def main() -> int:
             log_write(log, "\n" + "=" * 70)
             log_write(log, f"action=ensure_page_translations seconds={time.time()-t0:.1f}")
             log_write(log, head_line(txt))
+
+        jpen_report_path = os.path.join("reports", "jpen_source_health_latest.json")
+        if cfg.get("run_jpen_source_probe", True) and can_run("probe_jpen_sources_pre", 30):
+            t0 = time.time()
+            progress("action probe_jpen_sources(pre) start")
+            probe_script = resolve_script(
+                os.path.join(os.path.dirname(__file__), "probe_jpen_sources.py"),
+                "maintain/probe_jpen_sources.py",
+                "maintain/github_private_repo/tools/probe_jpen_sources.py",
+                "tools/probe_jpen_sources.py",
+            )
+            registry_path = resolve_script(
+                os.path.join(os.path.dirname(__file__), "jpen_source_registry.json"),
+                "maintain/jpen_source_registry.json",
+                "maintain/github_private_repo/tools/jpen_source_registry.json",
+                "tools/jpen_source_registry.json",
+            )
+            txt = run_proc(
+                [
+                    "python",
+                    probe_script,
+                    "--registry",
+                    registry_path,
+                    "--out-dir",
+                    "reports",
+                ],
+                timeout_s=120,
+            )
+            progress(f"action probe_jpen_sources(pre) done: {head_line(txt)}")
+            log_write(log, "\n" + "=" * 70)
+            log_write(log, f"action=probe_jpen_sources_pre seconds={time.time()-t0:.1f}")
+            log_write(log, head_line(txt))
+
+        jpen_report = read_json_file(jpen_report_path)
+        jpen_plan = compute_jpen_plan(jpen_report, cfg)
+        intro_origin_plan = list(jpen_plan.get("intro_origin_plan") or ["all"])
+        progress(
+            "jpen_plan "
+            + f"hololist_rank_ja={jpen_plan.get('hololist_rank_ja')} "
+            + f"hololist_rank_en={jpen_plan.get('hololist_rank_en')} "
+            + f"sync_hololist_iters={jpen_plan.get('sync_hololist_iters')} "
+            + f"intro_origins={','.join(intro_origin_plan)}"
+        )
+        log_write(log, "\n" + "=" * 70)
+        log_write(
+            log,
+            "jpen_plan "
+            + f"hololist_rank_ja={jpen_plan.get('hololist_rank_ja')} "
+            + f"hololist_rank_en={jpen_plan.get('hololist_rank_en')} "
+            + f"sync_hololist_iters={jpen_plan.get('sync_hololist_iters')} "
+            + f"intro_origins={','.join(intro_origin_plan)}",
+        )
+
+        # 0.2) Source sync foundation:
+        # - TW sheet (authoritative for Taiwan)
+        # - HoloList (JP/EN/global discovery)
+        for i in range(1, int(cfg["sync_sheet_iters"]) + 1):
+            if not can_run("sync_sheet_loop", 110):
+                break
+            t0 = time.time()
+            progress(f"action sync_sheet iter={i}/{cfg['sync_sheet_iters']} start")
+            try:
+                txt = fetch("sync_sheet", timeout=360, extra={"sources": int(cfg["sync_sheet_sources"])})
+            except Exception as e:  # noqa: BLE001
+                txt = f"ERROR sync_sheet {e}"
+            progress(f"action sync_sheet iter={i}/{cfg['sync_sheet_iters']} done: {head_line(txt)}")
+            log_write(log, "\n" + "=" * 70)
+            log_write(log, f"action=sync_sheet iter={i} seconds={time.time()-t0:.1f}")
+            log_write(log, head_line(txt))
+            if "locked" in (txt or "").lower():
+                break
+            time.sleep(0.6)
+
+        hololist_iters = int(jpen_plan.get("sync_hololist_iters") or cfg["sync_hololist_iters"])
+        hololist_batch = int(jpen_plan.get("sync_hololist_batch") or cfg["sync_hololist_batch"])
+        for i in range(1, hololist_iters + 1):
+            if not can_run("sync_hololist_loop", 110):
+                break
+            t0 = time.time()
+            progress(f"action sync_hololist_raw iter={i}/{hololist_iters} start")
+            try:
+                txt = fetch("sync_hololist_raw", timeout=360, extra={"batch": hololist_batch})
+            except Exception as e:  # noqa: BLE001
+                txt = f"ERROR sync_hololist_raw {e}"
+            updated = parse_named_count(txt, "updated")
+            processed = parse_named_count(txt, "processed")
+            progress(
+                f"action sync_hololist_raw iter={i}/{hololist_iters} done "
+                + f"processed={processed} updated={updated} msg={head_line(txt)}"
+            )
+            log_write(log, "\n" + "=" * 70)
+            log_write(log, f"action=sync_hololist_raw iter={i} seconds={time.time()-t0:.1f}")
+            log_write(log, head_line(txt))
+            if "locked" in (txt or "").lower():
+                break
+            if (processed == 0 or processed is None) and (updated == 0 or updated is None):
+                break
+            time.sleep(0.8)
 
         # 1) Normalize/cleanup terms (includes term renames + core slugs)
         if can_run("cleanup_terms", 60):
@@ -725,27 +890,58 @@ def main() -> int:
             log_write(log, head_line(txt))
             time.sleep(0.7)
 
-        # 3.55) Fill/upgrade full intro block content (post_content) for single VTuber pages.
-        # Keep this conservative: only empty/weak content unless force=1.
-        for i in range(1, int(cfg["enrich_full_intro_iters"]) + 1):
-            if not can_run("enrich_full_intro_loop", 90):
-                break
-            t0 = time.time()
-            progress(f"action enrich_full_intro_raw iter={i}/{cfg['enrich_full_intro_iters']} start")
-            try:
-                txt = fetch("enrich_full_intro_raw", timeout=240, extra={"batch": 40, "force": 0, "min_len": 180})
-            except Exception as e:  # noqa: BLE001
-                txt = f"ERROR enrich_full_intro_raw {e}"
-            upd = parse_updated_count(txt)
-            progress(
-                f"action enrich_full_intro_raw iter={i}/{cfg['enrich_full_intro_iters']} done updated={upd} msg={head_line(txt)}"
-            )
-            log_write(log, "\n" + "=" * 70)
-            log_write(log, f"action=enrich_full_intro_raw iter={i} seconds={time.time()-t0:.1f} updated={upd}")
-            log_write(log, head_line(txt))
-            if upd == 0:
-                break
-            time.sleep(0.7)
+        # 3.55) Fill/upgrade full intro block content (post_content) with JP/EN-first source plan.
+        # Order example: hololist -> global_import -> tw_sheet -> all
+        origin_supported = True
+        for origin in (intro_origin_plan or ["all"]):
+            origin = str(origin or "all").strip().lower()
+            if origin != "all" and not origin_supported:
+                continue
+            noop_streak = 0
+            for i in range(1, int(cfg["enrich_full_intro_iters"]) + 1):
+                if not can_run("enrich_full_intro_loop", 90):
+                    break
+                t0 = time.time()
+                progress(
+                    "action enrich_full_intro_raw "
+                    + f"origin={origin} iter={i}/{cfg['enrich_full_intro_iters']} start"
+                )
+                extra = {"batch": 40, "force": 0, "min_len": 180}
+                if origin != "all":
+                    extra["origin"] = origin
+                try:
+                    txt = fetch("enrich_full_intro_raw", timeout=240, extra=extra)
+                except Exception as e:  # noqa: BLE001
+                    txt = f"ERROR enrich_full_intro_raw {e}"
+                upd = parse_updated_count(txt)
+                progress(
+                    "action enrich_full_intro_raw "
+                    + f"origin={origin} iter={i}/{cfg['enrich_full_intro_iters']} done "
+                    + f"updated={upd} msg={head_line(txt)}"
+                )
+                log_write(log, "\n" + "=" * 70)
+                log_write(
+                    log,
+                    f"action=enrich_full_intro_raw origin={origin} iter={i} "
+                    + f"seconds={time.time()-t0:.1f} updated={upd}",
+                )
+                log_write(log, head_line(txt))
+
+                # Backward compatibility: if remote vt-maint doesn't return origin_filter,
+                # treat origin filtering as unsupported and fall back to a single "all" pass.
+                if origin != "all" and i == 1 and '"origin_filter"' not in (txt or ""):
+                    origin_supported = False
+                    progress("action enrich_full_intro_raw origin_filter unsupported on remote; fallback to origin=all")
+                    log_write(log, "action=enrich_full_intro_raw note=origin_filter_unsupported")
+                    break
+
+                if upd == 0:
+                    noop_streak += 1
+                else:
+                    noop_streak = 0
+                if noop_streak >= 1:
+                    break
+                time.sleep(0.7)
 
         # 3.6) Build internal entity links in summaries (same-language target when available).
         for i in range(1, int(cfg["internal_links_iters"]) + 1):
@@ -931,6 +1127,41 @@ def main() -> int:
             log_write(log, "\n" + "=" * 70)
             log_write(log, f"action={act} seconds={time.time()-t0:.1f}")
             log_write(log, head_line(txt))
+
+        # 6.5) Probe JP/EN-first source registry and emit language priority map.
+        if cfg.get("run_jpen_source_probe", True) and can_run("probe_jpen_sources", 40):
+            t0 = time.time()
+            progress("action probe_jpen_sources start")
+            probe_script = resolve_script(
+                os.path.join(os.path.dirname(__file__), "probe_jpen_sources.py"),
+                "maintain/probe_jpen_sources.py",
+                "maintain/github_private_repo/tools/probe_jpen_sources.py",
+                "tools/probe_jpen_sources.py",
+            )
+            registry_path = resolve_script(
+                os.path.join(os.path.dirname(__file__), "jpen_source_registry.json"),
+                "maintain/jpen_source_registry.json",
+                "maintain/github_private_repo/tools/jpen_source_registry.json",
+                "tools/jpen_source_registry.json",
+            )
+            txt = run_proc(
+                [
+                    "python",
+                    probe_script,
+                    "--registry",
+                    registry_path,
+                    "--out-dir",
+                    "reports",
+                ],
+                timeout_s=150,
+            )
+            log_write(log, "\n" + "=" * 70)
+            log_write(log, f"action=probe_jpen_sources seconds={time.time()-t0:.1f}")
+            log_write(log, head_line(txt))
+            progress(f"action probe_jpen_sources done: {head_line(txt)}")
+        elif not cfg.get("run_jpen_source_probe", True):
+            log_write(log, "action=probe_jpen_sources skip=profile")
+            progress("action probe_jpen_sources skipped by profile")
 
         # 7) Sitemap refresh.
         # Default to dynamic VTuber sitemap mode to avoid disk-quota failures on very large datasets.
