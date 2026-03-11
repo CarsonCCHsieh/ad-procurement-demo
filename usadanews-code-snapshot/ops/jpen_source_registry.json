@@ -3,8 +3,12 @@
     "id": "twvt_sheet_master",
     "name": "台灣 VTuber 共編 Google Sheet（主來源）",
     "kind": "google_sheet",
-    "languages": ["zh-TW"],
-    "coverage": ["TW"],
+    "languages": [
+      "zh-TW"
+    ],
+    "coverage": [
+      "TW"
+    ],
     "priority_tier": 1,
     "reliability_score": 5,
     "freshness_score": 5,
@@ -14,7 +18,13 @@
     "healthcheck_url": "https://docs.google.com/spreadsheets/d/1PakEIlnG_4Qo29LLNimplumvZSjN4DwDelQ551fIl3E/edit?gid=1406516665#gid=1406516665",
     "sample_url": "https://docs.google.com/spreadsheets/d/1PakEIlnG_4Qo29LLNimplumvZSjN4DwDelQ551fIl3E/edit?gid=1575066064#gid=1575066064",
     "parser_hint": "Google Sheets API values + grid rich-text hyperlink",
-    "use_for": ["identity", "social_links", "status", "tags", "country"],
+    "use_for": [
+      "identity",
+      "social_links",
+      "status",
+      "tags",
+      "country"
+    ],
     "license_note": "社群共編公開資料，仍需保留來源追溯",
     "enabled": true
   },
@@ -22,18 +32,31 @@
     "id": "hololist_category",
     "name": "HoloList（國際 VTuber 名單）",
     "kind": "html",
-    "languages": ["en", "ja"],
-    "coverage": ["GLOBAL"],
+    "languages": [
+      "en",
+      "ja"
+    ],
+    "coverage": [
+      "GLOBAL"
+    ],
     "priority_tier": 1,
     "reliability_score": 4,
     "freshness_score": 4,
     "parse_complexity": 3,
     "can_seed_other_languages": true,
-    "exclude_regions_when_conflict": ["TW"],
+    "exclude_regions_when_conflict": [
+      "TW"
+    ],
     "healthcheck_url": "https://hololist.net/category/",
     "sample_url": "https://hololist.net/category/jp/",
     "parser_hint": "Category -> profile card -> profile page",
-    "use_for": ["discovery", "social_links", "profile_intro", "tags", "country"],
+    "use_for": [
+      "discovery",
+      "social_links",
+      "profile_intro",
+      "tags",
+      "country"
+    ],
     "license_note": "僅擷取事實欄位與連結，不複製整段敘事",
     "enabled": true
   },
@@ -41,18 +64,32 @@
     "id": "vtbs_vdb_json",
     "name": "VDB (vtbs.moe JSON)",
     "kind": "json",
-    "languages": ["en", "ja", "zh-CN"],
-    "coverage": ["GLOBAL"],
+    "languages": [
+      "en",
+      "ja",
+      "zh-CN"
+    ],
+    "coverage": [
+      "GLOBAL"
+    ],
     "priority_tier": 1,
     "reliability_score": 4,
     "freshness_score": 4,
     "parse_complexity": 2,
     "can_seed_other_languages": true,
-    "exclude_regions_when_conflict": ["TW"],
+    "exclude_regions_when_conflict": [
+      "TW"
+    ],
     "healthcheck_url": "https://vdb.vtbs.moe/json/list.json",
     "sample_url": "https://vdb.vtbs.moe/json/list.json",
     "parser_hint": "Direct JSON ingestion with dedupe by social IDs",
-    "use_for": ["discovery", "aliases", "social_links", "status", "country"],
+    "use_for": [
+      "discovery",
+      "aliases",
+      "social_links",
+      "status",
+      "country"
+    ],
     "license_note": "公開 JSON，仍需遵守來源規範並保留追溯",
     "enabled": true
   },
@@ -60,8 +97,12 @@
     "id": "holodex_api_docs",
     "name": "Holodex API（文件與資料 API）",
     "kind": "api",
-    "languages": ["en"],
-    "coverage": ["GLOBAL"],
+    "languages": [
+      "en"
+    ],
+    "coverage": [
+      "GLOBAL"
+    ],
     "priority_tier": 2,
     "reliability_score": 4,
     "freshness_score": 5,
@@ -71,7 +112,11 @@
     "healthcheck_url": "https://docs.holodex.net/",
     "sample_url": "https://holodex.net/api/v2/channels?type=vtuber&limit=1",
     "parser_hint": "Require x-apikey for stable production usage",
-    "use_for": ["discovery", "youtube_channels", "recent_activity"],
+    "use_for": [
+      "discovery",
+      "youtube_channels",
+      "recent_activity"
+    ],
     "license_note": "遵守 API rate limits 與服務條款",
     "enabled": true
   },
@@ -79,8 +124,12 @@
     "id": "wikipedia_ja_api",
     "name": "Wikipedia 日本語 API",
     "kind": "api",
-    "languages": ["ja"],
-    "coverage": ["GLOBAL"],
+    "languages": [
+      "ja"
+    ],
+    "coverage": [
+      "GLOBAL"
+    ],
     "priority_tier": 2,
     "reliability_score": 4,
     "freshness_score": 3,
@@ -90,7 +139,12 @@
     "healthcheck_url": "https://ja.wikipedia.org/w/api.php?action=query&meta=siteinfo&format=json",
     "sample_url": "https://ja.wikipedia.org/w/api.php?action=query&prop=extracts&exintro=1&explaintext=1&titles=%E5%85%8E%E7%94%B0%E3%81%BA%E3%81%93%E3%82%89&format=json",
     "parser_hint": "Use intro extract + categories + pageprops",
-    "use_for": ["profile_intro", "debut_history", "notable_events", "aliases"],
+    "use_for": [
+      "profile_intro",
+      "debut_history",
+      "notable_events",
+      "aliases"
+    ],
     "license_note": "CC BY-SA，僅摘要與事實欄位，不貼原文長段落",
     "enabled": true
   },
@@ -98,8 +152,12 @@
     "id": "wikipedia_en_api",
     "name": "Wikipedia English API",
     "kind": "api",
-    "languages": ["en"],
-    "coverage": ["GLOBAL"],
+    "languages": [
+      "en"
+    ],
+    "coverage": [
+      "GLOBAL"
+    ],
     "priority_tier": 2,
     "reliability_score": 4,
     "freshness_score": 3,
@@ -109,7 +167,12 @@
     "healthcheck_url": "https://en.wikipedia.org/w/api.php?action=query&meta=siteinfo&format=json",
     "sample_url": "https://en.wikipedia.org/w/api.php?action=query&prop=extracts&exintro=1&explaintext=1&titles=Usada_Pekora&format=json",
     "parser_hint": "Use intro extract + infobox keys when available",
-    "use_for": ["profile_intro", "debut_history", "notable_events", "aliases"],
+    "use_for": [
+      "profile_intro",
+      "debut_history",
+      "notable_events",
+      "aliases"
+    ],
     "license_note": "CC BY-SA，僅摘要與事實欄位，不貼原文長段落",
     "enabled": true
   },
@@ -117,8 +180,12 @@
     "id": "wikidata_api",
     "name": "Wikidata API",
     "kind": "api",
-    "languages": ["multi"],
-    "coverage": ["GLOBAL"],
+    "languages": [
+      "multi"
+    ],
+    "coverage": [
+      "GLOBAL"
+    ],
     "priority_tier": 1,
     "reliability_score": 5,
     "freshness_score": 3,
@@ -128,7 +195,13 @@
     "healthcheck_url": "https://www.wikidata.org/w/api.php?action=query&meta=siteinfo&format=json",
     "sample_url": "https://www.wikidata.org/w/api.php?action=wbgetentities&sites=enwiki&titles=Usada_Pekora&format=json",
     "parser_hint": "Entity-centric IDs for cross-language linking",
-    "use_for": ["entity_linking", "aliases", "birth_date", "country", "official_sites"],
+    "use_for": [
+      "entity_linking",
+      "aliases",
+      "birth_date",
+      "country",
+      "official_sites"
+    ],
     "license_note": "CC0，適合做多語系實體對齊",
     "enabled": true
   },
@@ -136,8 +209,12 @@
     "id": "fandom_virtualyoutuber_api",
     "name": "Virtual YouTuber Wiki (Fandom) API",
     "kind": "api",
-    "languages": ["en"],
-    "coverage": ["GLOBAL"],
+    "languages": [
+      "en"
+    ],
+    "coverage": [
+      "GLOBAL"
+    ],
     "priority_tier": 2,
     "reliability_score": 3,
     "freshness_score": 3,
@@ -147,7 +224,11 @@
     "healthcheck_url": "https://virtualyoutuber.fandom.com/api.php?action=query&meta=siteinfo&format=json",
     "sample_url": "https://virtualyoutuber.fandom.com/api.php?action=parse&page=Usada_Pekora&prop=text&format=json",
     "parser_hint": "Prefer API parse output, avoid raw HTML scrape",
-    "use_for": ["profile_intro", "notable_events", "fan_terms"],
+    "use_for": [
+      "profile_intro",
+      "notable_events",
+      "fan_terms"
+    ],
     "license_note": "來源可引用，應做摘要改寫與來源註記",
     "enabled": true
   },
@@ -155,8 +236,14 @@
     "id": "hololive_official",
     "name": "hololive 官方 Talent 頁",
     "kind": "html",
-    "languages": ["ja", "en"],
-    "coverage": ["JP", "EN"],
+    "languages": [
+      "ja",
+      "en"
+    ],
+    "coverage": [
+      "JP",
+      "EN"
+    ],
     "priority_tier": 1,
     "reliability_score": 5,
     "freshness_score": 4,
@@ -166,7 +253,12 @@
     "healthcheck_url": "https://hololive.hololivepro.com/en/talents/",
     "sample_url": "https://hololive.hololivepro.com/",
     "parser_hint": "Agency roster + profile links",
-    "use_for": ["official_name", "group", "official_links", "status"],
+    "use_for": [
+      "official_name",
+      "group",
+      "official_links",
+      "status"
+    ],
     "license_note": "官方資料優先，避免推測型資訊",
     "enabled": true
   },
@@ -174,8 +266,12 @@
     "id": "nijisanji_jp_official",
     "name": "にじさんじ 官方 Talent 頁（JP）",
     "kind": "html",
-    "languages": ["ja"],
-    "coverage": ["JP"],
+    "languages": [
+      "ja"
+    ],
+    "coverage": [
+      "JP"
+    ],
     "priority_tier": 1,
     "reliability_score": 5,
     "freshness_score": 4,
@@ -185,7 +281,12 @@
     "healthcheck_url": "https://www.nijisanji.jp/talents",
     "sample_url": "https://www.nijisanji.jp/",
     "parser_hint": "Roster cards + profile routes",
-    "use_for": ["official_name", "group", "official_links", "status"],
+    "use_for": [
+      "official_name",
+      "group",
+      "official_links",
+      "status"
+    ],
     "license_note": "官方資料優先，避免推測型資訊",
     "enabled": true
   },
@@ -193,8 +294,12 @@
     "id": "nijisanji_en_official",
     "name": "NIJISANJI 官方 Talent 頁（EN）",
     "kind": "html",
-    "languages": ["en"],
-    "coverage": ["EN"],
+    "languages": [
+      "en"
+    ],
+    "coverage": [
+      "EN"
+    ],
     "priority_tier": 1,
     "reliability_score": 5,
     "freshness_score": 4,
@@ -204,7 +309,12 @@
     "healthcheck_url": "https://www.nijisanji.jp/en/talents",
     "sample_url": "https://www.nijisanji.jp/en",
     "parser_hint": "English roster cards + profile routes",
-    "use_for": ["official_name", "group", "official_links", "status"],
+    "use_for": [
+      "official_name",
+      "group",
+      "official_links",
+      "status"
+    ],
     "license_note": "官方資料優先，避免推測型資訊",
     "enabled": true
   },
@@ -212,8 +322,12 @@
     "id": "vspo_official_member",
     "name": "VSPO 官方 Member 頁",
     "kind": "html",
-    "languages": ["ja"],
-    "coverage": ["JP"],
+    "languages": [
+      "ja"
+    ],
+    "coverage": [
+      "JP"
+    ],
     "priority_tier": 2,
     "reliability_score": 5,
     "freshness_score": 4,
@@ -223,7 +337,11 @@
     "healthcheck_url": "https://vspo.jp/member/",
     "sample_url": "https://vspo.jp/",
     "parser_hint": "Member listing and profile pages",
-    "use_for": ["official_name", "group", "official_links"],
+    "use_for": [
+      "official_name",
+      "group",
+      "official_links"
+    ],
     "license_note": "官方資料優先，避免推測型資訊",
     "enabled": true
   },
@@ -231,8 +349,13 @@
     "id": "phase_connect_member",
     "name": "Phase Connect 官方 Member 頁",
     "kind": "html",
-    "languages": ["en", "ja"],
-    "coverage": ["GLOBAL"],
+    "languages": [
+      "en",
+      "ja"
+    ],
+    "coverage": [
+      "GLOBAL"
+    ],
     "priority_tier": 2,
     "reliability_score": 5,
     "freshness_score": 4,
@@ -242,7 +365,12 @@
     "healthcheck_url": "https://phase-connect.com/",
     "sample_url": "https://phase-connect.com/member/",
     "parser_hint": "Extract member profile links from homepage and member routes",
-    "use_for": ["official_name", "group", "official_links", "status"],
+    "use_for": [
+      "official_name",
+      "group",
+      "official_links",
+      "status"
+    ],
     "license_note": "官方資料優先，避免推測型資訊",
     "enabled": true
   },
@@ -250,8 +378,12 @@
     "id": "youtube_data_api_v3",
     "name": "YouTube Data API v3",
     "kind": "api",
-    "languages": ["multi"],
-    "coverage": ["GLOBAL"],
+    "languages": [
+      "multi"
+    ],
+    "coverage": [
+      "GLOBAL"
+    ],
     "priority_tier": 1,
     "reliability_score": 5,
     "freshness_score": 5,
@@ -261,7 +393,12 @@
     "healthcheck_url": "https://developers.google.com/youtube/v3/docs/channels/list",
     "sample_url": "https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&id=UC1DCedRgGHBdm81E1llLhOQ",
     "parser_hint": "Channel snippet/statistics with API key",
-    "use_for": ["avatar", "followers", "bio", "official_links"],
+    "use_for": [
+      "avatar",
+      "followers",
+      "bio",
+      "official_links"
+    ],
     "license_note": "依 API 條款存取，避免過量請求",
     "enabled": true
   },
@@ -269,8 +406,12 @@
     "id": "twitch_helix_api",
     "name": "Twitch Helix API",
     "kind": "api",
-    "languages": ["multi"],
-    "coverage": ["GLOBAL"],
+    "languages": [
+      "multi"
+    ],
+    "coverage": [
+      "GLOBAL"
+    ],
     "priority_tier": 1,
     "reliability_score": 5,
     "freshness_score": 5,
@@ -280,8 +421,154 @@
     "healthcheck_url": "https://dev.twitch.tv/docs/api/reference#get-users",
     "sample_url": "https://api.twitch.tv/helix/users?login=pekora_ch",
     "parser_hint": "OAuth client_credentials + helix/users",
-    "use_for": ["avatar", "followers", "bio", "official_links"],
+    "use_for": [
+      "avatar",
+      "followers",
+      "bio",
+      "official_links"
+    ],
     "license_note": "依 API 條款存取，避免過量請求",
+    "enabled": true
+  },
+  {
+    "id": "vee_official_member",
+    "name": "VEE Official Talent Page",
+    "kind": "html",
+    "languages": [
+      "ja"
+    ],
+    "coverage": [
+      "JP"
+    ],
+    "priority_tier": 2,
+    "reliability_score": 5,
+    "freshness_score": 4,
+    "parse_complexity": 3,
+    "can_seed_other_languages": true,
+    "exclude_regions_when_conflict": [],
+    "healthcheck_url": "https://vee-official.jp/talent/",
+    "sample_url": "https://vee-official.jp/talent/",
+    "parser_hint": "Official roster cards and profile links",
+    "use_for": [
+      "official_name",
+      "group",
+      "official_links",
+      "status"
+    ],
+    "license_note": "Official source preferred for JP talent identity",
+    "enabled": true
+  },
+  {
+    "id": "globie_official_member",
+    "name": "globie Official Talents",
+    "kind": "html",
+    "languages": [
+      "en",
+      "ja"
+    ],
+    "coverage": [
+      "GLOBAL"
+    ],
+    "priority_tier": 2,
+    "reliability_score": 5,
+    "freshness_score": 4,
+    "parse_complexity": 3,
+    "can_seed_other_languages": true,
+    "exclude_regions_when_conflict": [],
+    "healthcheck_url": "https://globie.net/talents/",
+    "sample_url": "https://globie.net/talents/",
+    "parser_hint": "Official talent listing and profile pages",
+    "use_for": [
+      "official_name",
+      "group",
+      "official_links",
+      "status"
+    ],
+    "license_note": "Official source preferred for EN roster updates",
+    "enabled": true
+  },
+  {
+    "id": "firststage_official_member",
+    "name": "First Stage Production Talents",
+    "kind": "html",
+    "languages": [
+      "ja"
+    ],
+    "coverage": [
+      "JP"
+    ],
+    "priority_tier": 2,
+    "reliability_score": 5,
+    "freshness_score": 4,
+    "parse_complexity": 3,
+    "can_seed_other_languages": true,
+    "exclude_regions_when_conflict": [],
+    "healthcheck_url": "https://firststage-pro.com/talent/",
+    "sample_url": "https://firststage-pro.com/talent/",
+    "parser_hint": "Official talent directory and profile links",
+    "use_for": [
+      "official_name",
+      "group",
+      "official_links",
+      "status"
+    ],
+    "license_note": "Official source preferred for JP roster updates",
+    "enabled": true
+  },
+  {
+    "id": "neo_porte_official_member",
+    "name": "Neo-Porte Official Talent List",
+    "kind": "html",
+    "languages": [
+      "ja"
+    ],
+    "coverage": [
+      "JP"
+    ],
+    "priority_tier": 2,
+    "reliability_score": 5,
+    "freshness_score": 4,
+    "parse_complexity": 3,
+    "can_seed_other_languages": true,
+    "exclude_regions_when_conflict": [],
+    "healthcheck_url": "https://neo-porte.jp/talent/",
+    "sample_url": "https://neo-porte.jp/talent/",
+    "parser_hint": "Official roster and profile pages",
+    "use_for": [
+      "official_name",
+      "group",
+      "official_links",
+      "status"
+    ],
+    "license_note": "Official source preferred for JP roster updates",
+    "enabled": true
+  },
+  {
+    "id": "v4mirai_official",
+    "name": "V4Mirai Official",
+    "kind": "html",
+    "languages": [
+      "en"
+    ],
+    "coverage": [
+      "EN"
+    ],
+    "priority_tier": 2,
+    "reliability_score": 4,
+    "freshness_score": 4,
+    "parse_complexity": 3,
+    "can_seed_other_languages": true,
+    "exclude_regions_when_conflict": [],
+    "healthcheck_url": "https://v4mirai.com/",
+    "sample_url": "https://v4mirai.com/",
+    "parser_hint": "Official pages with member/profile entries",
+    "use_for": [
+      "official_name",
+      "group",
+      "official_links",
+      "status"
+    ],
+    "license_note": "Official source, parse with conservative extraction",
     "enabled": true
   }
 ]
