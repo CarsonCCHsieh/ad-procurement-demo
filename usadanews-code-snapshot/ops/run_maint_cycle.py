@@ -48,6 +48,9 @@ def load_cycle_config() -> dict:
         "ensure_translations_batch": 25 if profile == "local" else 12,
         "sync_translation_content_iters": 8 if profile == "local" else 4,
         "sync_translation_content_batch": 25 if profile == "local" else 12,
+        "translation_expand_gap_threshold": 250 if profile == "local" else 400,
+        "translation_expand_ensure_cap": 8 if profile == "local" else 3,
+        "translation_expand_content_cap": 16 if profile == "local" else 6,
         "news_refresh_iters": 6 if profile == "local" else 3,
         "news_refresh_batch": 6 if profile == "local" else 4,
         "dedupe_iters": 10 if profile == "local" else 3,
@@ -72,6 +75,9 @@ def load_cycle_config() -> dict:
     cfg["enrich_full_intro_iters"] = int_env("VT_CYCLE_ENRICH_FULL_INTRO_ITERS", cfg["enrich_full_intro_iters"])
     cfg["ensure_translations_iters"] = int_env("VT_CYCLE_ENSURE_TRANSLATIONS_ITERS", cfg["ensure_translations_iters"])
     cfg["sync_translation_content_iters"] = int_env("VT_CYCLE_SYNC_TRANSLATION_CONTENT_ITERS", cfg["sync_translation_content_iters"])
+    cfg["translation_expand_gap_threshold"] = int_env("VT_CYCLE_TRANSLATION_EXPAND_GAP_THRESHOLD", cfg["translation_expand_gap_threshold"])
+    cfg["translation_expand_ensure_cap"] = int_env("VT_CYCLE_TRANSLATION_EXPAND_ENSURE_CAP", cfg["translation_expand_ensure_cap"])
+    cfg["translation_expand_content_cap"] = int_env("VT_CYCLE_TRANSLATION_EXPAND_CONTENT_CAP", cfg["translation_expand_content_cap"])
     cfg["run_site_audit"] = (os.environ.get("VT_CYCLE_RUN_SITE_AUDIT", "1" if cfg["run_site_audit"] else "0").strip() == "1")
     cfg["run_http_health_scan"] = (os.environ.get("VT_CYCLE_RUN_HEALTH_SCAN", "1" if cfg["run_http_health_scan"] else "0").strip() == "1")
     cfg["run_gsc_sync"] = (os.environ.get("VT_CYCLE_RUN_GSC_SYNC", "1" if cfg["run_gsc_sync"] else "0").strip() == "1")
@@ -229,6 +235,41 @@ def parse_named_count(txt: str, key: str) -> int | None:
         return int(m.group(1))
     except Exception:  # noqa: BLE001
         return None
+
+
+def parse_polylang_vtuber_counts(txt: str) -> dict[str, int]:
+    if not txt:
+        return {}
+    try:
+        data = json.loads(txt)
+        counts = (data or {}).get("vtuber_counts") or {}
+        out: dict[str, int] = {}
+        for k, v in counts.items():
+            try:
+                out[str(k)] = int(v)
+            except Exception:
+                continue
+        return out
+    except Exception:
+        out: dict[str, int] = {}
+        for k, v in re.findall(r'"([^"]+)"\s*:\s*(\d+)', txt):
+            try:
+                out[str(k)] = int(v)
+            except Exception:
+                continue
+        return out
+
+
+def compute_translation_gap(counts: dict[str, int]) -> tuple[int, dict[str, int]]:
+    if not counts:
+        return 0, {}
+    zh_count = int(counts.get("zh", 0))
+    targets = ["cn", "ja", "en", "ko", "es", "hi"]
+    target_counts = {k: int(counts.get(k, 0)) for k in targets}
+    if zh_count <= 0:
+        return 0, target_counts
+    min_target = min(target_counts.values()) if target_counts else 0
+    return max(0, zh_count - min_target), target_counts
 
 
 def contains_all(txt: str, needles: list[str]) -> bool:
@@ -1057,6 +1098,120 @@ def main() -> int:
                 progress("action sync_translation_content_raw early-stop: consecutive no-op batches")
                 break
             time.sleep(0.7)
+
+        # 4.3) Adaptive multi-language expansion when language counts are imbalanced.
+        # If zh source posts significantly exceed translated language counts,
+        # run extra ensure/content sync loops (bounded by per-profile caps).
+        lang_counts_txt = ""
+        lang_counts: dict[str, int] = {}
+        try:
+            lang_counts_txt = fetch("polylang_lang_counts_raw", timeout=180)
+            lang_counts = parse_polylang_vtuber_counts(lang_counts_txt)
+        except Exception as e:  # noqa: BLE001
+            progress(f"action polylang_lang_counts_raw for expand-check failed: {e}")
+            log_write(log, f"action=polylang_lang_counts_raw expand_check_error={e}")
+        gap, target_counts = compute_translation_gap(lang_counts)
+        if gap >= int(cfg["translation_expand_gap_threshold"]):
+            progress(
+                "action translation_expand triggered "
+                + f"gap={gap} zh={lang_counts.get('zh', 0)} targets={target_counts}"
+            )
+            log_write(
+                log,
+                f"action=translation_expand start gap={gap} zh={lang_counts.get('zh', 0)} targets={target_counts}",
+            )
+
+            ensure_cap = max(0, int(cfg["translation_expand_ensure_cap"]))
+            ensure_iters = min(ensure_cap, max(2, gap // 350)) if ensure_cap > 0 else 0
+            ensure_noop_streak2 = 0
+            for i in range(1, ensure_iters + 1):
+                if not can_run("translation_expand_ensure", 140):
+                    break
+                # Best effort unlock stale lock before sweep.
+                try:
+                    _ = fetch("unlock", timeout=60, extra={"name": "ensure_translations"})
+                except Exception:
+                    pass
+                t0 = time.time()
+                progress(f"action ensure_translations_raw expand={i}/{ensure_iters} start")
+                try:
+                    txt = fetch(
+                        "ensure_translations_raw",
+                        timeout=420,
+                        extra={"batch": int(cfg["ensure_translations_batch"])},
+                    )
+                except Exception as e:  # noqa: BLE001
+                    txt = f"ERROR ensure_translations_raw {e}"
+                created = parse_named_count(txt, "created")
+                linked = parse_named_count(txt, "linked")
+                checked = parse_named_count(txt, "checked")
+                progress(
+                    f"action ensure_translations_raw expand={i}/{ensure_iters} done "
+                    + f"checked={checked} created={created} linked={linked} msg={head_line(txt)}"
+                )
+                log_write(
+                    log,
+                    f"action=ensure_translations_raw expand_iter={i} seconds={time.time()-t0:.1f} "
+                    + f"checked={checked} created={created} linked={linked}",
+                )
+                if (created or 0) == 0 and (linked or 0) == 0:
+                    ensure_noop_streak2 += 1
+                else:
+                    ensure_noop_streak2 = 0
+                if ensure_noop_streak2 >= 2:
+                    progress("action ensure_translations_raw expand early-stop: consecutive no-op batches")
+                    break
+                time.sleep(0.7)
+
+            content_cap = max(0, int(cfg["translation_expand_content_cap"]))
+            content_iters = min(content_cap, max(2, gap // 120)) if content_cap > 0 else 0
+            tr_noop_streak2 = 0
+            for i in range(1, content_iters + 1):
+                if not can_run("translation_expand_content", 120):
+                    break
+                t0 = time.time()
+                progress(f"action sync_translation_content_raw expand={i}/{content_iters} start")
+                try:
+                    txt = fetch(
+                        "sync_translation_content_raw",
+                        timeout=360,
+                        extra={"batch": int(cfg["sync_translation_content_batch"]), "force": 0, "min_len": 160},
+                    )
+                except Exception as e:  # noqa: BLE001
+                    txt = f"ERROR sync_translation_content_raw {e}"
+                upd = parse_updated_count(txt)
+                progress(
+                    f"action sync_translation_content_raw expand={i}/{content_iters} done "
+                    + f"updated={upd} msg={head_line(txt)}"
+                )
+                log_write(
+                    log,
+                    f"action=sync_translation_content_raw expand_iter={i} seconds={time.time()-t0:.1f} updated={upd}",
+                )
+                if upd == 0:
+                    tr_noop_streak2 += 1
+                else:
+                    tr_noop_streak2 = 0
+                if tr_noop_streak2 >= 2:
+                    progress("action sync_translation_content_raw expand early-stop: consecutive no-op batches")
+                    break
+                time.sleep(0.7)
+
+            try:
+                post_txt = fetch("polylang_lang_counts_raw", timeout=180)
+                post_counts = parse_polylang_vtuber_counts(post_txt)
+                post_gap, post_targets = compute_translation_gap(post_counts)
+                progress(
+                    "action translation_expand done "
+                    + f"gap_before={gap} gap_after={post_gap} targets_after={post_targets}"
+                )
+                log_write(
+                    log,
+                    f"action=translation_expand done gap_before={gap} gap_after={post_gap} targets_after={post_targets}",
+                )
+            except Exception as e:  # noqa: BLE001
+                progress(f"action translation_expand post-check failed: {e}")
+                log_write(log, f"action=translation_expand post_check_error={e}")
 
         # 4.5) Refresh external news cache in small batches to avoid timeout.
         for i in range(1, int(cfg["news_refresh_iters"]) + 1):
