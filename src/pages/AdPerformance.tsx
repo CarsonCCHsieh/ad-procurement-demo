@@ -45,6 +45,7 @@ function isVendorSplitDone(split: VendorSplitExec): boolean {
 }
 
 const META_AUTO_CHECK_INTERVAL_MS = 5 * 60 * 1000;
+const HOURLY_AUTO_REFRESH_INTERVAL_MS = 60 * 60 * 1000;
 
 function metricValueFromPerformance(row: MetaOrder, key: MetaKpiMetricKey): number | null {
   const hit = row.performance?.metrics?.find((m) => m.key === key);
@@ -60,6 +61,8 @@ export function AdPerformancePage() {
   const [vendorRefreshing, setVendorRefreshing] = useState(false);
   const [metaAutoEnabled, setMetaAutoEnabled] = useState(true);
   const [metaAutoRunning, setMetaAutoRunning] = useState(false);
+  const [hourlyAutoRunning, setHourlyAutoRunning] = useState(false);
+  const [hourlyAutoLastRunAt, setHourlyAutoLastRunAt] = useState<string | null>(null);
 
   const orders = useMemo(() => {
     void refresh;
@@ -164,7 +167,7 @@ export function AdPerformancePage() {
     }
   };
 
-  const refreshVendorTracking = async () => {
+  const refreshVendorTracking = async (options?: { silent?: boolean }) => {
     if (vendorRefreshing) return;
     setVendorRefreshing(true);
     try {
@@ -180,6 +183,7 @@ export function AdPerformancePage() {
       }
 
       setRefresh((x) => x + 1);
+      if (options?.silent) return;
 
       if (errors.length > 0) {
         setMsg(`同步完成，但有錯誤：${errors.join(" / ")}`);
@@ -310,14 +314,15 @@ export function AdPerformancePage() {
     }
   };
 
-  const syncAllMeta = async () => {
+  const syncAllMeta = async (options?: { silent?: boolean; includePaused?: boolean }) => {
     const activeRows = metaRows.filter((row) => {
       if (!row.submitResult?.adId) return false;
-      return row.status === "running" || row.status === "submitted" || row.status === "paused";
+      if (row.status === "running" || row.status === "submitted") return true;
+      return !!options?.includePaused && row.status === "paused";
     });
     for (const row of activeRows) {
       // eslint-disable-next-line no-await-in-loop
-      await syncMetaOne(row);
+      await syncMetaOne(row, { silent: options?.silent });
     }
   };
 
@@ -351,6 +356,27 @@ export function AdPerformancePage() {
       setSyncFlag(syncKey, false);
     }
   };
+
+  useEffect(() => {
+    const tick = async () => {
+      if (hourlyAutoRunning) return;
+      setHourlyAutoRunning(true);
+      try {
+        await refreshVendorTracking({ silent: true });
+        await syncAllMeta({ silent: true });
+        setHourlyAutoLastRunAt(new Date().toISOString());
+        setRefresh((x) => x + 1);
+      } finally {
+        setHourlyAutoRunning(false);
+      }
+    };
+
+    const timer = window.setInterval(() => {
+      void tick();
+    }, HOURLY_AUTO_REFRESH_INTERVAL_MS);
+
+    return () => window.clearInterval(timer);
+  }, [refresh]);
 
   useEffect(() => {
     if (!metaAutoEnabled || metaAutoRunning) return;
@@ -425,6 +451,21 @@ export function AdPerformancePage() {
           <div className="card-bd">{msg}</div>
         </div>
       )}
+
+      <div className="card">
+        <div className="card-bd">
+          <div className="hint">
+            本頁面開啟期間，系統會每小時自動更新一次「進行中」或「尚未完成」的案件進度；你也可以隨時手動按鈕同步。
+          </div>
+          <div className="hint" style={{ marginTop: 6 }}>
+            自動更新 trigger 來自此頁面的瀏覽器計時器；若頁面關閉，自動更新不會在背景持續執行。
+          </div>
+          <div className="hint" style={{ marginTop: 6 }}>
+            最近一次每小時自動更新：{hourlyAutoLastRunAt ? new Date(hourlyAutoLastRunAt).toLocaleString("zh-TW") : "尚未執行"}
+            {hourlyAutoRunning ? "（同步中）" : ""}
+          </div>
+        </div>
+      </div>
 
       <div className="card">
         <div className="card-hd">
@@ -563,6 +604,9 @@ export function AdPerformancePage() {
           </div>
 
           <div className="sep" />
+          <div className="hint" style={{ marginBottom: 8 }}>
+            本區支援每小時自動同步進行中案件；若有設定目標停投，另會每 5 分鐘檢查一次達標狀態。
+          </div>
 
           <div className="hint" style={{ marginBottom: 8 }}>
             目標停投每 5 分鐘檢查一次執行中案件，達標後自動暫停投放。
