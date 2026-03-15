@@ -1,4 +1,15 @@
-const API_BASE = (import.meta.env.VITE_SHARED_API_BASE ?? "").trim().replace(/\/$/, "");
+function resolveApiBase() {
+  const envBase = (import.meta.env.VITE_SHARED_API_BASE ?? "").trim().replace(/\/$/, "");
+  if (envBase) return envBase;
+  if (typeof window === "undefined") return "";
+  const { protocol, hostname, origin } = window.location;
+  if (protocol === "http:" && !hostname.endsWith("github.io")) {
+    return origin.replace(/\/$/, "");
+  }
+  return "";
+}
+
+const API_BASE = resolveApiBase();
 const CLIENT_ID_KEY = "ad_demo_shared_client_id";
 
 export const SHARED_STORAGE_KEYS = [

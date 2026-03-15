@@ -7,6 +7,7 @@
     "dev": "node ./node_modules/vite/bin/vite.js",
     "build": "node ./node_modules/vite/bin/vite.js build",
     "preview": "node ./node_modules/vite/bin/vite.js preview",
+    "local-demo": "npm run build && node ./server/shared-api.js",
     "shared-api": "node ./server/shared-api.js",
     "doctor": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/dev_doctor.ps1",
     "migrate:preflight": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/usada_migration_preflight.ps1"

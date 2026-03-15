@@ -1,10 +1,13 @@
 import http from "node:http";
-import { mkdirSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { dirname, extname, resolve } from "node:path";
+import { networkInterfaces } from "node:os";
 import { DatabaseSync } from "node:sqlite";
 
+const HOST = process.env.SHARED_API_HOST || "0.0.0.0";
 const PORT = Number(process.env.SHARED_API_PORT || 8787);
 const DB_PATH = resolve(process.cwd(), process.env.SHARED_API_DB || "./data/shared-demo.sqlite");
+const DIST_DIR = resolve(process.cwd(), "./dist");
 
 mkdirSync(dirname(DB_PATH), { recursive: true });
 
@@ -53,6 +56,45 @@ function json(res, status, payload) {
     "Access-Control-Allow-Headers": "Content-Type",
   });
   res.end(JSON.stringify(payload));
+}
+
+function sendFile(res, filePath) {
+  const ext = extname(filePath).toLowerCase();
+  const contentType =
+    ext === ".html"
+      ? "text/html; charset=utf-8"
+      : ext === ".js"
+        ? "application/javascript; charset=utf-8"
+        : ext === ".css"
+          ? "text/css; charset=utf-8"
+          : ext === ".json"
+            ? "application/json; charset=utf-8"
+            : ext === ".svg"
+              ? "image/svg+xml"
+              : ext === ".png"
+                ? "image/png"
+                : "application/octet-stream";
+  res.writeHead(200, { "Content-Type": contentType, "Cache-Control": ext === ".html" ? "no-store" : "public, max-age=600" });
+  res.end(readFileSync(filePath));
+}
+
+function tryServeStatic(req, res) {
+  if (!req.url || req.url.startsWith("/api/")) return false;
+  if (!existsSync(DIST_DIR)) {
+    json(res, 503, { ok: false, error: "dist not found, run npm run build first" });
+    return true;
+  }
+
+  const url = new URL(req.url, `http://${req.headers.host || "127.0.0.1"}`);
+  const pathname = url.pathname === "/" ? "/index.html" : url.pathname;
+  const requested = resolve(DIST_DIR, `.${pathname}`);
+  if (requested.startsWith(DIST_DIR) && existsSync(requested)) {
+    sendFile(res, requested);
+    return true;
+  }
+
+  sendFile(res, resolve(DIST_DIR, "index.html"));
+  return true;
 }
 
 function readBody(req) {
@@ -137,6 +179,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (tryServeStatic(req, res)) return;
     json(res, 404, { ok: false, error: "Not found" });
   } catch (error) {
     json(res, 500, {
@@ -146,7 +189,15 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, () => {
-  console.log(`Shared demo API listening on http://127.0.0.1:${PORT}`);
+server.listen(PORT, HOST, () => {
+  console.log(`Local demo server listening on http://${HOST}:${PORT}`);
   console.log(`SQLite file: ${DB_PATH}`);
+  const nets = networkInterfaces();
+  for (const list of Object.values(nets)) {
+    for (const item of list ?? []) {
+      if (item.family === "IPv4" && !item.internal) {
+        console.log(`LAN URL: http://${item.address}:${PORT}`);
+      }
+    }
+  }
 });
