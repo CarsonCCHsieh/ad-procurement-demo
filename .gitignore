@@ -7,6 +7,7 @@ reports/
 .env
 .env.*
 !.env.migration.example
+!.env.shared.example
 data/
 
 npm-debug.log*
