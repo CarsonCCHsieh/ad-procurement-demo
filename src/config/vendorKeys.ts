@@ -6,7 +6,7 @@ import type { VendorKey } from "./appConfig";
 // - This is NOT secure on a static site. Anyone with access to the browser can extract it.
 // - For production, move API calls to a backend and never ship vendor keys to the frontend bundle.
 
-type VendorKeysV1 = {
+export type VendorKeysV1 = {
   version: 1;
   updatedAt: string; // ISO
   keys: Partial<Record<VendorKey, string>>;
@@ -56,3 +56,14 @@ export function clearVendorKey(vendor: VendorKey) {
   write({ version: 1, updatedAt: isoNow(), keys: next });
 }
 
+export function getAllVendorKeys(): VendorKeysV1 {
+  return read();
+}
+
+export function replaceVendorKeys(next: VendorKeysV1) {
+  write({
+    version: 1,
+    updatedAt: isoNow(),
+    keys: next?.keys && typeof next.keys === "object" ? next.keys : {},
+  });
+}

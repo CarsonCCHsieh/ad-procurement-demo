@@ -118,3 +118,7 @@ export function clearMetaOrders() {
   writeAll([]);
 }
 
+export function replaceMetaOrders(rows: MetaOrder[]) {
+  writeAll(Array.isArray(rows) ? rows : []);
+}
+

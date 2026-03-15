@@ -85,3 +85,7 @@ export function updateOrder(orderId: string, updater: (order: DemoOrder) => Demo
 export function clearOrders() {
   writeAll([]);
 }
+
+export function replaceOrders(orders: DemoOrder[]) {
+  writeAll(Array.isArray(orders) ? orders : []);
+}

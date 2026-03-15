@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, type ChangeEventHandler } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { ServicePicker } from "../components/ServicePicker";
@@ -18,6 +18,7 @@ import { clearVendorServices, findServiceName, getVendorServices, importVendorSe
 import { getMetaConfig } from "../config/metaConfig";
 import { PRICING, type AdPlacement } from "../lib/pricing";
 import { getPlacementPrice, getPricingConfig, savePricingConfig } from "../config/pricingConfig";
+import { createDemoSnapshot, parseDemoSnapshot, restoreDemoSnapshot } from "../lib/demoState";
 import { planSplit } from "../lib/split";
 import { calcInternalLineAmount } from "../lib/internalPricing";
 
@@ -40,6 +41,7 @@ export function SettingsPage() {
   const [cfg, setCfg] = useState<AppConfigV1>(() => getConfig());
   const [msg, setMsg] = useState<{ kind: MsgKind; text: string } | null>(null);
   const msgTimer = useRef<number | null>(null);
+  const backupFileRef = useRef<HTMLInputElement | null>(null);
   const [showKeys, setShowKeys] = useState(false);
   const [keys, setKeys] = useState<Record<VendorKey, string>>(() => ({
     smmraja: getVendorKey("smmraja"),
@@ -162,6 +164,61 @@ export function SettingsPage() {
     setPricingCfg(getPricingConfig());
   };
 
+  const downloadSnapshot = (includeSecrets: boolean) => {
+    const snapshot = createDemoSnapshot({ includeSecrets });
+    const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: "application/json;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+    a.href = url;
+    a.download = includeSecrets ? `ad-demo-full-backup-${stamp}.json` : `ad-demo-backup-${stamp}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 500);
+    flashMsg(
+      "success",
+      includeSecrets ? "完整備份已下載，檔案內含 API Key 與 Token，請離線妥善保存。" : "一般備份已下載，可用於換機或交接。",
+      4200,
+    );
+  };
+
+  const importSnapshot = async (file: File) => {
+    const text = await file.text();
+    const parsed = parseDemoSnapshot(text);
+    if (!parsed.ok) {
+      flashMsg("error", parsed.message, 4000);
+      return;
+    }
+    restoreDemoSnapshot(parsed.snapshot);
+    setCfg(getConfig());
+    setPricingCfg(getPricingConfig());
+    setKeys({
+      smmraja: getVendorKey("smmraja"),
+      urpanel: getVendorKey("urpanel"),
+      justanotherpanel: getVendorKey("justanotherpanel"),
+    });
+    flashMsg(
+      "success",
+      parsed.snapshot.includesSecrets
+        ? "備份已匯入，設定、案件與密鑰都已還原。建議重新整理其他已開啟頁面。"
+        : "備份已匯入，設定與案件資料已還原。密鑰與 Token 維持目前瀏覽器的內容。",
+      4500,
+    );
+  };
+
+  const onImportFile: ChangeEventHandler<HTMLInputElement> = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      await importSnapshot(file);
+    } catch {
+      flashMsg("error", "匯入備份失敗，請確認檔案是否完整。", 4000);
+    } finally {
+      e.target.value = "";
+    }
+  };
+
   const getServiceMeta = (vendor: VendorKey, serviceId: number): VendorService | null => {
     if (!serviceId) return null;
     const hit = getVendorServices(vendor).find((s) => s.id === serviceId);
@@ -213,8 +270,8 @@ export function SettingsPage() {
         </div>
       )}
 
-      <div className="grid">
-        <div className="card settings-setup">
+        <div className="grid">
+          <div className="card settings-setup">
           <div className="card-hd">
             <div>
               <div className="card-title">快速設定導引</div>
@@ -259,6 +316,39 @@ export function SettingsPage() {
             </div>
           </div>
         </div>
+
+        <CollapsibleCard
+          accent="green"
+          title="資料備份與交接"
+          desc="目前 demo 版資料保存在本機瀏覽器。若要換電腦、換瀏覽器或交接，請先下載備份。"
+          tag="備份"
+          storageKey="sec:backup"
+          defaultOpen
+        >
+          <input ref={backupFileRef} type="file" accept="application/json,.json" hidden onChange={onImportFile} />
+
+          <div className="hint">
+            一般備份：包含案件、拆單設定、價格與服務清單，不含 API Key 與 Meta Token。
+          </div>
+          <div className="hint" style={{ marginTop: 6 }}>
+            完整備份：額外包含供應商 API Key 與 Meta Token，只限管理者離線保存，不建議用 Email 或群組傳送。
+          </div>
+          <div className="hint" style={{ marginTop: 6 }}>
+            匯入備份後，其他已開啟頁面不會自動刷新，建議重新整理一次。
+          </div>
+
+          <div className="actions inline" style={{ marginTop: 12 }}>
+            <button className="btn" type="button" onClick={() => downloadSnapshot(false)}>
+              下載一般備份
+            </button>
+            <button className="btn" type="button" onClick={() => downloadSnapshot(true)}>
+              下載完整備份
+            </button>
+            <button className="btn primary" type="button" onClick={() => backupFileRef.current?.click()}>
+              匯入備份
+            </button>
+          </div>
+        </CollapsibleCard>
 
         <div id="settings-meta">
           <MetaSettingsCard onNotice={flashMsg} />
@@ -513,6 +603,9 @@ export function SettingsPage() {
             </>
           }
         >
+            <div className="hint" style={{ marginBottom: 10 }}>
+              這裡輸入的供應商 API Key 只會保存在目前瀏覽器。若要換電腦，請使用上方「完整備份」。
+            </div>
             <div className="list">
               {cfg.vendors.map((v, idx) => (
                 <div className="item" key={v.key}>
