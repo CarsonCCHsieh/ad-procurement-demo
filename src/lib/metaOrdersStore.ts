@@ -1,4 +1,5 @@
 import type { MetaAdGoalKey, MetaKpiMetricKey } from "./metaGoals";
+import { queueSharedWrite } from "./sharedSync";
 
 export type MetaOrderStatus = "draft" | "submitted" | "running" | "paused" | "failed" | "completed";
 
@@ -83,6 +84,7 @@ function readAll(): MetaOrder[] {
 function writeAll(rows: MetaOrder[]) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(rows));
+    queueSharedWrite(STORAGE_KEY);
   } catch {
     // ignore
   }

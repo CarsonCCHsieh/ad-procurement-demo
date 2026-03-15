@@ -7,6 +7,7 @@ import { META_AD_GOALS, getGoalPrimaryMetricKey, getGoalPrimaryMetricLabel, list
 import { addMetaOrder, listMetaOrders, updateMetaOrder, type MetaOrder, type MetaOrderInput } from "../lib/metaOrdersStore";
 import { submitMetaOrderToGraph } from "../lib/metaGraphApi";
 import { isValidUrl } from "../lib/validate";
+import { SHARED_SYNC_EVENT } from "../lib/sharedSync";
 
 type FormState = {
   title: string;
@@ -291,6 +292,7 @@ export function MetaAdsOrdersPage() {
   const nav = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { user, signOut } = useAuth();
+  const [, setSharedTick] = useState(0);
   const [step, setStep] = useState<"edit" | "confirm" | "submitted">("edit");
   const [state, setState] = useState<FormState>(() => defaultState());
   const [errors, setErrors] = useState<Errors>({});
@@ -323,6 +325,12 @@ export function MetaAdsOrdersPage() {
     setSubmitMsg(null);
     setEditingOrderId(row.id);
   }, [editId]);
+
+  useEffect(() => {
+    const onSharedSync = () => setSharedTick((x) => x + 1);
+    window.addEventListener(SHARED_SYNC_EVENT, onSharedSync);
+    return () => window.removeEventListener(SHARED_SYNC_EVENT, onSharedSync);
+  }, []);
 
   const countries = useMemo(
     () =>

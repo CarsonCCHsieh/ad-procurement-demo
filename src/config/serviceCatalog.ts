@@ -1,4 +1,5 @@
 import type { VendorKey } from "./appConfig";
+import { queueSharedWrite } from "../lib/sharedSync";
 
 export type VendorService = {
   id: number;
@@ -101,6 +102,7 @@ export function getServiceCatalog(): ServiceCatalogV1 {
 export function saveServiceCatalog(next: ServiceCatalogV1) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...next, updatedAt: isoNow() }));
+    queueSharedWrite(STORAGE_KEY);
   } catch {
     // ignore
   }
@@ -149,4 +151,3 @@ export function findServiceName(vendor: VendorKey, serviceId: number): string | 
   const hit = getVendorServices(vendor).find((s) => s.id === serviceId);
   return hit?.name ?? null;
 }
-

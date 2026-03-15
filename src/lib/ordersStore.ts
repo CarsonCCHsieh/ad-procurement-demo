@@ -1,5 +1,6 @@
 import type { AdPlacement } from "./pricing";
 import type { PlannedSplit } from "./split";
+import { queueSharedWrite } from "./sharedSync";
 
 export type VendorSplitExec = PlannedSplit & {
   vendorOrderId?: number; // order id returned by vendor after "add"
@@ -50,6 +51,7 @@ function readAll(): DemoOrder[] {
 function writeAll(orders: DemoOrder[]) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(orders));
+    queueSharedWrite(STORAGE_KEY);
   } catch {
     // ignore
   }

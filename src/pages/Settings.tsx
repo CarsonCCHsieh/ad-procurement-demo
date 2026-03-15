@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type ChangeEventHandler } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEventHandler } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { ServicePicker } from "../components/ServicePicker";
@@ -21,6 +21,7 @@ import { getPlacementPrice, getPricingConfig, savePricingConfig } from "../confi
 import { createDemoSnapshot, parseDemoSnapshot, restoreDemoSnapshot } from "../lib/demoState";
 import { planSplit } from "../lib/split";
 import { calcInternalLineAmount } from "../lib/internalPricing";
+import { isSharedSyncEnabled, SHARED_SYNC_EVENT } from "../lib/sharedSync";
 
 function placementLabel(p: AdPlacement) {
   return PRICING[p]?.label ?? p;
@@ -55,6 +56,7 @@ export function SettingsPage() {
   const [costQty, setCostQty] = useState<string>("2000");
   const [sampleQty, setSampleQty] = useState<string>("2000");
   const metaCfg = getMetaConfig();
+  const sharedSyncEnabled = isSharedSyncEnabled();
 
   const vendorKeys = useMemo(() => cfg.vendors.map((v) => v.key), [cfg.vendors]);
   const loadedVendorCount = useMemo(
@@ -231,6 +233,20 @@ export function SettingsPage() {
     return (qty / 1000) * meta.rate;
   };
 
+  useEffect(() => {
+    const onSharedSync = () => {
+      setCfg(getConfig());
+      setPricingCfg(getPricingConfig());
+      setKeys({
+        smmraja: getVendorKey("smmraja"),
+        urpanel: getVendorKey("urpanel"),
+        justanotherpanel: getVendorKey("justanotherpanel"),
+      });
+    };
+    window.addEventListener(SHARED_SYNC_EVENT, onSharedSync);
+    return () => window.removeEventListener(SHARED_SYNC_EVENT, onSharedSync);
+  }, []);
+
   return (
     <div className="container settings-page">
       <div className="topbar">
@@ -327,6 +343,11 @@ export function SettingsPage() {
         >
           <input ref={backupFileRef} type="file" accept="application/json,.json" hidden onChange={onImportFile} />
 
+          <div className="hint" style={{ marginBottom: 6 }}>
+            {sharedSyncEnabled
+              ? "目前已啟用共享模式。只要其他人連到同一個共享 API，訂單、成效與主要設定會自動同步。"
+              : "目前仍是單機模式。若要三人以上看到同一份資料，部署後請設定 VITE_SHARED_API_BASE。"}
+          </div>
           <div className="hint">
             一般備份：包含案件、拆單設定、價格與服務清單，不含 API Key 與 Meta Token。
           </div>

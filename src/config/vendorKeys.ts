@@ -1,4 +1,5 @@
 import type { VendorKey } from "./appConfig";
+import { queueSharedWrite } from "../lib/sharedSync";
 
 // Demo-only vendor API keys.
 //
@@ -35,6 +36,7 @@ function read(): VendorKeysV1 {
 function write(next: VendorKeysV1) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...next, updatedAt: isoNow() }));
+    queueSharedWrite(STORAGE_KEY);
   } catch {
     // ignore
   }

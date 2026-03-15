@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { PRICING, type AdPlacement } from "../lib/pricing";
@@ -8,6 +8,7 @@ import { planSplit } from "../lib/split";
 import { addOrder } from "../lib/ordersStore";
 import { findServiceName } from "../config/serviceCatalog";
 import { calcInternalLineAmount, shouldShowPrices } from "../lib/internalPricing";
+import { SHARED_SYNC_EVENT } from "../lib/sharedSync";
 
 type OrderKind = "new" | "upsell";
 
@@ -83,6 +84,7 @@ function validate(state: FormState): FormErrors {
 export function AdOrdersPage() {
   const nav = useNavigate();
   const { user, signOut } = useAuth();
+  const [, setSharedTick] = useState(0);
 
   const [step, setStep] = useState<"edit" | "confirm" | "submitted">("edit");
   const [state, setState] = useState<FormState>(() => defaultState());
@@ -113,6 +115,12 @@ export function AdOrdersPage() {
 
     return { lineAmounts, total, linePlans };
   }, [state.items, cfg.updatedAt]);
+
+  useEffect(() => {
+    const onSharedSync = () => setSharedTick((x) => x + 1);
+    window.addEventListener(SHARED_SYNC_EVENT, onSharedSync);
+    return () => window.removeEventListener(SHARED_SYNC_EVENT, onSharedSync);
+  }, []);
 
   const toConfirm = () => {
     const e = validate(state);

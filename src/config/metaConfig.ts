@@ -1,3 +1,5 @@
+import { queueSharedWrite } from "../lib/sharedSync";
+
 export type MetaRuntimeMode = "live";
 
 export type MetaConfigV1 = {
@@ -66,6 +68,7 @@ export function saveMetaConfig(next: MetaConfigV1) {
   try {
     const normalized = normalize(next) ?? DEFAULT_META_CONFIG;
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...normalized, updatedAt: isoNow() }));
+    queueSharedWrite(STORAGE_KEY);
   } catch {
     // ignore
   }

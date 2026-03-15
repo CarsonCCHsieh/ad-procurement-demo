@@ -1,4 +1,5 @@
 import type { AdPlacement } from "../lib/pricing";
+import { queueSharedWrite } from "../lib/sharedSync";
 
 export type VendorKey = "smmraja" | "urpanel" | "justanotherpanel";
 
@@ -165,6 +166,7 @@ export function getConfig(): AppConfigV1 {
 export function saveConfig(next: AppConfigV1) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...next, updatedAt: isoNow() }));
+    queueSharedWrite(STORAGE_KEY);
   } catch {
     // ignore
   }

@@ -11,6 +11,7 @@ import { clearMetaOrders, listMetaOrders, updateMetaOrder, type MetaOrder } from
 import { getMetaConfig } from "../config/metaConfig";
 import { fetchMetaAdSnapshot, fetchMetaPostMetrics, updateMetaAdDelivery } from "../lib/metaGraphApi";
 import { getGoalPrimaryMetricKey, getGoalPrimaryMetricLabel, META_AD_GOALS, type MetaKpiMetricKey } from "../lib/metaGoals";
+import { isSharedSyncEnabled, SHARED_SYNC_EVENT } from "../lib/sharedSync";
 
 function mapMetaStatus(s: string): MetaOrder["status"] {
   const v = s.toUpperCase();
@@ -75,6 +76,7 @@ export function AdPerformancePage() {
 
   const cfg = getConfig();
   const metaCfg = getMetaConfig();
+  const sharedSyncEnabled = isSharedSyncEnabled();
 
   const setSyncFlag = (k: string, v: boolean) => setSyncing((s) => ({ ...s, [k]: v }));
 
@@ -226,7 +228,7 @@ export function AdPerformancePage() {
     const adId = row.submitResult?.adId;
     if (!adId) {
       if (!options?.silent) {
-        setMsg("此筆缺少 ad_id");
+        setMsg("這筆資料缺少 ad_id");
         setTimeout(() => setMsg(null), 2500);
       }
       return { ok: false };
@@ -292,20 +294,20 @@ export function AdPerformancePage() {
         error: postError,
       }));
       if (!options?.silent) {
-        setMsg(pausedByTarget ? "已達目標，自動暫停該筆 Meta 投放。" : `Meta 已同步：${adId}`);
+        setMsg(pausedByTarget ? "已達目標，已自動暫停這筆 Meta 投放。" : `Meta 已同步：${adId}`);
         setTimeout(() => setMsg(null), 2200);
       }
       if (!options?.fromAutoLoop) setRefresh((x) => x + 1);
       return { ok: true, pausedByTarget };
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "同步失敗";
+      const errMsg = e instanceof Error ? e.message : "同步失敗";
       updateMetaOrder(row.id, (r) => ({
         ...r,
-        error: msg,
+        error: errMsg,
         targetLastCheckedAt: new Date().toISOString(),
       }));
       if (!options?.silent) {
-        setMsg(`Meta 同步失敗：${msg}`);
+        setMsg(`Meta 同步失敗：${errMsg}`);
         setTimeout(() => setMsg(null), 3500);
       }
       return { ok: false };
@@ -329,7 +331,7 @@ export function AdPerformancePage() {
   const updateMetaDeliveryStatus = async (row: MetaOrder, nextStatus: "PAUSED" | "ACTIVE") => {
     const adId = row.submitResult?.adId;
     if (!adId) {
-      setMsg("此筆缺少 ad_id，無法切換狀態。");
+      setMsg("這筆資料缺少 ad_id，無法切換狀態。");
       setTimeout(() => setMsg(null), 2500);
       return;
     }
@@ -376,7 +378,7 @@ export function AdPerformancePage() {
     }, HOURLY_AUTO_REFRESH_INTERVAL_MS);
 
     return () => window.clearInterval(timer);
-  }, [refresh]);
+  }, [hourlyAutoRunning, orders.length, metaRows.length]);
 
   useEffect(() => {
     if (!metaAutoEnabled || metaAutoRunning) return;
@@ -416,6 +418,12 @@ export function AdPerformancePage() {
     return () => window.clearInterval(timer);
   }, [metaAutoEnabled, metaAutoRunning]);
 
+  useEffect(() => {
+    const onSharedSync = () => setRefresh((x) => x + 1);
+    window.addEventListener(SHARED_SYNC_EVENT, onSharedSync);
+    return () => window.removeEventListener(SHARED_SYNC_EVENT, onSharedSync);
+  }, []);
+
   return (
     <div className="container">
       <div className="topbar">
@@ -429,7 +437,7 @@ export function AdPerformancePage() {
             廠商互動下單
           </button>
           <button className="btn" onClick={() => nav("/meta-ads-orders")}>
-            Meta官方投廣
+            Meta 官方投廣
           </button>
           <button className="btn" onClick={() => nav("/settings")}>
             控制設定
@@ -455,10 +463,15 @@ export function AdPerformancePage() {
       <div className="card">
         <div className="card-bd">
           <div className="hint">
-            本頁面開啟期間，系統會每小時自動更新一次「進行中」或「尚未完成」的案件進度；你也可以隨時手動按鈕同步。
+            {sharedSyncEnabled
+              ? "共享模式已啟用。其他使用者送出的新訂單與進度，這頁會自動同步到目前瀏覽器。"
+              : "目前是單機模式。若沒有接上共享 API，其他人不會看到同一份案件資料。"}
           </div>
           <div className="hint" style={{ marginTop: 6 }}>
-            自動更新 trigger 來自此頁面的瀏覽器計時器；若頁面關閉，自動更新不會在背景持續執行。
+            本頁開啟期間，系統會每小時自動更新一次進行中或尚未完成的案件進度；你也可以隨時手動同步。
+          </div>
+          <div className="hint" style={{ marginTop: 6 }}>
+            自動更新的 trigger 來自目前頁面的瀏覽器計時器；若頁面關閉，背景不會持續執行。
           </div>
           <div className="hint" style={{ marginTop: 6 }}>
             最近一次每小時自動更新：{hourlyAutoLastRunAt ? new Date(hourlyAutoLastRunAt).toLocaleString("zh-TW") : "尚未執行"}
@@ -471,7 +484,7 @@ export function AdPerformancePage() {
         <div className="card-hd">
           <div>
             <div className="card-title">廠商互動成效</div>
-            <div className="card-desc">查看拆單結果與廠商回傳狀態。</div>
+            <div className="card-desc">查看拆單結果與供應商回傳狀態。</div>
           </div>
         </div>
         <div className="card-bd">
@@ -480,7 +493,7 @@ export function AdPerformancePage() {
               重新整理
             </button>
             <button className="btn" type="button" onClick={refreshVendorTracking} disabled={vendorRefreshing}>
-              {vendorRefreshing ? "同步中" : "同步執行中案件"}
+              {vendorRefreshing ? "同步中" : "同步進行中案件"}
             </button>
             <button
               className="btn danger"
@@ -490,14 +503,14 @@ export function AdPerformancePage() {
                 setRefresh((x) => x + 1);
               }}
             >
-              清空廠商紀錄
+              清空廠商案件
             </button>
           </div>
 
           <div className="sep" />
 
           {orders.length === 0 ? (
-            <div className="hint">尚無廠商互動下單紀錄。</div>
+            <div className="hint">目前沒有廠商互動訂單。</div>
           ) : (
             <div className="list">
               {orders.map((o) => (
@@ -525,7 +538,7 @@ export function AdPerformancePage() {
                         </div>
 
                         {ln.splits.length === 0 ? (
-                          <div className="hint">尚未設定可用服務</div>
+                          <div className="hint">尚未設定可用服務。</div>
                         ) : (
                           <div className="list" style={{ marginTop: 8 }}>
                             {ln.splits.map((s, splitIdx) => (
@@ -551,7 +564,7 @@ export function AdPerformancePage() {
                                   </div>
                                   <div className="field">
                                     <div className="label">狀態</div>
-                                    <input value={s.vendorStatus ?? (s.vendorOrderId ? "待同步" : "未下發")} readOnly />
+                                    <input value={s.vendorStatus ?? (s.vendorOrderId ? "待同步" : "未下單")} readOnly />
                                     {s.error ? <div className="hint" style={{ color: "rgba(245, 158, 11, 0.95)" }}>{s.error}</div> : null}
                                   </div>
                                   <div className="field">
@@ -577,7 +590,7 @@ export function AdPerformancePage() {
       <div className="card" style={{ marginTop: 12 }}>
         <div className="card-hd">
           <div>
-            <div className="card-title">Meta官方投廣成效</div>
+            <div className="card-title">Meta 官方投廣成效</div>
             <div className="card-desc">查看官方投廣狀態與 KPI。</div>
           </div>
         </div>
@@ -599,22 +612,22 @@ export function AdPerformancePage() {
                 setRefresh((x) => x + 1);
               }}
             >
-              清空 Meta 紀錄
+              清空 Meta 案件
             </button>
           </div>
 
           <div className="sep" />
           <div className="hint" style={{ marginBottom: 8 }}>
-            本區支援每小時自動同步進行中案件；若有設定目標停投，另會每 5 分鐘檢查一次達標狀態。
+            本區會每小時自動同步進行中案件；若有設定目標停投，另會每 5 分鐘檢查一次。
           </div>
 
           <div className="hint" style={{ marginBottom: 8 }}>
-            目標停投每 5 分鐘檢查一次執行中案件，達標後自動暫停投放。
+            目標停投每 5 分鐘檢查一次執行中案件，達標後會自動暫停投放。
             {metaAutoRunning ? "（檢查中）" : ""}
           </div>
 
           {metaRows.length === 0 ? (
-            <div className="hint">尚無 Meta 官方投廣紀錄。</div>
+            <div className="hint">目前沒有 Meta 官方投廣案件。</div>
           ) : (
             <div className="list">
               {metaRows.map((r) => {
@@ -699,7 +712,7 @@ export function AdPerformancePage() {
                         )}
                         {r.targetReachedAt && (
                           <div className="hint" style={{ marginTop: 6, color: "rgba(16, 185, 129, 0.95)" }}>
-                            已達標並自動停投：{new Date(r.targetReachedAt).toLocaleString("zh-TW")}
+                            已達目標並自動停投：{new Date(r.targetReachedAt).toLocaleString("zh-TW")}
                           </div>
                         )}
                       </>
@@ -718,4 +731,3 @@ export function AdPerformancePage() {
     </div>
   );
 }
-

@@ -1,5 +1,6 @@
 import type { AdPlacement } from "../lib/pricing";
 import { PRICING } from "../lib/pricing";
+import { queueSharedWrite } from "../lib/sharedSync";
 
 export type PricingConfigV1 = {
   version: 1;
@@ -56,6 +57,7 @@ export function getPricingConfig(): PricingConfigV1 {
 export function savePricingConfig(next: PricingConfigV1) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...next, updatedAt: isoNow() }));
+    queueSharedWrite(STORAGE_KEY);
   } catch {
     // ignore
   }
@@ -79,4 +81,3 @@ export function getPlacementPrice(placement: AdPlacement): number {
   if (typeof n === "number" && Number.isFinite(n) && n >= 0) return n;
   return PRICING[placement].price;
 }
-

@@ -1,0 +1,142 @@
+const API_BASE = (import.meta.env.VITE_SHARED_API_BASE ?? "").trim().replace(/\/$/, "");
+const CLIENT_ID_KEY = "ad_demo_shared_client_id";
+
+export const SHARED_STORAGE_KEYS = [
+  "ad_demo_config_v1",
+  "ad_demo_pricing_v1",
+  "ad_demo_service_catalog_v1",
+  "ad_demo_vendor_keys_v1",
+  "ad_demo_meta_config_v1",
+  "ad_demo_orders_v1",
+  "ad_demo_meta_orders_v1",
+] as const;
+
+export const SHARED_SYNC_EVENT = "ad-demo-shared-sync";
+
+let lastSeenRevision = 0;
+let flushTimer: number | null = null;
+let flushRunning = false;
+const pendingKeys = new Set<string>();
+
+function getClientId() {
+  try {
+    const current = localStorage.getItem(CLIENT_ID_KEY);
+    if (current) return current;
+    const next = `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+    localStorage.setItem(CLIENT_ID_KEY, next);
+    return next;
+  } catch {
+    return `volatile_${Date.now()}`;
+  }
+}
+
+function dispatchSyncEvent(changedKeys: string[]) {
+  window.dispatchEvent(new CustomEvent(SHARED_SYNC_EVENT, { detail: { changedKeys } }));
+}
+
+function applyRemoteValues(values: Record<string, string | null>): string[] {
+  const changedKeys: string[] = [];
+  for (const key of SHARED_STORAGE_KEYS) {
+    const next = Object.prototype.hasOwnProperty.call(values, key) ? values[key] : null;
+    const current = localStorage.getItem(key);
+    if (next === current) continue;
+    if (next == null) localStorage.removeItem(key);
+    else localStorage.setItem(key, next);
+    changedKeys.push(key);
+  }
+  return changedKeys;
+}
+
+async function postBatch(values: Record<string, string | null>) {
+  const res = await fetch(`${API_BASE}/api/state/batch`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ clientId: getClientId(), values }),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = (await res.json()) as { revision?: number };
+  if (typeof data.revision === "number") {
+    lastSeenRevision = Math.max(lastSeenRevision, data.revision);
+  }
+}
+
+async function flushPending() {
+  if (!API_BASE || flushRunning || pendingKeys.size === 0) return;
+  flushRunning = true;
+  const keys = Array.from(pendingKeys);
+  pendingKeys.clear();
+  const values: Record<string, string | null> = {};
+  for (const key of keys) values[key] = localStorage.getItem(key);
+  try {
+    await postBatch(values);
+  } catch {
+    for (const key of keys) pendingKeys.add(key);
+  } finally {
+    flushRunning = false;
+    if (pendingKeys.size > 0) {
+      scheduleFlush();
+    }
+  }
+}
+
+function scheduleFlush() {
+  if (flushTimer != null) return;
+  flushTimer = window.setTimeout(() => {
+    flushTimer = null;
+    void flushPending();
+  }, 300);
+}
+
+export function isSharedSyncEnabled() {
+  return !!API_BASE;
+}
+
+export function queueSharedWrite(key: string) {
+  if (!API_BASE) return;
+  if (!SHARED_STORAGE_KEYS.includes(key as (typeof SHARED_STORAGE_KEYS)[number])) return;
+  pendingKeys.add(key);
+  scheduleFlush();
+}
+
+export async function pullSharedState() {
+  if (!API_BASE) return { applied: false, changedKeys: [] as string[] };
+  const res = await fetch(`${API_BASE}/api/state`, {
+    headers: { "Cache-Control": "no-store" },
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = (await res.json()) as { revision?: number; values?: Record<string, string | null> };
+  const revision = typeof data.revision === "number" ? data.revision : 0;
+  if (revision <= lastSeenRevision || !data.values) {
+    return { applied: false, changedKeys: [] as string[] };
+  }
+  const changedKeys = applyRemoteValues(data.values);
+  lastSeenRevision = revision;
+  if (changedKeys.length > 0) dispatchSyncEvent(changedKeys);
+  return { applied: changedKeys.length > 0, changedKeys };
+}
+
+export function startSharedStateSync(options?: { intervalMs?: number }) {
+  if (!API_BASE) return () => {};
+  const intervalMs = options?.intervalMs ?? 10000;
+  const onVisibility = () => {
+    if (document.visibilityState === "visible") {
+      void pullSharedState();
+    }
+  };
+  const onPageHide = () => {
+    void flushPending();
+  };
+
+  void pullSharedState();
+  const timer = window.setInterval(() => {
+    void pullSharedState();
+  }, intervalMs);
+  document.addEventListener("visibilitychange", onVisibility);
+  window.addEventListener("pagehide", onPageHide);
+
+  return () => {
+    window.clearInterval(timer);
+    document.removeEventListener("visibilitychange", onVisibility);
+    window.removeEventListener("pagehide", onPageHide);
+  };
+}
