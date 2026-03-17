@@ -88,6 +88,15 @@ async function fetchRemoteState(keys: readonly string[] = SHARED_STORAGE_KEYS) {
   return (await res.json()) as { revision?: number; values?: Record<string, string | null> };
 }
 
+export async function fetchSharedValues(keys: readonly string[] = SHARED_LIGHT_KEYS) {
+  if (!API_BASE) return { revision: 0, values: {} as Record<string, string | null> };
+  const data = await fetchRemoteState(keys);
+  return {
+    revision: typeof data.revision === "number" ? data.revision : 0,
+    values: data.values ?? {},
+  };
+}
+
 async function flushPending() {
   if (!API_BASE || flushRunning || pendingKeys.size === 0) return;
   flushRunning = true;

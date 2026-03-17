@@ -5,12 +5,12 @@ import { PRICING } from "../lib/pricing";
 import { getConfig, getVendorLabel, type VendorKey } from "../config/appConfig";
 import { getVendorKey } from "../config/vendorKeys";
 import { normalizeStatusResponse, postSmmPanel, statusParamFor } from "../lib/vendorApi";
-import { clearOrders, listOrders, updateOrder, type VendorSplitExec } from "../lib/ordersStore";
+import { clearOrders, listOrders, updateOrder, type DemoOrder, type VendorSplitExec } from "../lib/ordersStore";
 import { clearMetaOrders, listMetaOrders, updateMetaOrder, type MetaOrder } from "../lib/metaOrdersStore";
 import { getMetaConfig } from "../config/metaConfig";
 import { fetchMetaAdSnapshot, fetchMetaPostMetrics, updateMetaAdDelivery } from "../lib/metaGraphApi";
 import { getGoalPrimaryMetricKey, getGoalPrimaryMetricLabel, META_AD_GOALS, type MetaKpiMetricKey } from "../lib/metaGoals";
-import { pullSharedState, SHARED_SYNC_EVENT } from "../lib/sharedSync";
+import { fetchSharedValues, pullSharedState, SHARED_SYNC_EVENT } from "../lib/sharedSync";
 
 function mapMetaStatus(s: string): MetaOrder["status"] {
   const v = s.toUpperCase();
@@ -111,6 +111,7 @@ export function AdPerformancePage() {
   const [metaAutoRunning, setMetaAutoRunning] = useState(false);
   const [hourlyAutoRunning, setHourlyAutoRunning] = useState(false);
   const [hourlyAutoLastRunAt, setHourlyAutoLastRunAt] = useState<string | null>(null);
+  const [remoteOrdersFallback, setRemoteOrdersFallback] = useState<DemoOrder[]>([]);
 
   const orders = useMemo(() => {
     void refresh;
@@ -143,6 +144,30 @@ export function AdPerformancePage() {
       ),
     [orders],
   );
+  const vendorFallbackRows = useMemo(
+    () =>
+      remoteOrdersFallback.flatMap((order) =>
+        order.lines.map((line, lineIndex) => ({
+          id: `${order.id}-${lineIndex}`,
+          applicant: order.applicant,
+          caseName: order.caseName,
+          orderNo: order.orderNo,
+          kind: order.kind === "new" ? "新案" : "加購",
+          amount: line.amount,
+          remainsText: summarizeVendorRemains(line),
+          progressText: summarizeVendorProgress(line),
+          placementText: `${PLACEMENT_LABELS[line.placement] ?? line.placement} / 數量 ${line.quantity.toLocaleString("zh-TW")}`,
+          lastSyncAt: line.splits
+            .map((split) => split.lastSyncAt)
+            .filter((value): value is string => !!value)
+            .sort()
+            .at(-1) ?? order.createdAt,
+          hasWarning: line.warnings.length > 0 || line.splits.some((split) => !!split.error),
+        })),
+      ),
+    [remoteOrdersFallback],
+  );
+  const visibleVendorRows = vendorRows.length > 0 ? vendorRows : vendorFallbackRows;
   const canManage = hasRole("admin");
 
   const cfg = getConfig();
@@ -153,9 +178,27 @@ export function AdPerformancePage() {
   const pullLatestOrders = async () => {
     try {
       await pullSharedState(["ad_demo_orders_v1", "ad_demo_meta_orders_v1"]);
+      const remote = await fetchSharedValues(["ad_demo_orders_v1"]);
+      const raw = remote.values.ad_demo_orders_v1;
+      if (typeof raw === "string") {
+        const parsed = JSON.parse(raw);
+        setRemoteOrdersFallback(Array.isArray(parsed) ? (parsed as DemoOrder[]) : []);
+      } else {
+        setRemoteOrdersFallback([]);
+      }
       setRefresh((x) => x + 1);
     } catch {
-      // Keep local state view if shared pull is temporarily unavailable.
+      try {
+        const remote = await fetchSharedValues(["ad_demo_orders_v1"]);
+        const raw = remote.values.ad_demo_orders_v1;
+        if (typeof raw === "string") {
+          const parsed = JSON.parse(raw);
+          setRemoteOrdersFallback(Array.isArray(parsed) ? (parsed as DemoOrder[]) : []);
+          setRefresh((x) => x + 1);
+        }
+      } catch {
+        // Keep local state view if shared pull is temporarily unavailable.
+      }
     }
   };
 
@@ -547,7 +590,7 @@ export function AdPerformancePage() {
 
           <div className="sep" />
 
-          {orders.length === 0 ? (
+          {visibleVendorRows.length === 0 ? (
             <div className="hint">目前沒有廠商互動案件。</div>
           ) : (
             <div className="dense-table performance-table">
@@ -558,7 +601,7 @@ export function AdPerformancePage() {
               <div className="dense-th">剩餘數量</div>
               <div className="dense-th">執行進度</div>
 
-              {vendorRows.map((row) => (
+              {visibleVendorRows.map((row) => (
                 <div className="dense-tr" key={row.id}>
                   <div className="dense-td">
                     <div className="dense-title">{row.applicant}</div>
