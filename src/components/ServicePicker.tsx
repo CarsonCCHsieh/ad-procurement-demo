@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+﻿import { useMemo, useState } from "react";
 import type { VendorKey } from "../config/appConfig";
 import { getVendorServices, type VendorService } from "../config/serviceCatalog";
 
@@ -18,7 +18,8 @@ export function ServicePicker(props: {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
 
-  const services = useMemo(() => getVendorServices(vendor), [vendor]);
+  const services = getVendorServices(vendor);
+
   const currentService = useMemo(
     () => services.find((service) => service.id === currentServiceId) ?? null,
     [currentServiceId, services],
@@ -49,7 +50,7 @@ export function ServicePicker(props: {
 
   return (
     <div>
-      {!compact && (
+      {!compact ? (
         <div className="hint" style={{ marginTop: 6 }}>
           目前選擇：
           {currentService
@@ -58,7 +59,7 @@ export function ServicePicker(props: {
               ? `serviceId ${currentServiceId}（不在目前清單中）`
               : "尚未選擇"}
         </div>
-      )}
+      ) : null}
 
       {compact ? trigger : <div className="actions" style={{ marginTop: 8 }}>{trigger}</div>}
 
