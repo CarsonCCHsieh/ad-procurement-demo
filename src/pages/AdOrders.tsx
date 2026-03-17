@@ -9,7 +9,7 @@ import { addOrder, insertOrder, type DemoOrder } from "../lib/ordersStore";
 import { calcInternalLineAmount, shouldShowPrices } from "../lib/internalPricing";
 import { getPlacementMinUnit } from "../config/pricingConfig";
 import { apiUrl } from "../lib/apiBase";
-import { flushAllSharedState, SHARED_SYNC_EVENT } from "../lib/sharedSync";
+import { flushAllSharedState, pullSharedState, SHARED_SYNC_EVENT } from "../lib/sharedSync";
 
 type OrderKind = "new" | "upsell";
 
@@ -125,6 +125,10 @@ export function AdOrdersPage() {
     const onSharedSync = () => setSharedTick((value) => value + 1);
     window.addEventListener(SHARED_SYNC_EVENT, onSharedSync);
     return () => window.removeEventListener(SHARED_SYNC_EVENT, onSharedSync);
+  }, []);
+
+  useEffect(() => {
+    void pullSharedState(["ad_demo_config_v1", "ad_demo_pricing_v1"]);
   }, []);
 
   useEffect(() => {

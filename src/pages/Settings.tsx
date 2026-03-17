@@ -20,7 +20,7 @@ import { clearVendorServices, getVendorServices, importVendorServicesJson } from
 import { createDemoSnapshot, parseDemoSnapshot, restoreDemoSnapshot } from "../lib/demoState";
 import { calcInternalLineAmount } from "../lib/internalPricing";
 import { getDefaultPricingRule, type AdPlacement } from "../lib/pricing";
-import { SHARED_SYNC_EVENT } from "../lib/sharedSync";
+import { flushAllSharedState, SHARED_SYNC_EVENT } from "../lib/sharedSync";
 
 type MsgKind = "success" | "info" | "warn" | "error";
 
@@ -257,9 +257,10 @@ export function SettingsPage() {
     flashMsg("info", "已刪除品項，記得按儲存。");
   };
 
-  const saveAll = () => {
+  const saveAll = async () => {
     saveConfig(cfg);
     savePricingConfig(pricingCfg);
+    await flushAllSharedState();
     refreshAll();
     flashMsg("success", "控制設定已儲存。");
   };
