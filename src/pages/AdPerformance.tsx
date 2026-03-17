@@ -71,6 +71,35 @@ function metricValueFromPerformance(row: MetaOrder, key: MetaKpiMetricKey): numb
   return typeof hit?.value === "number" ? hit.value : null;
 }
 
+function summarizeVendorProgress(line: { splits: VendorSplitExec[]; warnings: string[] }): string {
+  if (line.splits.length === 0) return "請通知管理員完成設定";
+  const firstError = line.splits.map((split) => formatVendorUserMessage(split.error)).find(Boolean);
+  if (firstError) return firstError;
+  if (line.warnings.length > 0) return "請通知管理員確認設定";
+
+  const statuses = Array.from(
+    new Set(
+      line.splits
+        .map((split) => split.vendorStatus ?? (split.vendorOrderId ? "待更新" : "處理中"))
+        .map((status) => String(status).trim())
+        .filter(Boolean),
+    ),
+  );
+
+  if (statuses.length === 0) return "處理中";
+  if (statuses.length === 1) return statuses[0];
+  return `${statuses[0]} 等 ${statuses.length} 筆`;
+}
+
+function summarizeVendorRemains(line: { quantity: number; splits: VendorSplitExec[] }): string {
+  if (line.splits.length === 0) return "-";
+  const values = line.splits
+    .map((split) => (typeof split.remains === "number" && Number.isFinite(split.remains) ? split.remains : null))
+    .filter((value): value is number => value != null);
+  if (values.length === 0) return "-";
+  return values.reduce((sum, value) => sum + value, 0).toLocaleString("zh-TW");
+}
+
 export function AdPerformancePage() {
   const nav = useNavigate();
   const { user, signOut, hasRole } = useAuth();
@@ -91,6 +120,29 @@ export function AdPerformancePage() {
     void refresh;
     return listMetaOrders();
   }, [refresh]);
+  const vendorRows = useMemo(
+    () =>
+      orders.flatMap((order) =>
+        order.lines.map((line, lineIndex) => ({
+          id: `${order.id}-${lineIndex}`,
+          applicant: order.applicant,
+          caseName: order.caseName,
+          orderNo: order.orderNo,
+          kind: order.kind === "new" ? "新案" : "加購",
+          amount: line.amount,
+          remainsText: summarizeVendorRemains(line),
+          progressText: summarizeVendorProgress(line),
+          placementText: `${PLACEMENT_LABELS[line.placement] ?? line.placement} / 數量 ${line.quantity.toLocaleString("zh-TW")}`,
+          lastSyncAt: line.splits
+            .map((split) => split.lastSyncAt)
+            .filter((value): value is string => !!value)
+            .sort()
+            .at(-1) ?? order.createdAt,
+          hasWarning: line.warnings.length > 0 || line.splits.some((split) => !!split.error),
+        })),
+      ),
+    [orders],
+  );
   const canManage = hasRole("admin");
 
   const cfg = getConfig();
@@ -485,53 +537,39 @@ export function AdPerformancePage() {
           {orders.length === 0 ? (
             <div className="hint">目前沒有廠商互動案件。</div>
           ) : (
-            <div className="list">
-              {orders.map((order) => (
-                <div className="item" key={order.id}>
-                  <div className="item-hd">
-                    <div className="item-title">{order.orderNo} / {order.caseName}</div>
-                    <span className="tag">{new Date(order.createdAt).toLocaleString("zh-TW")}</span>
+            <div className="dense-table performance-table">
+              <div className="dense-th">申請人</div>
+              <div className="dense-th">案件名</div>
+              <div className="dense-th">案件種類</div>
+              <div className="dense-th">金額</div>
+              <div className="dense-th">剩餘數量</div>
+              <div className="dense-th">執行進度</div>
+
+              {vendorRows.map((row) => (
+                <div className="dense-tr" key={row.id}>
+                  <div className="dense-td">
+                    <div className="dense-title">{row.applicant}</div>
                   </div>
-                  <div className="hint">{`申請人：${order.applicant} / 種類：${order.kind === "new" ? "新案" : "加購"} / 金額：NT$ ${order.totalAmount.toLocaleString()}`}</div>
-
-                  <div className="sep" />
-                  <div className="list">
-                    {order.lines.map((line, lineIndex) => (
-                      <div className="item" key={`${order.id}-${lineIndex}`}>
-                        <div className="item-hd">
-                          <div className="item-title">{PLACEMENT_LABELS[line.placement] ?? line.placement} / 數量 {line.quantity.toLocaleString()}</div>
-                          <div style={{ fontWeight: 800 }}>NT$ {line.amount.toLocaleString()}</div>
-                        </div>
-                        {line.warnings.length > 0 ? <div className="hint" style={{ marginTop: 8, color: "rgba(245, 158, 11, 0.95)" }}>這筆案件有管理提醒，若持續異常請通知管理員。</div> : null}
-
-                        {line.splits.length === 0 ? (
-                          <div className="hint">這個投放項目尚未完成系統設定，請通知管理員。</div>
-                        ) : (
-                          <div className="list" style={{ marginTop: 8 }}>
-                            {line.splits.map((split, splitIndex) => (
-                              <div className="item" key={`${order.id}-${lineIndex}-${split.vendor}-${split.serviceId}`}>
-                                <div className="item-hd">
-                                  <div className="item-title">{`執行批次 ${splitIndex + 1}`}</div>
-                                  <div style={{ fontWeight: 800 }}>{split.quantity.toLocaleString()}</div>
-                                </div>
-                                <div className="row cols2" style={{ marginTop: 10 }}>
-                                  <div className="field">
-                                    <div className="label">執行進度</div>
-                                    <input value={split.vendorStatus ?? (split.vendorOrderId ? "待更新" : "處理中")} readOnly />
-                                    {split.error ? <div className="hint" style={{ color: "rgba(245, 158, 11, 0.95)" }}>{formatVendorUserMessage(split.error)}</div> : null}
-                                  </div>
-                                  <div className="field">
-                                    <div className="label">剩餘數量</div>
-                                    <input value={split.remains == null ? "" : String(split.remains)} readOnly />
-                                    <div className="hint">{split.lastSyncAt ? new Date(split.lastSyncAt).toLocaleString("zh-TW") : "-"}</div>
-                                  </div>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                  <div className="dense-td dense-main">
+                    <div className="dense-title">{row.caseName}</div>
+                    <div className="dense-meta">{row.orderNo} / {row.placementText}</div>
+                  </div>
+                  <div className="dense-td">
+                    <div className="dense-title">{row.kind}</div>
+                  </div>
+                  <div className="dense-td">
+                    <div className="dense-title">NT$ {row.amount.toLocaleString("zh-TW")}</div>
+                  </div>
+                  <div className="dense-td">
+                    <div className="dense-title">{row.remainsText}</div>
+                  </div>
+                  <div className="dense-td dense-main">
+                    <div className="dense-title" style={row.hasWarning ? { color: "rgba(220, 38, 38, 0.95)" } : undefined}>
+                      {row.progressText}
+                    </div>
+                    <div className="dense-meta">
+                      更新時間：{row.lastSyncAt ? new Date(row.lastSyncAt).toLocaleString("zh-TW") : "-"}
+                    </div>
                   </div>
                 </div>
               ))}
