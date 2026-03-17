@@ -125,6 +125,39 @@ function readInsightValue(data: unknown, name: string): number {
   return toNumber(asRecord(values[0])?.value);
 }
 
+async function fetchLocalPostMetricsProxy(postId: string): Promise<{
+  ok: boolean;
+  detail?: string;
+  values?: Partial<Record<MetaKpiMetricKey, number>>;
+  raw?: Record<string, unknown>;
+} | null> {
+  if (typeof window === "undefined") return null;
+  if (!window.location.origin.startsWith("http")) return null;
+
+  try {
+    const url = `/api/meta/post-metrics?postId=${encodeURIComponent(postId)}`;
+    const res = await fetch(url, {
+      method: "GET",
+      headers: { "Cache-Control": "no-store" },
+    });
+    if (res.status === 404) return null;
+    const json = (await res.json()) as {
+      ok?: boolean;
+      detail?: string;
+      values?: Partial<Record<MetaKpiMetricKey, number>>;
+      raw?: Record<string, unknown>;
+    };
+    return {
+      ok: !!json.ok,
+      detail: typeof json.detail === "string" ? json.detail : undefined,
+      values: json.values,
+      raw: json.raw,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function extractMetricValues(row: Record<string, unknown>): Record<MetaKpiMetricKey, number> {
   const likes = sumAcrossActionTypes(row.actions, ["post_reaction", "like", "post_like", "ig_like"]);
   const allClicks = toNumber(row.clicks);
@@ -293,8 +326,12 @@ export async function fetchMetaPostMetrics(params: {
   const { cfg } = params;
   const token = cfg.accessToken.trim();
   const postId = params.postId.trim().replace(/^https?:\/\/[^/]+\//i, "");
+  const proxied = await fetchLocalPostMetricsProxy(postId);
+  if (proxied?.ok) {
+    return proxied;
+  }
   if (!token) {
-    return { ok: false, detail: "請先在控制設定填入 Meta Access Token" };
+    return proxied ?? { ok: false, detail: "請先在控制設定填入 Meta Access Token" };
   }
   if (!postId) {
     return { ok: false, detail: "缺少貼文 ID" };

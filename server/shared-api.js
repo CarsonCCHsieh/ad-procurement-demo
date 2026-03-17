@@ -8,6 +8,7 @@ const HOST = process.env.SHARED_API_HOST || "0.0.0.0";
 const PORT = Number(process.env.SHARED_API_PORT || 8787);
 const DB_PATH = resolve(process.cwd(), process.env.SHARED_API_DB || "./data/shared-demo.sqlite");
 const DIST_DIR = resolve(process.cwd(), "./dist");
+const META_SECRET_PATH = resolve(process.cwd(), process.env.META_LOCAL_SECRET_PATH || "./data/meta-local-secrets.json");
 
 mkdirSync(dirname(DB_PATH), { recursive: true });
 
@@ -46,6 +47,8 @@ const bumpRevisionStmt = db.prepare(`
       updated_at = ?
   WHERE id = 1
 `);
+
+let metaPagesCache = null;
 
 function json(res, status, payload) {
   res.writeHead(status, {
@@ -112,6 +115,163 @@ function readBody(req) {
   });
 }
 
+function loadMetaSecrets() {
+  if (!existsSync(META_SECRET_PATH)) return null;
+  try {
+    const raw = JSON.parse(readFileSync(META_SECRET_PATH, "utf-8"));
+    if (!raw || typeof raw !== "object") return null;
+    const userAccessToken = typeof raw.userAccessToken === "string" ? raw.userAccessToken.trim() : "";
+    if (!userAccessToken) return null;
+    return {
+      apiVersion: typeof raw.apiVersion === "string" && raw.apiVersion.trim() ? raw.apiVersion.trim() : "v20.0",
+      userAccessToken,
+      preferredPageId: typeof raw.preferredPageId === "string" ? raw.preferredPageId.trim() : "",
+      preferredPageName: typeof raw.preferredPageName === "string" ? raw.preferredPageName.trim() : "",
+    };
+  } catch {
+    return null;
+  }
+}
+
+function graphUrl(apiVersion, path, params = {}) {
+  const url = new URL(`https://graph.facebook.com/${apiVersion}${path}`);
+  for (const [k, v] of Object.entries(params)) {
+    if (v == null || v === "") continue;
+    url.searchParams.set(k, String(v));
+  }
+  return url.toString();
+}
+
+async function graphApiGet(apiVersion, token, path, params = {}) {
+  const url = graphUrl(apiVersion, path, { ...params, access_token: token });
+  const res = await fetch(url, { method: "GET" });
+  const jsonBody = await res.json();
+  if (!res.ok || jsonBody.error) {
+    const e = jsonBody?.error;
+    throw new Error(e?.error_user_msg || e?.message || `HTTP ${res.status}`);
+  }
+  return jsonBody;
+}
+
+async function listAvailablePages(metaSecrets) {
+  const now = Date.now();
+  if (metaPagesCache && now - metaPagesCache.fetchedAt < 5 * 60 * 1000) {
+    return metaPagesCache.pages;
+  }
+  const raw = await graphApiGet(metaSecrets.apiVersion, metaSecrets.userAccessToken, "/me/accounts");
+  const pages = Array.isArray(raw.data) ? raw.data : [];
+  metaPagesCache = { fetchedAt: now, pages };
+  return pages;
+}
+
+function derivePageIdFromPostId(postId) {
+  const m = String(postId).match(/^(\d+)_/);
+  return m ? m[1] : "";
+}
+
+function readFirstInsightValue(raw) {
+  const row = Array.isArray(raw?.data) ? raw.data[0] : null;
+  const valueRow = row && Array.isArray(row.values) ? row.values[0] : null;
+  const value = valueRow?.value;
+  if (typeof value === "number") return value;
+  if (typeof value === "string") {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : 0;
+  }
+  return 0;
+}
+
+async function fetchMetaPostMetricsSecure({ postId, pageId, pageName }) {
+  const metaSecrets = loadMetaSecrets();
+  if (!metaSecrets) {
+    return { ok: false, detail: "Meta 本機權杖尚未設定" };
+  }
+
+  const normalizedPostId = String(postId || "").trim().replace(/^https?:\/\/[^/]+\//i, "");
+  if (!normalizedPostId) {
+    return { ok: false, detail: "缺少貼文 ID" };
+  }
+
+  const targetPageId = String(pageId || "").trim() || derivePageIdFromPostId(normalizedPostId) || metaSecrets.preferredPageId;
+  const targetPageName = String(pageName || "").trim() || metaSecrets.preferredPageName;
+  const pages = await listAvailablePages(metaSecrets);
+  const page = pages.find((item) =>
+    (targetPageId && String(item?.id || "") === targetPageId) ||
+    (targetPageName && String(item?.name || "") === targetPageName),
+  );
+  if (!page?.access_token) {
+    return { ok: false, detail: "找不到對應粉專的存取權杖" };
+  }
+
+  const pageToken = String(page.access_token);
+  const pageLabel = String(page.name || targetPageName || targetPageId || "");
+  const base = await graphApiGet(
+    metaSecrets.apiVersion,
+    pageToken,
+    `/${encodeURIComponent(normalizedPostId)}`,
+    { fields: "id,created_time,permalink_url,shares,comments.summary(true),reactions.summary(true),attachments{media_type}" },
+  );
+
+  const metricMap = {
+    impressions: "post_impressions",
+    reach: "post_impressions_unique",
+    all_clicks: "post_clicks",
+    likes: "post_reactions_like_total",
+    video_3s_views: "post_video_views",
+  };
+
+  const values = {
+    likes: Number(base?.reactions?.summary?.total_count || 0),
+    comments: Number(base?.comments?.summary?.total_count || 0),
+    shares: Number(base?.shares?.count || 0),
+    all_clicks: 0,
+    interactions_total: 0,
+    impressions: 0,
+    reach: 0,
+    video_3s_views: 0,
+    thruplays: 0,
+  };
+
+  const validMetrics = [];
+  const invalidMetrics = [];
+
+  for (const [key, metric] of Object.entries(metricMap)) {
+    try {
+      const insight = await graphApiGet(
+        metaSecrets.apiVersion,
+        pageToken,
+        `/${encodeURIComponent(normalizedPostId)}/insights`,
+        { metric },
+      );
+      const metricValue = readFirstInsightValue(insight);
+      values[key] = metricValue;
+      if (key === "video_3s_views") values.thruplays = metricValue;
+      validMetrics.push(metric);
+    } catch (error) {
+      invalidMetrics.push({
+        metric,
+        detail: error instanceof Error ? error.message : "unknown error",
+      });
+    }
+  }
+
+  values.interactions_total = values.likes + values.comments + values.shares + values.all_clicks;
+
+  return {
+    ok: true,
+    page: {
+      id: String(page.id || ""),
+      name: pageLabel,
+    },
+    values,
+    raw: {
+      base,
+      validMetrics,
+      invalidMetrics,
+    },
+  };
+}
+
 function currentState() {
   const values = {};
   for (const row of selectAllStmt.all()) {
@@ -144,6 +304,17 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "GET" && req.url === "/api/state") {
       json(res, 200, { ok: true, ...currentState() });
+      return;
+    }
+
+    if (req.method === "GET" && req.url.startsWith("/api/meta/post-metrics")) {
+      const url = new URL(req.url, `http://${req.headers.host || "127.0.0.1"}`);
+      const result = await fetchMetaPostMetricsSecure({
+        postId: url.searchParams.get("postId") || "",
+        pageId: url.searchParams.get("pageId") || "",
+        pageName: url.searchParams.get("pageName") || "",
+      });
+      json(res, result.ok ? 200 : 400, result);
       return;
     }
 
