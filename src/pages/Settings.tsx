@@ -20,7 +20,7 @@ import { clearVendorServices, getVendorServices, importVendorServicesJson } from
 import { createDemoSnapshot, parseDemoSnapshot, restoreDemoSnapshot } from "../lib/demoState";
 import { calcInternalLineAmount } from "../lib/internalPricing";
 import { getDefaultPricingRule, type AdPlacement } from "../lib/pricing";
-import { flushAllSharedState, SHARED_SYNC_EVENT } from "../lib/sharedSync";
+import { flushAllSharedState, pullSharedState, SHARED_STORAGE_KEYS, SHARED_SYNC_EVENT } from "../lib/sharedSync";
 
 type MsgKind = "success" | "info" | "warn" | "error";
 
@@ -72,6 +72,7 @@ export function SettingsPage() {
   const [showVendorKeys, setShowVendorKeys] = useState(false);
   const [newPlacementKey, setNewPlacementKey] = useState("");
   const [newPlacementLabel, setNewPlacementLabel] = useState("");
+  const [metaCardKey, setMetaCardKey] = useState(0);
   const [msg, setMsg] = useState<{ kind: MsgKind; text: string } | null>(null);
   const msgTimer = useRef<number | null>(null);
   const backupFileRef = useRef<HTMLInputElement | null>(null);
@@ -90,12 +91,20 @@ export function SettingsPage() {
       urpanel: getVendorKey("urpanel"),
       justanotherpanel: getVendorKey("justanotherpanel"),
     });
+    setMetaCardKey((value) => value + 1);
   };
 
   useEffect(() => {
     const onSharedSync = () => refreshAll();
     window.addEventListener(SHARED_SYNC_EVENT, onSharedSync);
     return () => window.removeEventListener(SHARED_SYNC_EVENT, onSharedSync);
+  }, []);
+
+  useEffect(() => {
+    void (async () => {
+      await pullSharedState(SHARED_STORAGE_KEYS);
+      refreshAll();
+    })();
   }, []);
 
   const setupStats = useMemo(() => {
@@ -448,7 +457,7 @@ export function SettingsPage() {
         </div>
       </div>
 
-      <MetaSettingsCard onNotice={flashMsg} />
+      <MetaSettingsCard key={metaCardKey} onNotice={flashMsg} />
 
       <div id="sec-pricing">
         <CollapsibleCard
