@@ -4,11 +4,11 @@ const CLIENT_ID_KEY = "ad_demo_shared_client_id";
 export const SHARED_STORAGE_KEYS = [
   "ad_demo_config_v1",
   "ad_demo_pricing_v1",
+  "ad_demo_orders_v1",
+  "ad_demo_meta_orders_v1",
   "ad_demo_service_catalog_v1",
   "ad_demo_vendor_keys_v1",
   "ad_demo_meta_config_v1",
-  "ad_demo_orders_v1",
-  "ad_demo_meta_orders_v1",
 ] as const;
 
 export const SHARED_SYNC_EVENT = "ad-demo-shared-sync";
@@ -44,11 +44,16 @@ function applyRemoteValues(values: Record<string, string | null>): string[] {
   const changedKeys: string[] = [];
   for (const key of SHARED_STORAGE_KEYS) {
     const next = Object.prototype.hasOwnProperty.call(values, key) ? values[key] : null;
-    const current = localStorage.getItem(key);
-    if (next === current) continue;
-    if (next == null) localStorage.removeItem(key);
-    else localStorage.setItem(key, next);
-    changedKeys.push(key);
+    try {
+      const current = localStorage.getItem(key);
+      if (next === current) continue;
+      if (next == null) localStorage.removeItem(key);
+      else localStorage.setItem(key, next);
+      changedKeys.push(key);
+    } catch {
+      // Continue applying smaller, higher-priority keys such as orders/performance
+      // even if a large key (for example service catalog) exceeds local storage limits.
+    }
   }
   return changedKeys;
 }
