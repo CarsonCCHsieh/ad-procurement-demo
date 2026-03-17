@@ -1,6 +1,7 @@
 ﻿import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
+import { API_BASE, apiUrl } from "../lib/apiBase";
 import { PRICING } from "../lib/pricing";
 import { getConfig, getVendorLabel, type VendorKey } from "../config/appConfig";
 import { getVendorKey } from "../config/vendorKeys";
@@ -295,6 +296,27 @@ export function AdPerformancePage() {
     if (vendorRefreshing) return;
     setVendorRefreshing(true);
     try {
+      if (API_BASE) {
+        const res = await fetch(apiUrl("/api/vendor/sync-shared-orders"), { method: "POST" });
+        const data = (await res.json()) as { ok?: boolean; syncedCount?: number; error?: string };
+        if (!res.ok || !data.ok) {
+          throw new Error(data.error || `HTTP ${res.status}`);
+        }
+
+        await pullLatestOrders();
+        if (options?.silent) return;
+
+        if ((data.syncedCount ?? 0) === 0) {
+          setMsg("目前沒有需要追蹤的進行中案件。");
+          setTimeout(() => setMsg(null), 2500);
+          return;
+        }
+
+        setMsg(`已更新 ${Number(data.syncedCount ?? 0).toLocaleString("zh-TW")} 筆進行中案件。`);
+        setTimeout(() => setMsg(null), 2500);
+        return;
+      }
+
       const vendors: VendorKey[] = ["smmraja", "urpanel", "justanotherpanel"];
       let syncedCount = 0;
       const errors: string[] = [];

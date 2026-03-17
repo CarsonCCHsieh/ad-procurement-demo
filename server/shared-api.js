@@ -53,6 +53,7 @@ const bumpRevisionStmt = db.prepare(`
 let metaPagesCache = null;
 const APP_CONFIG_KEY = "ad_demo_config_v1";
 const VENDOR_KEYS_KEY = "ad_demo_vendor_keys_v1";
+const ORDERS_KEY = "ad_demo_orders_v1";
 const DEFAULT_VENDOR_BASES = {
   smmraja: "https://www.smmraja.com/api/v3",
   urpanel: "https://urpanel.com/api/v2",
@@ -316,6 +317,23 @@ function readSharedJson(key) {
   }
 }
 
+function writeSharedJson(key, value, updatedBy = "server") {
+  const now = new Date().toISOString();
+  db.exec("BEGIN");
+  try {
+    if (value == null) {
+      deleteEntryStmt.run(key);
+    } else {
+      upsertEntryStmt.run(key, JSON.stringify(value), now, updatedBy);
+    }
+    bumpRevisionStmt.run(now);
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+}
+
 function formEncode(params) {
   const body = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {
@@ -398,6 +416,81 @@ async function fetchVendorStatus(vendor, orderId) {
     payload: { [param.key]: param.value },
   });
   return normalizeSingleStatus(resp);
+}
+
+const VENDOR_TERMINAL_STATUS = [
+  "complete",
+  "completed",
+  "done",
+  "success",
+  "successful",
+  "partial",
+  "cancel",
+  "canceled",
+  "cancelled",
+  "refund",
+  "refunded",
+  "fail",
+  "failed",
+  "error",
+];
+
+function isVendorSplitDone(split) {
+  const status = String(split?.vendorStatus ?? "").trim().toLowerCase();
+  if (status && VENDOR_TERMINAL_STATUS.some((k) => status.includes(k))) return true;
+  if (typeof split?.remains === "number" && split.remains <= 0) return true;
+  return false;
+}
+
+async function syncSharedOrders() {
+  const orders = readSharedJson(ORDERS_KEY);
+  if (!Array.isArray(orders) || orders.length === 0) {
+    return { syncedCount: 0, orders: [] };
+  }
+
+  let syncedCount = 0;
+  const nextOrders = [];
+
+  for (const order of orders) {
+    const nextOrder = {
+      ...order,
+      lines: Array.isArray(order?.lines)
+        ? await Promise.all(
+            order.lines.map(async (line) => {
+              const splits = Array.isArray(line?.splits) ? line.splits : [];
+              const nextSplits = await Promise.all(
+                splits.map(async (split) => {
+                  if (!split?.vendor || !split?.vendorOrderId) return split;
+                  if (isVendorSplitDone(split)) return split;
+
+                  const status = await fetchVendorStatus(split.vendor, split.vendorOrderId);
+                  syncedCount += 1;
+                  return {
+                    ...split,
+                    vendorStatus: status.status ?? split.vendorStatus,
+                    remains: status.remains ?? split.remains,
+                    startCount: status.start_count ?? split.startCount,
+                    charge: status.charge ?? split.charge,
+                    currency: status.currency ?? split.currency,
+                    error: status.error ?? "",
+                    lastSyncAt: new Date().toISOString(),
+                  };
+                }),
+              );
+
+              return {
+                ...line,
+                splits: nextSplits,
+              };
+            }),
+          )
+        : [],
+    };
+    nextOrders.push(nextOrder);
+  }
+
+  writeSharedJson(ORDERS_KEY, nextOrders, "server-sync");
+  return { syncedCount, orders: nextOrders };
 }
 
 async function submitVendorSplit({ vendor, serviceId, quantity, link }) {
@@ -584,6 +677,16 @@ const server = http.createServer(async (req, res) => {
           failureCount,
           usedLink: firstLink,
         },
+      });
+      return;
+    }
+
+    if (req.method === "POST" && req.url === "/api/vendor/sync-shared-orders") {
+      const result = await syncSharedOrders();
+      json(res, 200, {
+        ok: true,
+        syncedCount: result.syncedCount,
+        orders: result.orders,
       });
       return;
     }
