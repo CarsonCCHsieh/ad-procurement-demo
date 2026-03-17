@@ -131,6 +131,26 @@ export function SettingsPage() {
     }));
   };
 
+  const persistConfigDraft = (nextCfg: AppConfigV1, nextPricing = pricingCfg) => {
+    saveConfig(nextCfg);
+    savePricingConfig(nextPricing);
+    void flushAllSharedState();
+  };
+
+  const setPlacementEnabled = (placement: AdPlacement, enabled: boolean) => {
+    setCfg((current) => {
+      const nextCfg = {
+        ...current,
+        placements: current.placements.map((item) =>
+          item.placement === placement ? { ...item, enabled } : item,
+        ),
+      };
+      persistConfigDraft(nextCfg);
+      return nextCfg;
+    });
+    flashMsg("success", enabled ? "品項已啟用。" : "品項已停用。", 2200);
+  };
+
   const setPlacementStrategy = (placement: AdPlacement, splitStrategy: "random" | "weighted") => {
     setPlacementField(placement, "splitStrategy", splitStrategy);
   };
@@ -233,28 +253,49 @@ export function SettingsPage() {
       prices: { ...current.prices, [placement]: defaults.price },
       minUnits: { ...current.minUnits, [placement]: defaults.minUnit },
     }));
+    persistConfigDraft(
+      {
+        ...cfg,
+        placements: [
+          ...cfg.placements,
+          {
+            placement,
+            label,
+            enabled: true,
+            splitStrategy: "random",
+            suppliers: [],
+          },
+        ],
+      },
+      {
+        ...pricingCfg,
+        prices: { ...pricingCfg.prices, [placement]: defaults.price },
+        minUnits: { ...pricingCfg.minUnits, [placement]: defaults.minUnit },
+      },
+    );
     setNewPlacementKey("");
     setNewPlacementLabel("");
-    flashMsg("success", "已新增品項，記得按儲存。");
+    flashMsg("success", "已新增品項。");
   };
 
   const removePlacement = (placement: AdPlacement) => {
-    setCfg((current) => ({
-      ...current,
-      placements: current.placements.filter((item) => item.placement !== placement),
-    }));
-    setPricingCfg((current) => {
-      const nextPrices = { ...current.prices };
-      const nextMinUnits = { ...current.minUnits };
-      delete nextPrices[placement];
-      delete nextMinUnits[placement];
-      return {
-        ...current,
-        prices: nextPrices,
-        minUnits: nextMinUnits,
-      };
-    });
-    flashMsg("info", "已刪除品項，記得按儲存。");
+    const nextCfg = {
+      ...cfg,
+      placements: cfg.placements.filter((item) => item.placement !== placement),
+    };
+    const nextPrices = { ...pricingCfg.prices };
+    const nextMinUnits = { ...pricingCfg.minUnits };
+    delete nextPrices[placement];
+    delete nextMinUnits[placement];
+    const nextPricing = {
+      ...pricingCfg,
+      prices: nextPrices,
+      minUnits: nextMinUnits,
+    };
+    setCfg(nextCfg);
+    setPricingCfg(nextPricing);
+    persistConfigDraft(nextCfg, nextPricing);
+    flashMsg("info", "已刪除品項。");
   };
 
   const saveAll = async () => {
@@ -615,7 +656,7 @@ export function SettingsPage() {
                     <span className="tag">{placementCfg.enabled ? "啟用中" : "已停用"}</span>
                     <select
                       value={placementCfg.enabled ? "on" : "off"}
-                      onChange={(event) => setPlacementField(placementCfg.placement, "enabled", event.target.value === "on")}
+                      onChange={(event) => setPlacementEnabled(placementCfg.placement, event.target.value === "on")}
                     >
                       <option value="on">啟用</option>
                       <option value="off">停用</option>
