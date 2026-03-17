@@ -7,6 +7,7 @@ import { getConfig, getPlacementConfig, type VendorKey } from "../config/appConf
 import { planSplit } from "../lib/split";
 import { addOrder, insertOrder, type DemoOrder } from "../lib/ordersStore";
 import { calcInternalLineAmount, shouldShowPrices } from "../lib/internalPricing";
+import { getPlacementMinUnit } from "../config/pricingConfig";
 import { apiUrl } from "../lib/apiBase";
 import { flushAllSharedState, SHARED_SYNC_EVENT } from "../lib/sharedSync";
 
@@ -47,7 +48,7 @@ function defaultState(): FormState {
     caseName: "",
     kind: "new",
     linksRaw: "",
-    items: [{ placement: "fb_like", target: String(PRICING.fb_like.minUnit) }],
+    items: [{ placement: "fb_like", target: String(getPlacementMinUnit("fb_like")) }],
   };
 }
 
@@ -73,11 +74,11 @@ function validate(state: FormState): FormErrors {
     const fieldErrors: { placement?: string; target?: string } = {};
     if (!item.placement) fieldErrors.placement = "請選擇投放項目";
     const qty = Number(item.target);
-    const rule = PRICING[item.placement];
+    const minUnit = getPlacementMinUnit(item.placement);
     if (!Number.isFinite(qty) || !Number.isInteger(qty) || qty <= 0) {
       fieldErrors.target = "請輸入正整數";
-    } else if (qty % rule.minUnit !== 0) {
-      fieldErrors.target = `數量需為 ${rule.minUnit.toLocaleString()} 的倍數`;
+    } else if (qty % minUnit !== 0) {
+      fieldErrors.target = `數量需為 ${minUnit.toLocaleString()} 的倍數`;
     }
     return fieldErrors;
   });
@@ -143,7 +144,7 @@ export function AdOrdersPage() {
   const addItem = () => {
     setState((current) => ({
       ...current,
-      items: [...current.items, { placement: "fb_like", target: String(PRICING.fb_like.minUnit) }],
+      items: [...current.items, { placement: "fb_like", target: String(getPlacementMinUnit("fb_like")) }],
     }));
   };
 
@@ -335,6 +336,7 @@ export function AdOrdersPage() {
               <div className="list">
                 {state.items.map((item, index) => {
                   const rule = PRICING[item.placement];
+                  const minUnit = getPlacementMinUnit(item.placement);
                   const qty = Number(item.target);
                   const amount = Number.isFinite(qty) && qty > 0 ? calcInternalLineAmount(item.placement, qty) : 0;
                   const itemErrors = errors.items?.[index];
@@ -350,7 +352,7 @@ export function AdOrdersPage() {
                       <div className="row cols3">
                         <div className="field">
                           <div className="label">平台 / 項目<span className="req">*</span></div>
-                          <select value={item.placement} onChange={(e) => updateItem(index, (current) => ({ ...current, placement: e.target.value as AdPlacement, target: String(PRICING[e.target.value as AdPlacement].minUnit) }))}>
+                          <select value={item.placement} onChange={(e) => updateItem(index, (current) => ({ ...current, placement: e.target.value as AdPlacement, target: String(getPlacementMinUnit(e.target.value as AdPlacement)) }))}>
                             {Object.keys(PRICING).map((key) => (
                               <option key={key} value={key}>{PLACEMENT_LABELS[key as AdPlacement]}</option>
                             ))}
@@ -359,8 +361,8 @@ export function AdOrdersPage() {
                         </div>
                         <div className="field">
                           <div className="label">目標數量<span className="req">*</span></div>
-                          <input value={item.target} inputMode="numeric" onChange={(e) => updateItem(index, (current) => ({ ...current, target: e.target.value }))} placeholder={String(rule.minUnit)} />
-                          <div className="hint">最小單位：{rule.minUnit.toLocaleString()}</div>
+                          <input value={item.target} inputMode="numeric" onChange={(e) => updateItem(index, (current) => ({ ...current, target: e.target.value }))} placeholder={String(minUnit)} />
+                          <div className="hint">最小單位：{minUnit.toLocaleString()}</div>
                           {itemErrors?.target && <div className="error">{itemErrors.target}</div>}
                         </div>
                         <div className="field">

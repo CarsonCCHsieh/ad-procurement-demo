@@ -1,13 +1,12 @@
 import { PRICING, type AdPlacement } from "./pricing";
-import { getPlacementPrice, getPricingConfig } from "../config/pricingConfig";
+import { getPlacementMinUnit, getPlacementPrice, getPricingConfig } from "../config/pricingConfig";
 
 export function calcInternalLineAmount(placement: AdPlacement, target: number): number {
-  const rule = PRICING[placement];
   const pricePerMinUnit = getPlacementPrice(placement);
-  return (target / rule.minUnit) * pricePerMinUnit;
+  const minUnit = getPlacementMinUnit(placement);
+  return (target / minUnit) * pricePerMinUnit;
 }
 
 export function shouldShowPrices(): boolean {
   return getPricingConfig().showPrices;
 }
-

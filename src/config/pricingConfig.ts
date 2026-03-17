@@ -10,6 +10,7 @@ export type PricingConfigV1 = {
   // Internal pricing shown to staff (NTD) per PRICING[placement].minUnit.
   // (This is separate from vendor panel "rate".)
   prices: Partial<Record<AdPlacement, number>>;
+  minUnits: Partial<Record<AdPlacement, number>>;
 };
 
 const STORAGE_KEY = "ad_demo_pricing_v1";
@@ -23,6 +24,7 @@ export const DEFAULT_PRICING_CONFIG: PricingConfigV1 = {
   updatedAt: isoNow(),
   showPrices: true,
   prices: Object.fromEntries(Object.entries(PRICING).map(([k, v]) => [k, v.price])) as Record<AdPlacement, number>,
+  minUnits: Object.fromEntries(Object.entries(PRICING).map(([k, v]) => [k, v.minUnit])) as Record<AdPlacement, number>,
 };
 
 function normalize(raw: unknown): PricingConfigV1 | null {
@@ -30,16 +32,21 @@ function normalize(raw: unknown): PricingConfigV1 | null {
   const r = raw as Partial<PricingConfigV1>;
   if (r.version !== 1) return null;
   const prices: Partial<Record<AdPlacement, number>> = {};
+  const minUnits: Partial<Record<AdPlacement, number>> = {};
   const p = r.prices ?? {};
+  const mu = r.minUnits ?? {};
   for (const key of Object.keys(PRICING) as AdPlacement[]) {
     const n = Number((p as Record<string, unknown>)[key]);
     if (Number.isFinite(n) && n >= 0) prices[key] = n;
+    const minUnit = Number((mu as Record<string, unknown>)[key]);
+    if (Number.isFinite(minUnit) && Number.isInteger(minUnit) && minUnit > 0) minUnits[key] = minUnit;
   }
   return {
     version: 1,
     updatedAt: typeof r.updatedAt === "string" ? r.updatedAt : isoNow(),
     showPrices: r.showPrices !== false,
     prices,
+    minUnits,
   };
 }
 
@@ -75,9 +82,23 @@ export function setPlacementPrice(placement: AdPlacement, pricePerMinUnit: numbe
   savePricingConfig({ ...cfg, prices: { ...cfg.prices, [placement]: n } });
 }
 
+export function setPlacementMinUnit(placement: AdPlacement, minUnitValue: number) {
+  const cfg = getPricingConfig();
+  const n = Number(minUnitValue);
+  if (!Number.isFinite(n) || !Number.isInteger(n) || n <= 0) return;
+  savePricingConfig({ ...cfg, minUnits: { ...cfg.minUnits, [placement]: n } });
+}
+
 export function getPlacementPrice(placement: AdPlacement): number {
   const cfg = getPricingConfig();
   const n = cfg.prices[placement];
   if (typeof n === "number" && Number.isFinite(n) && n >= 0) return n;
   return PRICING[placement].price;
+}
+
+export function getPlacementMinUnit(placement: AdPlacement): number {
+  const cfg = getPricingConfig();
+  const n = cfg.minUnits[placement];
+  if (typeof n === "number" && Number.isFinite(n) && Number.isInteger(n) && n > 0) return n;
+  return PRICING[placement].minUnit;
 }
