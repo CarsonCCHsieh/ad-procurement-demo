@@ -3,10 +3,9 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { PRICING, type AdPlacement } from "../lib/pricing";
 import { isValidUrl, parseLinks } from "../lib/validate";
-import { getConfig, getPlacementConfig, getVendorLabel, type VendorKey } from "../config/appConfig";
+import { getConfig, getPlacementConfig, type VendorKey } from "../config/appConfig";
 import { planSplit } from "../lib/split";
 import { addOrder, insertOrder, type DemoOrder } from "../lib/ordersStore";
-import { findServiceName } from "../config/serviceCatalog";
 import { calcInternalLineAmount, shouldShowPrices } from "../lib/internalPricing";
 import { flushAllSharedState, SHARED_SYNC_EVENT } from "../lib/sharedSync";
 
@@ -501,42 +500,25 @@ export function AdOrdersPage() {
                     const plan = computed.linePlans[idx] ?? { splits: [], warnings: [] as string[] };
                     return (
                       <div className="item" key={idx}>
-                <div className="item-hd">
-                  <div className="item-title">
-                    {rule.label} / 數量 {Number.isFinite(n) ? n.toLocaleString() : "-"}
-                  </div>
-                  <div style={{ fontWeight: 800 }}>{showPrices ? `NT$ ${amt.toLocaleString()}` : "（已隱藏）"}</div>
-                </div>
-
-                        <div className="hint" style={{ marginTop: 6 }}>
-                          拆單規劃：
+                        <div className="item-hd">
+                          <div className="item-title">
+                            {rule.label} / 數量 {Number.isFinite(n) ? n.toLocaleString() : "-"}
+                          </div>
+                          <div style={{ fontWeight: 800 }}>{showPrices ? `NT$ ${amt.toLocaleString()}` : "（已隱藏）"}</div>
                         </div>
+
                         {plan.splits.length === 0 ? (
                           <div className="error" style={{ marginTop: 6 }}>
-                            尚未完成拆單設定，請通知管理員協助設定供應商服務編號（serviceId）（控制設定）。
+                            這個投放項目尚未完成系統設定，請通知管理員協助處理。
                           </div>
                         ) : (
-                          <div className="list" style={{ marginTop: 8 }}>
-                            {plan.splits.map((s) => (
-                              <div className="item" key={`${idx}-${s.vendor}-${s.serviceId}`}>
-                                <div className="item-hd">
-                                  <div className="item-title">
-                                    {getVendorLabel(s.vendor)} / 服務編號（serviceId）{s.serviceId}
-                                  </div>
-                                  <div style={{ fontWeight: 800 }}>{s.quantity.toLocaleString()}</div>
-                                </div>
-                                {findServiceName(s.vendor, s.serviceId) && (
-                                  <div className="hint" style={{ marginTop: 6 }}>
-                                    {findServiceName(s.vendor, s.serviceId)}
-                                  </div>
-                                )}
-                              </div>
-                            ))}
+                          <div className="hint" style={{ marginTop: 6 }}>
+                            系統會依設定自動安排投放，送出後可到「投放成效」查看最新狀態。
                           </div>
                         )}
                         {plan.splits.length > 0 && plan.warnings.length > 0 && (
                           <div className="hint" style={{ marginTop: 6, color: "rgba(245, 158, 11, 0.95)" }}>
-                            {plan.warnings.join(" / ")}
+                            系統將依目前設定自動分配投放；若有異常，請通知管理員確認。
                           </div>
                         )}
                       </div>
