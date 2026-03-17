@@ -11,7 +11,7 @@ export const DEMO_USERS: DemoUser[] = [
   {
     username: "demo",
     password: "demo1234",
-    displayName: "測試使用者",
+    displayName: "管理員",
     role: "admin",
   },
   {

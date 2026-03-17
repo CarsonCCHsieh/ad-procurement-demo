@@ -32,8 +32,8 @@ export function LoginPage() {
     <div className="container">
       <div className="topbar">
         <div className="brand">
-          <div className="brand-title">廣告下單系統</div>
-          <div className="brand-sub">登入後即可使用下單與進度查看功能。</div>
+          <div className="brand-title">廣告採購系統</div>
+          <div className="brand-sub">登入後即可使用下單、成效檢視與控制設定功能。</div>
         </div>
       </div>
 

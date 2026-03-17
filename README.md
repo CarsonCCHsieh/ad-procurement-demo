@@ -148,9 +148,27 @@ npm run doctor
 正式主機搬遷請先看：
 - `docs/production_handoff_zh.md`
 - `docs/local_multiuser_demo_zh.md`
+- `docs/api_and_storage_map_zh.md`
+- `docs/deployment_topology_zh.md`
+- `docs/status_zh-TW.md`
 
-這兩份文件已把：
+上述文件已把：
 - 目前靜態頁與本機功能的界線
 - 正式主機要搬什麼
 - 上線後如何驗收
 寫清楚。
+
+## 文件索引
+
+- `README.md`
+  - 專案入口與架構摘要
+- `docs/status_zh-TW.md`
+  - 目前專案狀態總覽
+- `docs/local_multiuser_demo_zh.md`
+  - 本機多人 demo 的啟動與限制
+- `docs/production_handoff_zh.md`
+  - 正式主機搬遷與驗收清單
+- `docs/api_and_storage_map_zh.md`
+  - API、shared state 與 localStorage 對照
+- `docs/deployment_topology_zh.md`
+  - 目前 demo 與正式環境的部署拓樸

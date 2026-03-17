@@ -160,7 +160,10 @@
 ## 八、參考檔案
 
 - `README.md`
+- `docs/status_zh-TW.md`
 - `docs/local_multiuser_demo_zh.md`
+- `docs/api_and_storage_map_zh.md`
+- `docs/deployment_topology_zh.md`
 - `server/shared-api.js`
 - `.env.shared.example`
 - `server/meta-local.example.json`

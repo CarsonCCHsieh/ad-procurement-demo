@@ -80,3 +80,5 @@ repo 內只保留範本：
 
 正式搬遷與驗收請看：
 - `docs/production_handoff_zh.md`
+- `docs/api_and_storage_map_zh.md`
+- `docs/deployment_topology_zh.md`
