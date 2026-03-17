@@ -45,6 +45,18 @@ function isVendorSplitDone(split: VendorSplitExec): boolean {
   return false;
 }
 
+function formatVendorUserMessage(error?: string): string {
+  const raw = String(error ?? "").trim();
+  if (!raw) return "";
+  const lower = raw.toLowerCase();
+
+  if (lower.includes("not enough funds") || lower.includes("insufficient") || raw.includes("餘額不足")) {
+    return "供應商餘額不足，請通知管理員補充餘額後再重新送單。";
+  }
+
+  return raw;
+}
+
 const META_AUTO_CHECK_INTERVAL_MS = 5 * 60 * 1000;
 const HOURLY_AUTO_REFRESH_INTERVAL_MS = 60 * 60 * 1000;
 
@@ -180,7 +192,7 @@ export function AdPerformancePage() {
         // eslint-disable-next-line no-await-in-loop
         const result = await syncVendor(vendor, { silent: true });
         syncedCount += result.syncedCount;
-        if (result.error) errors.push(`${getVendorLabel(vendor)}: ${result.error}`);
+        if (result.error) errors.push(`${getVendorLabel(vendor)}: ${formatVendorUserMessage(result.error)}`);
       }
 
       setRefresh((x) => x + 1);
@@ -567,7 +579,7 @@ export function AdPerformancePage() {
                                   <div className="field">
                                     <div className="label">狀態</div>
                                     <input value={s.vendorStatus ?? (s.vendorOrderId ? "待同步" : "未下單")} readOnly />
-                                    {s.error ? <div className="hint" style={{ color: "rgba(245, 158, 11, 0.95)" }}>{s.error}</div> : null}
+                                    {s.error ? <div className="hint" style={{ color: "rgba(245, 158, 11, 0.95)" }}>{formatVendorUserMessage(s.error)}</div> : null}
                                   </div>
                                   <div className="field">
                                     <div className="label">剩餘數量</div>
