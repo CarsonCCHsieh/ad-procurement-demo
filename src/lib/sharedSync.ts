@@ -81,9 +81,7 @@ async function postBatch(values: Record<string, string | null>) {
 async function fetchRemoteState(keys: readonly string[] = SHARED_STORAGE_KEYS) {
   const params = new URLSearchParams();
   if (keys.length > 0) params.set("keys", keys.join(","));
-  const res = await fetch(apiUrl(`/api/state?${params.toString()}`), {
-    headers: { "Cache-Control": "no-store" },
-  });
+  const res = await fetch(apiUrl(`/api/state?${params.toString()}`));
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return (await res.json()) as { revision?: number; values?: Record<string, string | null> };
 }

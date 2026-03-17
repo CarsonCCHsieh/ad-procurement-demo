@@ -65,7 +65,7 @@ function json(res, status, payload) {
     "Cache-Control": "no-store",
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Headers": "Content-Type, Cache-Control",
   });
   res.end(JSON.stringify(payload));
 }
