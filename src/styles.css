@@ -664,6 +664,13 @@ textarea:focus {
   grid-template-columns: 1.25fr 0.65fr 0.9fr 0.9fr;
 }
 
+.dense-table,
+.dense-tr,
+.dense-th,
+.dense-td {
+  min-width: 0;
+}
+
 @media (max-width: 819px) {
   .dense-table {
     grid-template-columns: 1.2fr 0.8fr;
@@ -726,10 +733,11 @@ textarea:focus {
 
 /* Dense supplier mapping table in Settings */
 .dense-table.suppliers-table {
-  grid-template-columns: 64px 180px minmax(320px, 1fr) 110px 140px 88px;
+  grid-template-columns: minmax(84px, 0.75fr) minmax(170px, 1.25fr) minmax(260px, 2fr) minmax(110px, 0.85fr) minmax(110px, 0.85fr) minmax(96px, 0.75fr);
   overflow: auto;
   -ms-overflow-style: none;
   scrollbar-width: none;
+  align-items: start;
 }
 
 .dense-table.performance-table {
@@ -738,6 +746,61 @@ textarea:focus {
 
 .dense-table.suppliers-table::-webkit-scrollbar {
   display: none;
+}
+
+.settings-page .item-summary {
+  align-items: flex-start;
+}
+
+.settings-page .item-summary .btn-group {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  overflow: visible;
+  row-gap: 8px;
+}
+
+.settings-page .item-summary .btn-group .tag {
+  flex: 0 0 auto;
+}
+
+.settings-page .item-summary .btn-group .btn,
+.settings-page .item-summary .btn-group select {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.settings-page .dense-table.suppliers-table .dense-td {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.settings-page .dense-table.suppliers-table .dense-td input,
+.settings-page .dense-table.suppliers-table .dense-td select,
+.settings-page .dense-table.suppliers-table .dense-input,
+.settings-page .dense-table.performance-table .dense-td input,
+.settings-page .dense-table.performance-table .dense-td select,
+.settings-page .dense-table.performance-table .dense-input {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.settings-page .dense-table.suppliers-table .dense-td .btn {
+  min-width: 0;
+}
+
+.settings-page .dense-table.suppliers-table .dense-td:last-child .btn {
+  width: 100%;
+}
+
+.settings-page .dense-table.suppliers-table .dense-td .hint,
+.settings-page .dense-table.performance-table .dense-td .hint,
+.settings-page .dense-table.suppliers-table .dense-meta,
+.settings-page .dense-table.performance-table .dense-meta {
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 @media (max-width: 900px) {
