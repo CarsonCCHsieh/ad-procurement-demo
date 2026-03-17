@@ -188,7 +188,14 @@ export function AdOrdersPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(draft),
     });
-    const data = (await response.json()) as {
+    const contentType = response.headers.get("content-type") || "";
+    const raw = await response.text();
+
+    if (!contentType.includes("application/json")) {
+      throw new Error("目前這個網站版本尚未連接送單服務，請改用內部版本或通知管理員。");
+    }
+
+    const data = JSON.parse(raw) as {
       ok?: boolean;
       error?: string;
       order?: DemoOrder;
