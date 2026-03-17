@@ -41,6 +41,18 @@ function vendorLabel(vendor: VendorKey) {
   return DEFAULT_CONFIG.vendors.find((item) => item.key === vendor)?.label ?? vendor;
 }
 
+function currentMinUnit(pricingCfg: PricingConfigV1, placement: AdPlacement) {
+  const value = pricingCfg.minUnits[placement];
+  if (typeof value === "number" && Number.isFinite(value) && Number.isInteger(value) && value > 0) return value;
+  return getPlacementMinUnit(placement);
+}
+
+function currentPrice(pricingCfg: PricingConfigV1, placement: AdPlacement) {
+  const value = pricingCfg.prices[placement];
+  if (typeof value === "number" && Number.isFinite(value) && value >= 0) return value;
+  return getPlacementPrice(placement);
+}
+
 function cloneConfig(cfg: AppConfigV1): AppConfigV1 {
   return {
     ...cfg,
@@ -385,7 +397,7 @@ export function SettingsPage() {
                 <div className="dense-td">
                   <input
                     className="dense-input"
-                    value={String(getPlacementMinUnit(placement))}
+                    value={String(currentMinUnit(pricingCfg, placement))}
                     inputMode="numeric"
                     onChange={(e) => setMinUnit(placement, Number(e.target.value))}
                   />
@@ -393,7 +405,7 @@ export function SettingsPage() {
                 <div className="dense-td">
                   <input
                     className="dense-input"
-                    value={String(getPlacementPrice(placement))}
+                    value={String(currentPrice(pricingCfg, placement))}
                     inputMode="numeric"
                     onChange={(e) => setPrice(placement, Number(e.target.value))}
                   />
