@@ -175,7 +175,7 @@ export function AdPerformancePage() {
       }
       return { syncedCount: uniq.length, skipped: false };
     } catch (e) {
-      const m = e instanceof Error ? e.message : "鏈煡閷";
+      const m = e instanceof Error ? e.message : "未知錯誤";
       if (!options?.silent) {
         setMsg(`\u540c\u6b65\u5931\u6557\uff1a${m}`);
         setTimeout(() => setMsg(null), 3500);
@@ -239,7 +239,7 @@ export function AdPerformancePage() {
     try {
       const result = await fetchMetaAdSnapshot({ cfg: metaCfg, adId, goal: row.goal });
       if (!result.ok) {
-        updateMetaOrder(row.id, (r) => ({ ...r, error: result.detail ?? "鍚屾澶辨晽", targetLastCheckedAt: new Date().toISOString() }));
+        updateMetaOrder(row.id, (r) => ({ ...r, error: result.detail ?? "同步失敗", targetLastCheckedAt: new Date().toISOString() }));
         if (!options?.silent) {
           setMsg(`Meta \u540c\u6b65\u5931\u6557\uff1a${result.detail ?? "\u672a\u77e5\u932f\u8aa4"}`);
           setTimeout(() => setMsg(null), 3500);
@@ -277,7 +277,7 @@ export function AdPerformancePage() {
           nextApiStatus = pauseResult.statusText ?? "PAUSED";
           reachedAt = nowIso;
         } else if (!postError) {
-          postError = pauseResult.detail ?? "閬旀鍋滄姇澶辨晽";
+          postError = pauseResult.detail ?? "達標停投失敗";
         }
       } else if (row.targetReachedAt) {
         reachedAt = undefined;
@@ -301,7 +301,7 @@ export function AdPerformancePage() {
       if (!options?.fromAutoLoop) setRefresh((x) => x + 1);
       return { ok: true, pausedByTarget };
     } catch (e) {
-      const errMsg = e instanceof Error ? e.message : "鍚屾澶辨晽";
+      const errMsg = e instanceof Error ? e.message : "同步失敗";
       updateMetaOrder(row.id, (r) => ({
         ...r,
         error: errMsg,
@@ -444,7 +444,7 @@ export function AdPerformancePage() {
               nav("/login", { replace: true });
             }}
           >
-            ??
+            登出
           </button>
         </div>
       </div>
@@ -498,7 +498,7 @@ export function AdPerformancePage() {
                     {order.lines.map((line, lineIndex) => (
                       <div className="item" key={`${order.id}-${lineIndex}`}>
                         <div className="item-hd">
-                          <div className="item-title">{PLACEMENT_LABELS[line.placement] ?? line.placement} / ?? {line.quantity.toLocaleString()}</div>
+                          <div className="item-title">{PLACEMENT_LABELS[line.placement] ?? line.placement} / 數量 {line.quantity.toLocaleString()}</div>
                           <div style={{ fontWeight: 800 }}>NT$ {line.amount.toLocaleString()}</div>
                         </div>
                         {line.warnings.length > 0 ? <div className="hint" style={{ marginTop: 8, color: "rgba(245, 158, 11, 0.95)" }}>這筆案件有管理提醒，若持續異常請通知管理員。</div> : null}
@@ -551,7 +551,7 @@ export function AdPerformancePage() {
             <button className="btn" onClick={() => setRefresh((x) => x + 1)}>重新整理</button>
             <button className="btn" onClick={syncAllMeta}>全部同步</button>
             <button className="btn" onClick={() => setMetaAutoEnabled((value) => !value)}>{metaAutoEnabled ? "自動停投：開啟" : "自動停投：關閉"}</button>
-            <button className="btn danger" onClick={() => { clearMetaOrders(); setRefresh((x) => x + 1); }}>??Meta??</button>
+            <button className="btn danger" onClick={() => { clearMetaOrders(); setRefresh((x) => x + 1); }}>清空 Meta 案件</button>
           </div>
 
           <div className="sep" />
@@ -590,10 +590,10 @@ export function AdPerformancePage() {
                         <input value={row.targetValue ? `${(row.targetCurrentValue ?? 0).toLocaleString("zh-TW")} / ${row.targetValue.toLocaleString("zh-TW")} ${metricLabel}` : "未設定"} readOnly />
                       </div>
                       <div className="field">
-                        <div className="label">??</div>
+                        <div className="label">操作</div>
                         <div className="actions inline">
                           <button className="btn" onClick={() => syncMetaOne(row)} disabled={!!syncing[syncKey]}>{syncing[syncKey] ? "同步中" : "同步"}</button>
-                          <button className="btn" onClick={() => updateMetaDeliveryStatus(row, "PAUSED")} disabled={!canPause || !!syncing[syncKey]}>??</button>
+                          <button className="btn" onClick={() => updateMetaDeliveryStatus(row, "PAUSED")} disabled={!canPause || !!syncing[syncKey]}>暫停</button>
                           <button className="btn" onClick={() => updateMetaDeliveryStatus(row, "ACTIVE")} disabled={!canResume || !!syncing[syncKey]}>重新啟用</button>
                           <button className="btn" onClick={() => nav(`/meta-ads-orders?edit=${encodeURIComponent(row.id)}`)}>重新編輯</button>
                         </div>
@@ -604,8 +604,8 @@ export function AdPerformancePage() {
                       <>
                         <div className="sep" />
                         <div className="dense-table">
-                          <div className="dense-th">??</div>
-                          <div className="dense-th">??</div>
+                          <div className="dense-th">指標</div>
+                          <div className="dense-th">數值</div>
                           {row.performance.metrics.map((metric) => (
                             <div className="dense-tr" key={`${row.id}-${metric.key}`}>
                               <div className="dense-td"><div className="dense-title">{metric.label}</div></div>
