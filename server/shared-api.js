@@ -291,9 +291,11 @@ async function fetchMetaPostMetricsSecure({ postId, pageId, pageName }) {
   };
 }
 
-function currentState() {
+function currentState(keys) {
+  const allow = Array.isArray(keys) && keys.length > 0 ? new Set(keys) : null;
   const values = {};
   for (const row of selectAllStmt.all()) {
+    if (allow && !allow.has(row.storage_key)) continue;
     values[row.storage_key] = row.storage_value;
   }
   const meta = selectMetaStmt.get();
@@ -469,8 +471,14 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    if (req.method === "GET" && req.url === "/api/state") {
-      json(res, 200, { ok: true, ...currentState() });
+    if (req.method === "GET" && req.url.startsWith("/api/state")) {
+      const url = new URL(req.url, `http://${req.headers.host || "127.0.0.1"}`);
+      const keys = url.searchParams
+        .get("keys")
+        ?.split(",")
+        .map((item) => item.trim())
+        .filter(Boolean);
+      json(res, 200, { ok: true, ...currentState(keys) });
       return;
     }
 

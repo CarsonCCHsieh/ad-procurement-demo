@@ -10,7 +10,7 @@ import { clearMetaOrders, listMetaOrders, updateMetaOrder, type MetaOrder } from
 import { getMetaConfig } from "../config/metaConfig";
 import { fetchMetaAdSnapshot, fetchMetaPostMetrics, updateMetaAdDelivery } from "../lib/metaGraphApi";
 import { getGoalPrimaryMetricKey, getGoalPrimaryMetricLabel, META_AD_GOALS, type MetaKpiMetricKey } from "../lib/metaGoals";
-import { SHARED_SYNC_EVENT } from "../lib/sharedSync";
+import { pullSharedState, SHARED_SYNC_EVENT } from "../lib/sharedSync";
 
 function mapMetaStatus(s: string): MetaOrder["status"] {
   const v = s.toUpperCase();
@@ -149,6 +149,15 @@ export function AdPerformancePage() {
   const metaCfg = getMetaConfig();
 
   const setSyncFlag = (k: string, v: boolean) => setSyncing((s) => ({ ...s, [k]: v }));
+
+  const pullLatestOrders = async () => {
+    try {
+      await pullSharedState(["ad_demo_orders_v1", "ad_demo_meta_orders_v1"]);
+      setRefresh((x) => x + 1);
+    } catch {
+      // Keep local state view if shared pull is temporarily unavailable.
+    }
+  };
 
   const syncVendor = async (
     vendor: VendorKey,
@@ -473,6 +482,10 @@ export function AdPerformancePage() {
   }, [metaAutoEnabled, metaAutoRunning]);
 
   useEffect(() => {
+    void pullLatestOrders();
+  }, []);
+
+  useEffect(() => {
     const onSharedSync = () => setRefresh((x) => x + 1);
     window.addEventListener(SHARED_SYNC_EVENT, onSharedSync);
     return () => window.removeEventListener(SHARED_SYNC_EVENT, onSharedSync);
@@ -525,7 +538,7 @@ export function AdPerformancePage() {
         </div>
         <div className="card-bd">
           <div className="actions inline">
-            <button className="btn" type="button" onClick={() => setRefresh((x) => x + 1)}>重新整理</button>
+            <button className="btn" type="button" onClick={() => void pullLatestOrders()}>重新整理</button>
             <button className="btn" type="button" onClick={refreshVendorTracking} disabled={vendorRefreshing}>
               {vendorRefreshing ? "同步中" : "同步進行中案件"}
             </button>

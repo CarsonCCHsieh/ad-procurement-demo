@@ -11,6 +11,13 @@ export const SHARED_STORAGE_KEYS = [
   "ad_demo_meta_config_v1",
 ] as const;
 
+export const SHARED_LIGHT_KEYS = [
+  "ad_demo_config_v1",
+  "ad_demo_pricing_v1",
+  "ad_demo_orders_v1",
+  "ad_demo_meta_orders_v1",
+] as const;
+
 export const SHARED_SYNC_EVENT = "ad-demo-shared-sync";
 
 let lastSeenRevision = 0;
@@ -42,8 +49,8 @@ function dispatchSyncEvent(changedKeys: string[]) {
 
 function applyRemoteValues(values: Record<string, string | null>): string[] {
   const changedKeys: string[] = [];
-  for (const key of SHARED_STORAGE_KEYS) {
-    const next = Object.prototype.hasOwnProperty.call(values, key) ? values[key] : null;
+  for (const [key, next] of Object.entries(values)) {
+    if (!SHARED_STORAGE_KEYS.includes(key as (typeof SHARED_STORAGE_KEYS)[number])) continue;
     try {
       const current = localStorage.getItem(key);
       if (next === current) continue;
@@ -71,8 +78,10 @@ async function postBatch(values: Record<string, string | null>) {
   }
 }
 
-async function fetchRemoteState() {
-  const res = await fetch(apiUrl("/api/state"), {
+async function fetchRemoteState(keys: readonly string[] = SHARED_STORAGE_KEYS) {
+  const params = new URLSearchParams();
+  if (keys.length > 0) params.set("keys", keys.join(","));
+  const res = await fetch(apiUrl(`/api/state?${params.toString()}`), {
     headers: { "Cache-Control": "no-store" },
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -117,9 +126,9 @@ export function queueSharedWrite(key: string) {
   scheduleFlush();
 }
 
-export async function pullSharedState() {
+export async function pullSharedState(keys: readonly string[] = SHARED_LIGHT_KEYS) {
   if (!API_BASE) return { applied: false, changedKeys: [] as string[] };
-  const data = await fetchRemoteState();
+  const data = await fetchRemoteState(keys);
   const revision = typeof data.revision === "number" ? data.revision : 0;
   if (revision <= lastSeenRevision || !data.values) {
     return { applied: false, changedKeys: [] as string[] };
@@ -138,7 +147,7 @@ export async function flushAllSharedState() {
 
 async function seedMissingLocalState() {
   if (!API_BASE) return;
-  const data = await fetchRemoteState();
+  const data = await fetchRemoteState(SHARED_LIGHT_KEYS);
   const remoteValues = data.values ?? {};
   const localValues = currentSharedValues();
   const missing: Record<string, string | null> = {};
@@ -156,12 +165,13 @@ async function seedMissingLocalState() {
   }
 }
 
-export function startSharedStateSync(options?: { intervalMs?: number }) {
+export function startSharedStateSync(options?: { intervalMs?: number; keys?: readonly string[] }) {
   if (!API_BASE) return () => {};
   const intervalMs = options?.intervalMs ?? 10000;
+  const keys = options?.keys ?? SHARED_LIGHT_KEYS;
   const onVisibility = () => {
     if (document.visibilityState === "visible") {
-      void pullSharedState();
+      void pullSharedState(keys);
     }
   };
   const onPageHide = () => {
@@ -170,10 +180,10 @@ export function startSharedStateSync(options?: { intervalMs?: number }) {
 
   void (async () => {
     await seedMissingLocalState();
-    await pullSharedState();
+    await pullSharedState(keys);
   })();
   const timer = window.setInterval(() => {
-    void pullSharedState();
+    void pullSharedState(keys);
   }, intervalMs);
   document.addEventListener("visibilitychange", onVisibility);
   window.addEventListener("pagehide", onPageHide);
