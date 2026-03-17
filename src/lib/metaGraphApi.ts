@@ -1,6 +1,7 @@
 ﻿import type { MetaConfigV1 } from "../config/metaConfig";
 import { META_AD_GOALS, type MetaAdGoalKey, type MetaKpiMetricKey } from "./metaGoals";
 import type { MetaOrderInput, MetaPerformanceSnapshot, MetaSubmitResult } from "./metaOrdersStore";
+import { apiUrl } from "./apiBase";
 
 type GraphValue = string | number | boolean | Record<string, unknown> | Array<unknown> | null | undefined;
 
@@ -135,7 +136,7 @@ async function fetchLocalPostMetricsProxy(postId: string): Promise<{
   if (!window.location.origin.startsWith("http")) return null;
 
   try {
-    const url = `/api/meta/post-metrics?postId=${encodeURIComponent(postId)}`;
+    const url = apiUrl(`/api/meta/post-metrics?postId=${encodeURIComponent(postId)}`);
     const res = await fetch(url, {
       method: "GET",
       headers: { "Cache-Control": "no-store" },
@@ -412,3 +413,4 @@ export async function updateMetaAdDelivery(params: {
     return { ok: false, detail: msg };
   }
 }
+

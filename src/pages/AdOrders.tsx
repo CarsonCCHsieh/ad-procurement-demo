@@ -7,6 +7,7 @@ import { getConfig, getPlacementConfig, type VendorKey } from "../config/appConf
 import { planSplit } from "../lib/split";
 import { addOrder, insertOrder, type DemoOrder } from "../lib/ordersStore";
 import { calcInternalLineAmount, shouldShowPrices } from "../lib/internalPricing";
+import { apiUrl } from "../lib/apiBase";
 import { flushAllSharedState, SHARED_SYNC_EVENT } from "../lib/sharedSync";
 
 type OrderKind = "new" | "upsell";
@@ -183,7 +184,7 @@ export function AdOrdersPage() {
 
   const submitViaBackend = async (draft: ReturnType<typeof buildDraftOrder>) => {
     await flushAllSharedState();
-    const response = await fetch("/api/vendor/submit-order", {
+    const response = await fetch(apiUrl("/api/vendor/submit-order"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(draft),

@@ -1,15 +1,4 @@
-function resolveApiBase() {
-  const envBase = (import.meta.env.VITE_SHARED_API_BASE ?? "").trim().replace(/\/$/, "");
-  if (envBase) return envBase;
-  if (typeof window === "undefined") return "";
-  const { protocol, hostname, origin } = window.location;
-  if (protocol === "http:" && !hostname.endsWith("github.io")) {
-    return origin.replace(/\/$/, "");
-  }
-  return "";
-}
-
-const API_BASE = resolveApiBase();
+import { API_BASE, apiUrl } from "./apiBase";
 const CLIENT_ID_KEY = "ad_demo_shared_client_id";
 
 export const SHARED_STORAGE_KEYS = [
@@ -65,7 +54,7 @@ function applyRemoteValues(values: Record<string, string | null>): string[] {
 }
 
 async function postBatch(values: Record<string, string | null>) {
-  const res = await fetch(`${API_BASE}/api/state/batch`, {
+  const res = await fetch(apiUrl("/api/state/batch"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ clientId: getClientId(), values }),
@@ -78,7 +67,7 @@ async function postBatch(values: Record<string, string | null>) {
 }
 
 async function fetchRemoteState() {
-  const res = await fetch(`${API_BASE}/api/state`, {
+  const res = await fetch(apiUrl("/api/state"), {
     headers: { "Cache-Control": "no-store" },
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
