@@ -36,7 +36,7 @@ export function MetaSettingsCard(props: {
       defaultOpen={false}
     >
       <div className="hint" style={{ marginBottom: 10 }}>
-        目前為靜態 demo 版。權杖會保存在本機瀏覽器，不適合多人共用同一組正式權限。
+        權杖屬於敏感資料，請由管理者妥善保存與更新。
       </div>
 
       <div className="row">

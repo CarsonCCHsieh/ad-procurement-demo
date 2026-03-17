@@ -21,7 +21,7 @@ import { getPlacementPrice, getPricingConfig, savePricingConfig } from "../confi
 import { createDemoSnapshot, parseDemoSnapshot, restoreDemoSnapshot } from "../lib/demoState";
 import { planSplit } from "../lib/split";
 import { calcInternalLineAmount } from "../lib/internalPricing";
-import { isSharedSyncEnabled, SHARED_SYNC_EVENT } from "../lib/sharedSync";
+import { SHARED_SYNC_EVENT } from "../lib/sharedSync";
 
 function placementLabel(p: AdPlacement) {
   return PRICING[p]?.label ?? p;
@@ -56,7 +56,6 @@ export function SettingsPage() {
   const [costQty, setCostQty] = useState<string>("2000");
   const [sampleQty, setSampleQty] = useState<string>("2000");
   const metaCfg = getMetaConfig();
-  const sharedSyncEnabled = isSharedSyncEnabled();
 
   const vendorKeys = useMemo(() => cfg.vendors.map((v) => v.key), [cfg.vendors]);
   const loadedVendorCount = useMemo(
@@ -336,7 +335,7 @@ export function SettingsPage() {
         <CollapsibleCard
           accent="green"
           title="資料備份與交接"
-          desc="目前 demo 版資料保存在本機瀏覽器。若要換電腦、換瀏覽器或交接，請先下載備份。"
+          desc="若要換電腦、換瀏覽器或交接，請先下載備份。"
           tag="備份"
           storageKey="sec:backup"
           defaultOpen
@@ -344,9 +343,7 @@ export function SettingsPage() {
           <input ref={backupFileRef} type="file" accept="application/json,.json" hidden onChange={onImportFile} />
 
           <div className="hint" style={{ marginBottom: 6 }}>
-            {sharedSyncEnabled
-              ? "目前已啟用共享模式。只要其他人連到同一個共享 API，訂單、成效與主要設定會自動同步。"
-              : "目前仍是單機模式。若要三人以上看到同一份資料，部署後請設定 VITE_SHARED_API_BASE。"}
+            訂單、成效與主要設定會同步顯示在系統中；建議管理者定期下載備份，方便換機與交接。
           </div>
           <div className="hint">
             一般備份：包含案件、拆單設定、價格與服務清單，不含 API Key 與 Meta Token。
@@ -625,7 +622,7 @@ export function SettingsPage() {
           }
         >
             <div className="hint" style={{ marginBottom: 10 }}>
-              這裡輸入的供應商 API Key 只會保存在目前瀏覽器。若要換電腦，請使用上方「完整備份」。
+              供應商金鑰屬於敏感資料。若要換電腦或交接，請使用上方「完整備份」。
             </div>
             <div className="list">
               {cfg.vendors.map((v, idx) => (

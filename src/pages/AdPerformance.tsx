@@ -11,7 +11,7 @@ import { clearMetaOrders, listMetaOrders, updateMetaOrder, type MetaOrder } from
 import { getMetaConfig } from "../config/metaConfig";
 import { fetchMetaAdSnapshot, fetchMetaPostMetrics, updateMetaAdDelivery } from "../lib/metaGraphApi";
 import { getGoalPrimaryMetricKey, getGoalPrimaryMetricLabel, META_AD_GOALS, type MetaKpiMetricKey } from "../lib/metaGoals";
-import { isSharedSyncEnabled, SHARED_SYNC_EVENT } from "../lib/sharedSync";
+import { SHARED_SYNC_EVENT } from "../lib/sharedSync";
 
 function mapMetaStatus(s: string): MetaOrder["status"] {
   const v = s.toUpperCase();
@@ -76,7 +76,6 @@ export function AdPerformancePage() {
 
   const cfg = getConfig();
   const metaCfg = getMetaConfig();
-  const sharedSyncEnabled = isSharedSyncEnabled();
 
   const setSyncFlag = (k: string, v: boolean) => setSyncing((s) => ({ ...s, [k]: v }));
 
@@ -463,15 +462,13 @@ export function AdPerformancePage() {
       <div className="card">
         <div className="card-bd">
           <div className="hint">
-            {sharedSyncEnabled
-              ? "共享模式已啟用。其他使用者送出的新訂單與進度，這頁會自動同步到目前瀏覽器。"
-              : "目前是單機模式。若沒有接上共享 API，其他人不會看到同一份案件資料。"}
+            其他使用者新增或更新案件後，這頁會自動帶入最新狀態與進度。
           </div>
           <div className="hint" style={{ marginTop: 6 }}>
             本頁開啟期間，系統會每小時自動更新一次進行中或尚未完成的案件進度；你也可以隨時手動同步。
           </div>
           <div className="hint" style={{ marginTop: 6 }}>
-            自動更新的 trigger 來自目前頁面的瀏覽器計時器；若頁面關閉，背景不會持續執行。
+            頁面開啟期間會持續檢查最新狀態，方便多人同時追蹤同一批案件。
           </div>
           <div className="hint" style={{ marginTop: 6 }}>
             最近一次每小時自動更新：{hourlyAutoLastRunAt ? new Date(hourlyAutoLastRunAt).toLocaleString("zh-TW") : "尚未執行"}
