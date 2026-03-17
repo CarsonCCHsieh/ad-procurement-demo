@@ -1,50 +1,156 @@
-# 廣告採購 Demo（GitHub Pages）
+﻿# Ad Procurement Demo
 
-這是一個獨立的 Demo 專案，用來展示「廣告下單 -> 確認送出」流程。
+本專案是 JUKSY 內部廣告採購流程的 demo / staging 版本，目的是先驗證下列流程：
 
-重點：
-- 不依賴 Lovable
-- 不依賴 Supabase
-- 只提供前端 Demo 用的「假登入」（不具安全性）
-- 適合給少數內部人員看流程與 UI
+1. 內部人員登入後提交「廠商互動下單」或「Meta 官方投廣」
+2. 系統保存案件、同步多使用者畫面
+3. 管理員在控制設定中管理品項、定價、供應商與 Meta 設定
+4. 使用者在投放成效頁查看案件進度
 
-## 功能
-- `#/login`：假登入
+目前此 repo 同時包含：
+- 靜態前端：部署於 GitHub Pages
+- Node.js 本機後端：目前跑在本機，用來提供共享資料 API、SQLite、供應商 API 代理、Meta 查詢代理
+
+這點非常重要：
+目前 GitHub Pages 只負責前端 UI。真正讓系統可「多人共用」、「可送單」、「可同步狀態」、「可查 Meta 數據」的是後端服務，不是純靜態頁面。
+
+## 目前架構
+
+### 1. 靜態前端
+位置：`src/`
+
+技術：
+- React
+- TypeScript
+- Vite
+- React Router
+
+目前主要頁面：
+- `#/login`：登入
 - `#/ad-orders`：廠商互動下單
 - `#/meta-ads-orders`：Meta 官方投廣
-- `#/ad-performance`：投放成效（廠商互動 + Meta 官方投廣同頁）
-- `#/settings`：系統設定（含 Meta API 設定、供應商設定、定價設定）
+- `#/ad-performance`：投放成效
+- `#/settings`：控制設定
 
-## Demo 帳密（可自行修改）
-帳密設定在：
-- `src/auth/demoAuth.ts`
+部署位置：
+- GitHub Pages
 
-提醒：這是純前端 Demo，帳密會被打包到 JS 裡，無法當作真正的安全機制。
+前端職責：
+- 顯示 UI
+- 收集使用者輸入
+- 呼叫共享後端 API
+- 顯示共享後端回傳的案件、進度、設定與 Meta 數據
 
-## 本機開發
-需要 Node.js 20+（建議 LTS）。
+### 2. 共享後端 / 本機 API
+位置：`server/shared-api.js`
 
+技術：
+- Node.js 原生 HTTP server
+- SQLite（`data/shared-demo.sqlite`）
+
+目前後端負責：
+- 提供共享 state API
+- 保存多人共用資料
+- 代理供應商送單與狀態同步
+- 代理 Meta post metrics 查詢
+- 保存 / 讀取本機 secrets
+- 本機模式下同時提供已 build 的前端靜態檔
+
+### 3. 本機資料與 secrets
+不會提交到 Git：
+- `data/shared-demo.sqlite`
+- `data/meta-local-secrets.json`
+- `data/vendor-local-secrets.json`
+- 各種 `.env.local` / 真實 `.env`
+
+Git 內只保留範本：
+- `.env.shared.example`
+- `server/meta-local.example.json`
+- `server/vendor-local.example.json`
+
+## 目前哪些功能依賴本機後端
+
+下列功能不是 GitHub Pages 單獨能完成的，未來搬到正式主機時必須一起搬：
+
+- 多人共享案件資料
+- 控制設定跨裝置同步
+- 廠商下單 API 呼叫
+- 廠商訂單狀態同步
+- Meta post metrics 查詢
+- 自動同步 / 共用 revision 機制
+- SQLite state storage
+
+如果只有前端搬到正式主機，但後端不搬，以下功能會失效：
+- 新訂單共享
+- 成效同步
+- 供應商送單
+- Meta 指標讀取
+- 多人同時看到同一份資料
+
+## 快速啟動
+
+### 本機前端開發
 ```bash
 npm install
-npm run doctor
 npm run dev
 ```
 
-若 PowerShell PATH 尚未刷新，可先重開終端機再執行。`doctor` 會檢查：
-- Node / npm / npx 可用性
-- `.git/index.lock` 是否存在
-- `node_modules/.bin/vite` 是否可用
+### 本機完整 demo
+```bash
+npm install
+npm run local-demo
+```
 
-## 部署到 GitHub Pages
-此專案內含 GitHub Actions workflow（`.github/workflows/pages.yml`）。
+`npm run local-demo` 會：
+1. build 前端
+2. 啟動 `server/shared-api.js`
+3. 用同一個 Node server 提供：
+   - 前端靜態頁
+   - 共享 API
+   - SQLite
 
-一般流程：
-1. 推到 GitHub（main 分支）
-2. 到 GitHub Repo Settings -> Pages，Source 選 GitHub Actions
-3. 等 Actions 跑完後，就會有 Pages URL
+## 環境變數
+範本：`.env.shared.example`
 
-## 定價
-目前定價先用暫定版本，集中在：
-- `src/lib/pricing.ts`
+目前使用到的主要變數：
+- `VITE_SHARED_API_BASE`
+- `SHARED_API_PORT`
+- `SHARED_API_DB`
 
-後續可替換成讀取 Google Sheet 或後端配置。
+注意：
+- 不要把真實 `.env` 推上 Git
+- 不要把真實 API key / token / 本機 secrets 推上 Git
+
+## 驗證指令
+
+```bash
+npm run build
+npm run doctor
+```
+
+## 目前正式頁與本機的分界
+
+### GitHub Pages 上的內容
+- 前端 bundle
+- 頁面 UI
+- 使用者操作流程
+
+### 本機後端上的內容
+- `/api/state`
+- `/api/vendor/submit-order`
+- `/api/vendor/sync-shared-orders`
+- `/api/meta/post-metrics`
+- SQLite state
+- 本機 secrets
+
+## RD 搬遷時必讀
+
+正式主機搬遷請先看：
+- `docs/production_handoff_zh.md`
+- `docs/local_multiuser_demo_zh.md`
+
+這兩份文件已把：
+- 目前靜態頁與本機功能的界線
+- 正式主機要搬什麼
+- 上線後如何驗收
+寫清楚。

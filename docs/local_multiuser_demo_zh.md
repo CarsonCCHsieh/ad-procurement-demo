@@ -1,8 +1,12 @@
-# 本機多人 Demo 啟動方式
+﻿# 本機多人 Demo 操作方式
 
-## 目的
+## 用途
 
-讓同一個區網中的 3 人以上，可以同時開啟同一份 demo 網站，並看到相同的下單資料、投放進度與設定結果。
+這份文件是給目前 demo 階段使用。
+
+目標：
+- 在你自己的電腦上同時提供前端與共享後端
+- 讓 3 人以上可在同一時間看到相同的案件、設定與成效畫面
 
 ## 啟動方式
 
@@ -12,91 +16,67 @@
 npm run local-demo
 ```
 
-這個指令會先：
-
+此指令會：
 1. build 前端
-2. 啟動同一支本機 server
-3. 由同一支 server 提供：
-   - 網站前端
+2. 啟動 `server/shared-api.js`
+3. 由同一個 Node server 提供：
+   - 前端網站
    - 共享資料 API
-   - SQLite 資料庫
+   - SQLite
 
-## 同事如何進入
+## 同事如何連線
 
-啟動後，終端機會印出：
-
+啟動後，終端機會顯示：
 - 本機網址
-- 區網網址（LAN URL）
+- LAN URL
 
-同事只要和你在同一個網路下，直接開啟 `LAN URL` 即可。
-
-例如：
+同事只要與你在同一個網路，可直接開 `LAN URL`，例如：
 
 ```text
 http://192.168.1.23:8787
 ```
 
-## 目前共享的內容
+## 目前多人共享的內容
 
-這個本機共享模式會同步：
-
+目前共享後端會同步：
 - 廠商互動下單資料
 - Meta 官方投廣資料
-- 成效頁進度
-- 主要設定
+- 投放成效頁資料
+- 控制設定
 - 定價設定
 - 服務清單
+- Meta 設定
 
-## 注意事項
+## 本機模式限制
 
-1. 這台電腦不能關機，也不能讓 `npm run local-demo` 停掉。
-2. 這台電腦的 Windows 防火牆要允許外部裝置連到 `8787` port。
-3. 若同事無法開啟，先檢查：
-   - 是否在同一個 Wi-Fi / 區網
-   - Windows 防火牆是否擋住 `8787`
-   - 公司網路是否限制裝置彼此互連
+1. 你的電腦不能關機
+2. `npm run local-demo` 不能中斷
+3. Windows 防火牆需要允許 `8787`
+4. 若要從 GitHub Pages 打回你的本機，還需要維持外部 tunnel 存活
 
-## 關於 `.env`
+## secrets 管理
 
-正式工程做法不會把真正的 `.env` 推上 Git。
-
-會保留在 repo 的通常是：
-
-- `.env.example`
-- `.env.shared.example`
-
-這些範本只放欄位名稱與假值，目的是讓其他人知道要準備哪些環境變數。
-
-不應推上 Git 的內容：
-
+不應提交到 Git 的內容：
 - 真實 API key
-- 真實 access token
-- 真實帳號密碼
-- 真實資料庫連線字串
+- 真實 Meta token
+- 真實帳密
+- `data/` 下的 SQLite 與 secrets 檔
 
-## 這個專案目前的專業做法
+repo 內只保留範本：
+- `.env.shared.example`
+- `server/meta-local.example.json`
+- `server/vendor-local.example.json`
 
-目前 repo 已經設定：
+## 這份文件和正式環境的差異
 
-- 忽略真正的 `.env`
-- 只保留 `.env.shared.example` 作為範本
-- SQLite 執行資料放在 `data/`，不提交到 Git
+本機 demo 的用途是快速驗證流程。
 
-所以現在這個做法是專業的，至少在 demo / 內部測試階段是合理的。
+未來搬到正式主機時，應將下列內容移到正式環境：
+- `server/shared-api.js`
+- SQLite 或正式 DB
+- 本機 secrets 機制
+- 外部 API 代理
+- 定時同步與共享資料機制
 
-## 目前這個 demo 是否一定要用 `.env`
-
-不一定。
-
-目前本機多人模式下：
-
-- 前端和共享 API 由同一台機器、同一個網址提供
-- 前端會自動改用同源 API
-
-所以只要執行 `npm run local-demo`，通常不需要另外建立真正的 `.env`。
-
-只有在你之後把前端和共享 API 分開部署時，才需要明確設定：
-
-```text
-VITE_SHARED_API_BASE
-```
+正式搬遷與驗收請看：
+- `docs/production_handoff_zh.md`
