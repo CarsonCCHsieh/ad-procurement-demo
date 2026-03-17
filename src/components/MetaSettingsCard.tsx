@@ -14,8 +14,8 @@ export function MetaSettingsCard(props: {
   const save = () => {
     saveMetaConfig({ ...cfg, mode: "live" });
     setCfg(getMetaConfig());
-    const t = new Date().toLocaleTimeString("zh-TW", { hour12: false });
-    onNotice("success", `Meta 設定已儲存（${t}）`, 3200);
+    const time = new Date().toLocaleTimeString("zh-TW", { hour12: false });
+    onNotice("success", `Meta 設定已儲存（${time}）`, 3200);
   };
 
   const reset = () => {
@@ -30,13 +30,13 @@ export function MetaSettingsCard(props: {
     <CollapsibleCard
       accent="blue"
       title="Meta 官方投廣設定"
-      desc="設定廣告帳戶、粉專與存取權杖。這些資料只會保存在目前瀏覽器。"
+      desc="管理廣告帳號、粉專與權杖。這些資料只保存在目前瀏覽器與本機後端。"
       tag="Meta"
       storageKey="sec:meta-settings"
       defaultOpen={false}
     >
       <div className="hint" style={{ marginBottom: 10 }}>
-        權杖屬於敏感資料，請由管理者妥善保存與更新。
+        權杖屬於敏感資料，請由管理員保管與更新。
       </div>
 
       <div className="row">
@@ -44,7 +44,7 @@ export function MetaSettingsCard(props: {
           <div className="label">Graph API 版本</div>
           <input
             value={cfg.apiVersion}
-            onChange={(e) => setCfg((s) => ({ ...s, apiVersion: e.target.value.trim() }))}
+            onChange={(event) => setCfg((state) => ({ ...state, apiVersion: event.target.value.trim() }))}
             placeholder="v23.0"
           />
         </div>
@@ -52,19 +52,19 @@ export function MetaSettingsCard(props: {
 
       <div className="row cols2">
         <div className="field">
-          <div className="label">廣告帳戶 ID</div>
+          <div className="label">廣告帳號 ID</div>
           <input
             value={cfg.adAccountId}
-            onChange={(e) => setCfg((s) => ({ ...s, adAccountId: e.target.value.trim() }))}
-            placeholder="例如 1234567890"
+            onChange={(event) => setCfg((state) => ({ ...state, adAccountId: event.target.value.trim() }))}
+            placeholder="例如：act_1234567890"
           />
         </div>
         <div className="field">
           <div className="label">Facebook 粉專 ID</div>
           <input
             value={cfg.pageId}
-            onChange={(e) => setCfg((s) => ({ ...s, pageId: e.target.value.trim() }))}
-            placeholder="例如 1122334455"
+            onChange={(event) => setCfg((state) => ({ ...state, pageId: event.target.value.trim() }))}
+            placeholder="例如：1122334455"
           />
         </div>
       </div>
@@ -74,8 +74,8 @@ export function MetaSettingsCard(props: {
           <div className="label">Instagram Actor ID</div>
           <input
             value={cfg.instagramActorId}
-            onChange={(e) => setCfg((s) => ({ ...s, instagramActorId: e.target.value.trim() }))}
-            placeholder="例如 9988776655"
+            onChange={(event) => setCfg((state) => ({ ...state, instagramActorId: event.target.value.trim() }))}
+            placeholder="例如：9988776655"
           />
         </div>
         <div className="field">
@@ -84,11 +84,11 @@ export function MetaSettingsCard(props: {
             <input value="TWD" readOnly />
             <input
               value={cfg.timezone}
-              onChange={(e) => setCfg((s) => ({ ...s, timezone: e.target.value }))}
+              onChange={(event) => setCfg((state) => ({ ...state, timezone: event.target.value.trim() }))}
               placeholder="Asia/Taipei"
             />
           </div>
-          <div className="hint">目前固定使用台幣與單日預算。</div>
+          <div className="hint">目前固定使用台幣與台北時區。</div>
         </div>
       </div>
 
@@ -97,14 +97,14 @@ export function MetaSettingsCard(props: {
         <input
           type={showToken ? "text" : "password"}
           value={cfg.accessToken}
-          onChange={(e) => setCfg((s) => ({ ...s, accessToken: e.target.value.trim() }))}
-          placeholder="貼上 Meta system user token"
+          onChange={(event) => setCfg((state) => ({ ...state, accessToken: event.target.value.trim() }))}
+          placeholder="請貼上 Meta system user token"
         />
         <div className="actions inline">
-          <button className="btn sm" type="button" onClick={() => setShowToken((x) => !x)}>
+          <button className="btn sm" type="button" onClick={() => setShowToken((value) => !value)}>
             {showToken ? "隱藏 Token" : "顯示 Token"}
           </button>
-          <span className="hint">{isReady ? "基本欄位已完成" : "至少要填廣告帳戶 ID 與 Token"}</span>
+          <span className="hint">{isReady ? "基本投放設定已完成" : "至少要填廣告帳號 ID 與 Token"}</span>
         </div>
       </div>
 

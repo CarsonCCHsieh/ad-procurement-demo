@@ -5,9 +5,9 @@ type Accent = "blue" | "green" | "amber" | "slate";
 
 function readOpen(storageKey: string): boolean | null {
   try {
-    const v = localStorage.getItem(storageKey);
-    if (v === "1") return true;
-    if (v === "0") return false;
+    const value = localStorage.getItem(storageKey);
+    if (value === "1") return true;
+    if (value === "0") return false;
     return null;
   } catch {
     return null;
@@ -34,28 +34,27 @@ export function CollapsibleCard(props: {
 }) {
   const { title, desc, tag, actions, defaultOpen, storageKey, accent, children } = props;
 
-  const initial = useMemo(() => {
+  const initialOpen = useMemo(() => {
     if (storageKey) {
       const saved = readOpen(storageKey);
       if (saved != null) return saved;
     }
     return defaultOpen ?? true;
-  }, [storageKey, defaultOpen]);
+  }, [defaultOpen, storageKey]);
 
-  const [open, setOpen] = useState<boolean>(initial);
+  const [open, setOpen] = useState(initialOpen);
+  const resolvedAccent: Accent = accent ?? "slate";
 
   const toggle = () => {
-    setOpen((v) => {
-      const next = !v;
+    setOpen((current) => {
+      const next = !current;
       if (storageKey) writeOpen(storageKey, next);
       return next;
     });
   };
 
-  const acc: Accent = accent ?? "slate";
-
   return (
-    <div className={`card section section-${acc} ${open ? "is-open" : "is-closed"}`}>
+    <div className={`card section section-${resolvedAccent} ${open ? "is-open" : "is-closed"}`}>
       <div className="card-hd">
         <div>
           <div className="card-title">{title}</div>
@@ -74,4 +73,3 @@ export function CollapsibleCard(props: {
     </div>
   );
 }
-

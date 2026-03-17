@@ -1,4 +1,4 @@
-import { PRICING, type AdPlacement } from "./pricing";
+import type { AdPlacement } from "./pricing";
 import { getPlacementMinUnit, getPlacementPrice, getPricingConfig } from "../config/pricingConfig";
 
 export function calcInternalLineAmount(placement: AdPlacement, target: number): number {

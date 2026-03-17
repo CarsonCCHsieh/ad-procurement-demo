@@ -1,4 +1,4 @@
-import type { AdPlacement } from "../lib/pricing";
+import { DEFAULT_PRICING_RULES, type AdPlacement } from "../lib/pricing";
 import { queueSharedWrite } from "../lib/sharedSync";
 
 export type VendorKey = "smmraja" | "urpanel" | "justanotherpanel";
@@ -12,18 +12,16 @@ export type VendorConfig = {
 
 export type SupplierConfig = {
   vendor: VendorKey;
-  // Vendor service ID (these panels identify each service by an integer ID).
   serviceId: number;
-  // Weight for splitting quantity across suppliers (higher = more share).
   weight: number;
-  // Optional cap so one vendor doesn't take too much volume.
   maxPerOrder?: number;
   enabled: boolean;
 };
 
 export type PlacementConfig = {
   placement: AdPlacement;
-  // If unset, default is "random" (per user requirement).
+  label: string;
+  enabled: boolean;
   splitStrategy?: "random" | "weighted";
   suppliers: SupplierConfig[];
 };
@@ -32,7 +30,7 @@ export type AppConfigV1 = {
   version: 1;
   vendors: VendorConfig[];
   placements: PlacementConfig[];
-  updatedAt: string; // ISO
+  updatedAt: string;
 };
 
 const STORAGE_KEY = "ad_demo_config_v1";
@@ -41,21 +39,12 @@ function isoNow() {
   return new Date().toISOString();
 }
 
-export const DEFAULT_CONFIG: AppConfigV1 = {
-  version: 1,
-  vendors: [
-    { key: "smmraja", label: "SMM Raja", apiBaseUrl: "https://www.smmraja.com/api/v3", enabled: true },
-    { key: "urpanel", label: "Urpanel", apiBaseUrl: "https://urpanel.com/api/v2", enabled: true },
-    {
-      key: "justanotherpanel",
-      label: "JustAnotherPanel",
-      apiBaseUrl: "https://justanotherpanel.com/api/v2",
-      enabled: true,
-    },
-  ],
-  placements: [
+function defaultPlacements(): PlacementConfig[] {
+  return [
     {
       placement: "fb_like",
+      label: DEFAULT_PRICING_RULES.fb_like.label,
+      enabled: true,
       splitStrategy: "random",
       suppliers: [
         { vendor: "smmraja", serviceId: 0, weight: 1, maxPerOrder: 1000, enabled: true },
@@ -65,6 +54,8 @@ export const DEFAULT_CONFIG: AppConfigV1 = {
     },
     {
       placement: "fb_reach",
+      label: DEFAULT_PRICING_RULES.fb_reach.label,
+      enabled: true,
       splitStrategy: "random",
       suppliers: [
         { vendor: "smmraja", serviceId: 0, weight: 1, enabled: true },
@@ -73,6 +64,8 @@ export const DEFAULT_CONFIG: AppConfigV1 = {
     },
     {
       placement: "fb_video_views",
+      label: DEFAULT_PRICING_RULES.fb_video_views.label,
+      enabled: true,
       splitStrategy: "random",
       suppliers: [
         { vendor: "smmraja", serviceId: 0, weight: 1, enabled: true },
@@ -81,6 +74,8 @@ export const DEFAULT_CONFIG: AppConfigV1 = {
     },
     {
       placement: "ig_like",
+      label: DEFAULT_PRICING_RULES.ig_like.label,
+      enabled: true,
       splitStrategy: "random",
       suppliers: [
         { vendor: "smmraja", serviceId: 0, weight: 1, enabled: true },
@@ -89,66 +84,105 @@ export const DEFAULT_CONFIG: AppConfigV1 = {
     },
     {
       placement: "ig_reels_views",
+      label: DEFAULT_PRICING_RULES.ig_reels_views.label,
+      enabled: true,
       splitStrategy: "random",
       suppliers: [
         { vendor: "smmraja", serviceId: 0, weight: 1, enabled: true },
         { vendor: "justanotherpanel", serviceId: 0, weight: 1, enabled: true },
       ],
     },
+  ];
+}
+
+export const DEFAULT_CONFIG: AppConfigV1 = {
+  version: 1,
+  vendors: [
+    { key: "smmraja", label: "SMM Raja", apiBaseUrl: "https://www.smmraja.com/api/v3", enabled: true },
+    { key: "urpanel", label: "Urpanel", apiBaseUrl: "https://urpanel.com/api/v2", enabled: true },
+    { key: "justanotherpanel", label: "JustAnotherPanel", apiBaseUrl: "https://justanotherpanel.com/api/v2", enabled: true },
   ],
+  placements: defaultPlacements(),
   updatedAt: isoNow(),
 };
 
-function isVendorKey(x: unknown): x is VendorKey {
-  return x === "smmraja" || x === "urpanel" || x === "justanotherpanel";
+function isVendorKey(value: unknown): value is VendorKey {
+  return value === "smmraja" || value === "urpanel" || value === "justanotherpanel";
 }
 
-function isPlacement(x: unknown): x is AdPlacement {
-  return x === "fb_like" || x === "fb_reach" || x === "fb_video_views" || x === "ig_like" || x === "ig_reels_views";
+function normalizePlacementLabel(placement: string, label: unknown) {
+  if (typeof label === "string" && label.trim()) return label.trim();
+  return DEFAULT_PRICING_RULES[placement]?.label ?? placement;
 }
 
 function normalizeConfig(raw: unknown): AppConfigV1 | null {
   if (!raw || typeof raw !== "object") return null;
-  const r = raw as Partial<AppConfigV1>;
-  if (r.version !== 1) return null;
-  if (!Array.isArray(r.vendors) || !Array.isArray(r.placements)) return null;
+  const data = raw as Partial<AppConfigV1>;
+  if (data.version !== 1) return null;
+  if (!Array.isArray(data.vendors) || !Array.isArray(data.placements)) return null;
 
-  const vendors: VendorConfig[] = r.vendors.flatMap((v) => {
-    if (!v || typeof v !== "object") return [];
-    const x = v as Partial<VendorConfig>;
-    if (!isVendorKey(x.key)) return [];
-    if (typeof x.label !== "string") return [];
-    if (typeof x.apiBaseUrl !== "string") return [];
-    return [{ key: x.key, label: x.label, apiBaseUrl: x.apiBaseUrl, enabled: !!x.enabled }];
+  const vendors: VendorConfig[] = data.vendors.flatMap((vendor) => {
+    if (!vendor || typeof vendor !== "object") return [];
+    const item = vendor as Partial<VendorConfig>;
+    if (!isVendorKey(item.key)) return [];
+    if (typeof item.label !== "string") return [];
+    if (typeof item.apiBaseUrl !== "string") return [];
+    return [{ key: item.key, label: item.label, apiBaseUrl: item.apiBaseUrl, enabled: item.enabled !== false }];
   });
 
-  const placements: PlacementConfig[] = r.placements.flatMap((p) => {
-    if (!p || typeof p !== "object") return [];
-    const x = p as Partial<PlacementConfig>;
-    if (!isPlacement(x.placement)) return [];
-    if (!Array.isArray(x.suppliers)) return [];
-    const splitStrategy: PlacementConfig["splitStrategy"] =
-      x.splitStrategy === "weighted" || x.splitStrategy === "random" ? x.splitStrategy : undefined;
-    const suppliers: SupplierConfig[] = x.suppliers.flatMap((s) => {
-      if (!s || typeof s !== "object") return [];
-      const y = s as Partial<SupplierConfig>;
-      if (!isVendorKey(y.vendor)) return [];
-      const sid = Number(y.serviceId);
-      const w = Number(y.weight ?? 1);
-      const cap = y.maxPerOrder == null ? undefined : Number(y.maxPerOrder);
-      if (!Number.isFinite(sid) || sid < 0) return [];
-      if (!Number.isFinite(w) || w < 0) return [];
-      if (cap != null && (!Number.isFinite(cap) || cap <= 0)) return [];
-      return [{ vendor: y.vendor, serviceId: sid, weight: w, maxPerOrder: cap, enabled: !!y.enabled }];
+  const placementsByKey = new Map<string, PlacementConfig>();
+  for (const placement of data.placements) {
+    if (!placement || typeof placement !== "object") continue;
+    const item = placement as Partial<PlacementConfig>;
+    const placementKey = String(item.placement ?? "").trim();
+    if (!placementKey) continue;
+    if (!Array.isArray(item.suppliers)) continue;
+
+    const splitStrategy =
+      item.splitStrategy === "random" || item.splitStrategy === "weighted" ? item.splitStrategy : undefined;
+
+    const suppliers: SupplierConfig[] = item.suppliers.flatMap((supplier) => {
+      if (!supplier || typeof supplier !== "object") return [];
+      const entry = supplier as Partial<SupplierConfig>;
+      if (!isVendorKey(entry.vendor)) return [];
+
+      const serviceId = Number(entry.serviceId);
+      const weight = Number(entry.weight ?? 1);
+      const maxPerOrder = entry.maxPerOrder == null ? undefined : Number(entry.maxPerOrder);
+
+      if (!Number.isFinite(serviceId) || serviceId < 0) return [];
+      if (!Number.isFinite(weight) || weight < 0) return [];
+      if (maxPerOrder != null && (!Number.isFinite(maxPerOrder) || maxPerOrder <= 0)) return [];
+
+      return [
+        {
+          vendor: entry.vendor,
+          serviceId,
+          weight,
+          maxPerOrder,
+          enabled: entry.enabled !== false,
+        },
+      ];
     });
-    return [{ placement: x.placement, splitStrategy, suppliers }];
-  });
+
+    placementsByKey.set(placementKey, {
+      placement: placementKey,
+      label: normalizePlacementLabel(placementKey, item.label),
+      enabled: item.enabled !== false,
+      splitStrategy,
+      suppliers,
+    });
+  }
+
+  if (placementsByKey.size === 0) {
+    for (const placement of defaultPlacements()) placementsByKey.set(placement.placement, placement);
+  }
 
   return {
     version: 1,
-    vendors,
-    placements,
-    updatedAt: typeof r.updatedAt === "string" ? r.updatedAt : isoNow(),
+    vendors: vendors.length > 0 ? vendors : DEFAULT_CONFIG.vendors,
+    placements: Array.from(placementsByKey.values()),
+    updatedAt: typeof data.updatedAt === "string" ? data.updatedAt : isoNow(),
   };
 }
 
@@ -184,7 +218,7 @@ export function importConfigJson(json: string): { ok: boolean; message?: string 
   try {
     const parsed = JSON.parse(json);
     const normalized = normalizeConfig(parsed);
-    if (!normalized) return { ok: false, message: "JSON 格式正確但內容不符合 config schema（version/欄位缺失）" };
+    if (!normalized) return { ok: false, message: "設定檔格式不正確" };
     saveConfig(normalized);
     return { ok: true };
   } catch {
@@ -193,12 +227,28 @@ export function importConfigJson(json: string): { ok: boolean; message?: string 
 }
 
 export function getVendorLabel(vendor: VendorKey): string {
-  return getConfig().vendors.find((v) => v.key === vendor)?.label ?? vendor;
+  return getConfig().vendors.find((item) => item.key === vendor)?.label ?? vendor;
 }
 
 export function getPlacementConfig(placement: AdPlacement): PlacementConfig {
-  const cfg = getConfig();
-  const found = cfg.placements.find((p) => p.placement === placement);
+  const config = getConfig();
+  const found = config.placements.find((item) => item.placement === placement);
   if (found) return found;
-  return { placement, splitStrategy: "random", suppliers: [] };
+
+  const fallback = DEFAULT_PRICING_RULES[placement];
+  return {
+    placement,
+    label: fallback?.label ?? placement,
+    enabled: fallback != null,
+    splitStrategy: "random",
+    suppliers: [],
+  };
+}
+
+export function getPlacementLabel(placement: AdPlacement): string {
+  return getPlacementConfig(placement).label;
+}
+
+export function getEnabledPlacements(): PlacementConfig[] {
+  return getConfig().placements.filter((item) => item.enabled);
 }

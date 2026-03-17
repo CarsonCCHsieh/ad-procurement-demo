@@ -1,9 +1,9 @@
 ﻿import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
-import { PRICING, type AdPlacement } from "../lib/pricing";
+import type { AdPlacement } from "../lib/pricing";
 import { isValidUrl, parseLinks } from "../lib/validate";
-import { getConfig, getPlacementConfig, type VendorKey } from "../config/appConfig";
+import { getConfig, getEnabledPlacements, getPlacementConfig, getPlacementLabel, type VendorKey } from "../config/appConfig";
 import { planSplit } from "../lib/split";
 import { addOrder, insertOrder, type DemoOrder } from "../lib/ordersStore";
 import { calcInternalLineAmount, shouldShowPrices } from "../lib/internalPricing";
@@ -30,25 +30,17 @@ type FormErrors = Partial<Record<Exclude<keyof FormState, "items">, string>> & {
   items?: Array<{ placement?: string; target?: string }>;
 };
 
-const PLACEMENT_LABELS: Record<AdPlacement, string> = {
-  fb_like: "Facebook 貼文讚",
-  fb_reach: "Facebook 觸及數",
-  fb_video_views: "Facebook 影片觀看",
-  ig_like: "Instagram 貼文讚",
-  ig_reels_views: "Instagram Reels 觀看",
-};
-
 function nowString() {
   return new Date().toLocaleString("zh-TW");
 }
 
-function defaultState(): FormState {
+function defaultState(defaultPlacement: AdPlacement): FormState {
   return {
     orderNo: "",
     caseName: "",
     kind: "new",
     linksRaw: "",
-    items: [{ placement: "fb_like", target: String(getPlacementMinUnit("fb_like")) }],
+    items: [{ placement: defaultPlacement, target: String(getPlacementMinUnit(defaultPlacement)) }],
   };
 }
 
@@ -92,13 +84,14 @@ export function AdOrdersPage() {
   const { user, signOut, hasRole } = useAuth();
   const [, setSharedTick] = useState(0);
   const [step, setStep] = useState<"edit" | "confirm" | "submitted">("edit");
-  const [state, setState] = useState<FormState>(() => defaultState());
+  const cfg = getConfig();
+  const enabledPlacements = useMemo(() => getEnabledPlacements(), [cfg.updatedAt]);
+  const defaultPlacement = enabledPlacements[0]?.placement ?? cfg.placements[0]?.placement ?? "fb_like";
+  const [state, setState] = useState<FormState>(() => defaultState(defaultPlacement));
   const [errors, setErrors] = useState<FormErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submittedSummary, setSubmittedSummary] = useState("");
-
-  const cfg = getConfig();
   const applicant = user?.displayName ?? user?.username ?? "";
   const canManage = hasRole("admin");
   const showPrices = shouldShowPrices();
@@ -134,6 +127,18 @@ export function AdOrdersPage() {
     return () => window.removeEventListener(SHARED_SYNC_EVENT, onSharedSync);
   }, []);
 
+  useEffect(() => {
+    if (enabledPlacements.length === 0) return;
+    setState((current) => ({
+      ...current,
+      items: current.items.map((item) =>
+        enabledPlacements.some((placement) => placement.placement === item.placement)
+          ? item
+          : { placement: defaultPlacement, target: String(getPlacementMinUnit(defaultPlacement)) },
+      ),
+    }));
+  }, [defaultPlacement, enabledPlacements]);
+
   const updateItem = (index: number, updater: (item: LineItem) => LineItem) => {
     setState((current) => ({
       ...current,
@@ -142,9 +147,10 @@ export function AdOrdersPage() {
   };
 
   const addItem = () => {
+    if (enabledPlacements.length === 0) return;
     setState((current) => ({
       ...current,
-      items: [...current.items, { placement: "fb_like", target: String(getPlacementMinUnit("fb_like")) }],
+      items: [...current.items, { placement: defaultPlacement, target: String(getPlacementMinUnit(defaultPlacement)) }],
     }));
   };
 
@@ -333,9 +339,11 @@ export function AdOrdersPage() {
               <button className="btn primary" type="button" onClick={addItem}>新增一筆</button>
             </div>
             <div className="card-bd">
+              {enabledPlacements.length === 0 ? (
+                <div className="error" style={{ marginBottom: 12 }}>目前沒有可用的投放品項，請通知管理員到控制設定新增或啟用品項。</div>
+              ) : null}
               <div className="list">
                 {state.items.map((item, index) => {
-                  const rule = PRICING[item.placement];
                   const minUnit = getPlacementMinUnit(item.placement);
                   const qty = Number(item.target);
                   const amount = Number.isFinite(qty) && qty > 0 ? calcInternalLineAmount(item.placement, qty) : 0;
@@ -353,8 +361,8 @@ export function AdOrdersPage() {
                         <div className="field">
                           <div className="label">平台 / 項目<span className="req">*</span></div>
                           <select value={item.placement} onChange={(e) => updateItem(index, (current) => ({ ...current, placement: e.target.value as AdPlacement, target: String(getPlacementMinUnit(e.target.value as AdPlacement)) }))}>
-                            {Object.keys(PRICING).map((key) => (
-                              <option key={key} value={key}>{PLACEMENT_LABELS[key as AdPlacement]}</option>
+                            {enabledPlacements.map((placement) => (
+                              <option key={placement.placement} value={placement.placement}>{placement.label}</option>
                             ))}
                           </select>
                           {itemErrors?.placement && <div className="error">{itemErrors.placement}</div>}
@@ -382,7 +390,7 @@ export function AdOrdersPage() {
               </div>
 
               <div className="actions">
-                <button className="btn primary" type="button" onClick={goConfirm}>下一步：確認</button>
+                <button className="btn primary" type="button" onClick={goConfirm} disabled={enabledPlacements.length === 0}>下一步：確認</button>
               </div>
             </div>
           </div>
@@ -439,7 +447,7 @@ export function AdOrdersPage() {
                     return (
                       <div className="item" key={`${item.placement}-${index}`}>
                         <div className="item-hd">
-                          <div className="item-title">{PLACEMENT_LABELS[item.placement]} / 數量 {Number.isFinite(qty) ? qty.toLocaleString() : "-"}</div>
+                          <div className="item-title">{getPlacementLabel(item.placement)} / 數量 {Number.isFinite(qty) ? qty.toLocaleString() : "-"}</div>
                           <div style={{ fontWeight: 800 }}>{showPrices ? `NT$ ${amount.toLocaleString()}` : "依設定隱藏"}</div>
                         </div>
                         {plan.splits.length === 0 ? (

@@ -2,8 +2,7 @@
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { API_BASE, apiUrl } from "../lib/apiBase";
-import { PRICING } from "../lib/pricing";
-import { getConfig, getVendorLabel, type VendorKey } from "../config/appConfig";
+import { getConfig, getPlacementLabel, getVendorLabel, type VendorKey } from "../config/appConfig";
 import { getVendorKey } from "../config/vendorKeys";
 import { normalizeStatusResponse, postSmmPanel, statusParamFor } from "../lib/vendorApi";
 import { clearOrders, listOrders, updateOrder, type DemoOrder, type VendorSplitExec } from "../lib/ordersStore";
@@ -59,14 +58,6 @@ function formatVendorUserMessage(error?: string): string {
 
 const META_AUTO_CHECK_INTERVAL_MS = 5 * 60 * 1000;
 const HOURLY_AUTO_REFRESH_INTERVAL_MS = 60 * 60 * 1000;
-const PLACEMENT_LABELS: Record<string, string> = {
-  fb_like: "Facebook 貼文讚",
-  fb_reach: "Facebook 觸及數",
-  fb_video_views: "Facebook 影片觀看",
-  ig_like: "Instagram 貼文讚",
-  ig_reels_views: "Instagram Reels 觀看",
-};
-
 function metricValueFromPerformance(row: MetaOrder, key: MetaKpiMetricKey): number | null {
   const hit = row.performance?.metrics?.find((m) => m.key === key);
   return typeof hit?.value === "number" ? hit.value : null;
@@ -134,7 +125,7 @@ export function AdPerformancePage() {
           amount: line.amount,
           remainsText: summarizeVendorRemains(line),
           progressText: summarizeVendorProgress(line),
-          placementText: `${PLACEMENT_LABELS[line.placement] ?? line.placement} / 數量 ${line.quantity.toLocaleString("zh-TW")}`,
+          placementText: `${getPlacementLabel(line.placement) ?? line.placement} / 數量 ${line.quantity.toLocaleString("zh-TW")}`,
           lastSyncAt: line.splits
             .map((split) => split.lastSyncAt)
             .filter((value): value is string => !!value)
@@ -157,7 +148,7 @@ export function AdPerformancePage() {
           amount: line.amount,
           remainsText: summarizeVendorRemains(line),
           progressText: summarizeVendorProgress(line),
-          placementText: `${PLACEMENT_LABELS[line.placement] ?? line.placement} / 數量 ${line.quantity.toLocaleString("zh-TW")}`,
+          placementText: `${getPlacementLabel(line.placement) ?? line.placement} / 數量 ${line.quantity.toLocaleString("zh-TW")}`,
           lastSyncAt: line.splits
             .map((split) => split.lastSyncAt)
             .filter((value): value is string => !!value)

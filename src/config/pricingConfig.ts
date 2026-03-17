@@ -1,14 +1,11 @@
 import type { AdPlacement } from "../lib/pricing";
-import { PRICING } from "../lib/pricing";
+import { getDefaultPricingRule, PRICING } from "../lib/pricing";
 import { queueSharedWrite } from "../lib/sharedSync";
 
 export type PricingConfigV1 = {
   version: 1;
-  updatedAt: string; // ISO
-  // When false, the order form hides price fields (still calculates internally).
+  updatedAt: string;
   showPrices: boolean;
-  // Internal pricing shown to staff (NTD) per PRICING[placement].minUnit.
-  // (This is separate from vendor panel "rate".)
   prices: Partial<Record<AdPlacement, number>>;
   minUnits: Partial<Record<AdPlacement, number>>;
 };
@@ -23,24 +20,30 @@ export const DEFAULT_PRICING_CONFIG: PricingConfigV1 = {
   version: 1,
   updatedAt: isoNow(),
   showPrices: true,
-  prices: Object.fromEntries(Object.entries(PRICING).map(([k, v]) => [k, v.price])) as Record<AdPlacement, number>,
-  minUnits: Object.fromEntries(Object.entries(PRICING).map(([k, v]) => [k, v.minUnit])) as Record<AdPlacement, number>,
+  prices: Object.fromEntries(Object.entries(PRICING).map(([k, v]) => [k, v.price])),
+  minUnits: Object.fromEntries(Object.entries(PRICING).map(([k, v]) => [k, v.minUnit])),
 };
 
 function normalize(raw: unknown): PricingConfigV1 | null {
   if (!raw || typeof raw !== "object") return null;
   const r = raw as Partial<PricingConfigV1>;
   if (r.version !== 1) return null;
+
   const prices: Partial<Record<AdPlacement, number>> = {};
   const minUnits: Partial<Record<AdPlacement, number>> = {};
-  const p = r.prices ?? {};
-  const mu = r.minUnits ?? {};
-  for (const key of Object.keys(PRICING) as AdPlacement[]) {
-    const n = Number((p as Record<string, unknown>)[key]);
-    if (Number.isFinite(n) && n >= 0) prices[key] = n;
-    const minUnit = Number((mu as Record<string, unknown>)[key]);
+  const rawPrices = r.prices && typeof r.prices === "object" ? r.prices : {};
+  const rawMinUnits = r.minUnits && typeof r.minUnits === "object" ? r.minUnits : {};
+
+  for (const [key, value] of Object.entries(rawPrices)) {
+    const price = Number(value);
+    if (Number.isFinite(price) && price >= 0) prices[key] = price;
+  }
+
+  for (const [key, value] of Object.entries(rawMinUnits)) {
+    const minUnit = Number(value);
     if (Number.isFinite(minUnit) && Number.isInteger(minUnit) && minUnit > 0) minUnits[key] = minUnit;
   }
+
   return {
     version: 1,
     updatedAt: typeof r.updatedAt === "string" ? r.updatedAt : isoNow(),
@@ -70,35 +73,30 @@ export function savePricingConfig(next: PricingConfigV1) {
   }
 }
 
-export function setShowPrices(showPrices: boolean) {
-  const cfg = getPricingConfig();
-  savePricingConfig({ ...cfg, showPrices: !!showPrices });
-}
-
 export function setPlacementPrice(placement: AdPlacement, pricePerMinUnit: number) {
   const cfg = getPricingConfig();
-  const n = Number(pricePerMinUnit);
-  if (!Number.isFinite(n) || n < 0) return;
-  savePricingConfig({ ...cfg, prices: { ...cfg.prices, [placement]: n } });
+  const value = Number(pricePerMinUnit);
+  if (!Number.isFinite(value) || value < 0) return;
+  savePricingConfig({ ...cfg, prices: { ...cfg.prices, [placement]: value } });
 }
 
 export function setPlacementMinUnit(placement: AdPlacement, minUnitValue: number) {
   const cfg = getPricingConfig();
-  const n = Number(minUnitValue);
-  if (!Number.isFinite(n) || !Number.isInteger(n) || n <= 0) return;
-  savePricingConfig({ ...cfg, minUnits: { ...cfg.minUnits, [placement]: n } });
+  const value = Number(minUnitValue);
+  if (!Number.isFinite(value) || !Number.isInteger(value) || value <= 0) return;
+  savePricingConfig({ ...cfg, minUnits: { ...cfg.minUnits, [placement]: value } });
 }
 
 export function getPlacementPrice(placement: AdPlacement): number {
   const cfg = getPricingConfig();
-  const n = cfg.prices[placement];
-  if (typeof n === "number" && Number.isFinite(n) && n >= 0) return n;
-  return PRICING[placement].price;
+  const value = cfg.prices[placement];
+  if (typeof value === "number" && Number.isFinite(value) && value >= 0) return value;
+  return getDefaultPricingRule(placement).price;
 }
 
 export function getPlacementMinUnit(placement: AdPlacement): number {
   const cfg = getPricingConfig();
-  const n = cfg.minUnits[placement];
-  if (typeof n === "number" && Number.isFinite(n) && Number.isInteger(n) && n > 0) return n;
-  return PRICING[placement].minUnit;
+  const value = cfg.minUnits[placement];
+  if (typeof value === "number" && Number.isFinite(value) && Number.isInteger(value) && value > 0) return value;
+  return getDefaultPricingRule(placement).minUnit;
 }
