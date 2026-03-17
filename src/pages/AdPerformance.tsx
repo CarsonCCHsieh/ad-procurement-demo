@@ -73,7 +73,7 @@ function metricValueFromPerformance(row: MetaOrder, key: MetaKpiMetricKey): numb
 
 export function AdPerformancePage() {
   const nav = useNavigate();
-  const { user, signOut } = useAuth();
+  const { user, signOut, hasRole } = useAuth();
   const [refresh, setRefresh] = useState(0);
   const [msg, setMsg] = useState<string | null>(null);
   const [syncing, setSyncing] = useState<Record<string, boolean>>({});
@@ -91,6 +91,7 @@ export function AdPerformancePage() {
     void refresh;
     return listMetaOrders();
   }, [refresh]);
+  const canManage = hasRole("admin");
 
   const cfg = getConfig();
   const metaCfg = getMetaConfig();
@@ -435,8 +436,8 @@ export function AdPerformancePage() {
         <div className="pill">
           <span className="tag">{user?.displayName ?? user?.username}</span>
           <button className="btn" onClick={() => nav("/ad-orders")}>廠商互動下單</button>
-          <button className="btn" onClick={() => nav("/meta-ads-orders")}>Meta官方投廣</button>
-          <button className="btn" onClick={() => nav("/settings")}>控制設定</button>
+          {canManage ? <button className="btn" onClick={() => nav("/meta-ads-orders")}>Meta官方投廣</button> : null}
+          {canManage ? <button className="btn" onClick={() => nav("/settings")}>控制設定</button> : null}
           <button
             className="btn danger"
             onClick={() => {
@@ -539,6 +540,7 @@ export function AdPerformancePage() {
         </div>
       </div>
 
+      {canManage ? (
       <div className="card" style={{ marginTop: 12 }}>
         <div className="card-hd">
           <div>
@@ -629,6 +631,7 @@ export function AdPerformancePage() {
           )}
         </div>
       </div>
+      ) : null}
     </div>
   );
 }

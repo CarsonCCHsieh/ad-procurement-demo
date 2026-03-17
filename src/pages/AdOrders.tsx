@@ -88,7 +88,7 @@ function validate(state: FormState): FormErrors {
 
 export function AdOrdersPage() {
   const nav = useNavigate();
-  const { user, signOut } = useAuth();
+  const { user, signOut, hasRole } = useAuth();
   const [, setSharedTick] = useState(0);
   const [step, setStep] = useState<"edit" | "confirm" | "submitted">("edit");
   const [state, setState] = useState<FormState>(() => defaultState());
@@ -99,6 +99,7 @@ export function AdOrdersPage() {
 
   const cfg = getConfig();
   const applicant = user?.displayName ?? user?.username ?? "";
+  const canManage = hasRole("admin");
   const showPrices = shouldShowPrices();
   const links = parseLinks(state.linksRaw);
 
@@ -255,9 +256,9 @@ export function AdOrdersPage() {
 
         <div className="pill">
           <span className="tag">{applicant}</span>
-          <button className="btn" onClick={() => nav("/meta-ads-orders")}>Meta官方投廣</button>
+          {canManage ? <button className="btn" onClick={() => nav("/meta-ads-orders")}>Meta官方投廣</button> : null}
           <button className="btn" onClick={() => nav("/ad-performance")}>投放成效</button>
-          <button className="btn" onClick={() => nav("/settings")}>控制設定</button>
+          {canManage ? <button className="btn" onClick={() => nav("/settings")}>控制設定</button> : null}
           <button
             className="btn danger"
             onClick={() => {

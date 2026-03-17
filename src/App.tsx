@@ -30,7 +30,7 @@ export function App() {
       <Route
         path="/meta-ads-orders"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute allowedRoles={["admin"]}>
             <MetaAdsOrdersPage />
           </ProtectedRoute>
         }
@@ -42,7 +42,7 @@ export function App() {
       <Route
         path="/settings"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute allowedRoles={["admin"]}>
             <SettingsPage />
           </ProtectedRoute>
         }

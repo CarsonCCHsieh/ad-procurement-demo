@@ -1,9 +1,10 @@
 import React, { createContext, useContext, useMemo, useState } from "react";
-import { DEMO_USER } from "./demoAuth";
+import { findDemoUser, type DemoUserRole } from "./demoAuth";
 
 type AuthState = {
   username: string;
   displayName: string;
+  role: DemoUserRole;
 };
 
 type AuthContextValue = {
@@ -11,11 +12,16 @@ type AuthContextValue = {
   isAuthed: boolean;
   signIn: (username: string, password: string) => { ok: boolean; message?: string };
   signOut: () => void;
+  hasRole: (...roles: DemoUserRole[]) => boolean;
 };
 
 const STORAGE_KEY = "ad_demo_auth";
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+
+function isValidRole(role: unknown): role is DemoUserRole {
+  return role === "admin" || role === "order_user";
+}
 
 function readStored(): AuthState | null {
   try {
@@ -24,7 +30,8 @@ function readStored(): AuthState | null {
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed.username !== "string") return null;
     if (typeof parsed.displayName !== "string") return null;
-    return { username: parsed.username, displayName: parsed.displayName };
+    if (!isValidRole(parsed.role)) return null;
+    return { username: parsed.username, displayName: parsed.displayName, role: parsed.role };
   } catch {
     return null;
   }
@@ -38,10 +45,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       user,
       isAuthed: !!user,
       signIn: (username: string, password: string) => {
-        if (username !== DEMO_USER.username || password !== DEMO_USER.password) {
+        const found = findDemoUser(username, password);
+        if (!found) {
           return { ok: false, message: "帳號或密碼錯誤" };
         }
-        const next = { username, displayName: DEMO_USER.displayName };
+        const next = { username: found.username, displayName: found.displayName, role: found.role };
         setUser(next);
         try {
           localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
@@ -58,6 +66,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           // ignore
         }
       },
+      hasRole: (...roles: DemoUserRole[]) => !!user && roles.includes(user.role),
     };
   }, [user]);
 

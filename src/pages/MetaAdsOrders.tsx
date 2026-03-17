@@ -291,7 +291,7 @@ function validate(s: FormState): Errors {
 export function MetaAdsOrdersPage() {
   const nav = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { user, signOut } = useAuth();
+  const { user, signOut, hasRole } = useAuth();
   const [, setSharedTick] = useState(0);
   const [step, setStep] = useState<"edit" | "confirm" | "submitted">("edit");
   const [state, setState] = useState<FormState>(() => defaultState());
@@ -302,6 +302,7 @@ export function MetaAdsOrdersPage() {
 
   const cfg = getMetaConfig();
   const applicant = user?.displayName ?? user?.username ?? "";
+  const canManage = hasRole("admin");
   const goal = META_AD_GOALS[state.goal];
   const targetMetricLabel = getGoalPrimaryMetricLabel(state.goal);
   const editId = searchParams.get("edit")?.trim() ?? "";
@@ -446,9 +447,11 @@ export function MetaAdsOrdersPage() {
           <button className="btn" onClick={() => nav("/ad-performance")}>
             投放成效
           </button>
-          <button className="btn" onClick={() => nav("/settings")}>
-            控制設定
-          </button>
+          {canManage ? (
+            <button className="btn" onClick={() => nav("/settings")}>
+              控制設定
+            </button>
+          ) : null}
           <button
             className="btn danger"
             onClick={() => {
