@@ -298,7 +298,6 @@ export function MetaAdsOrdersPage() {
   const [errors, setErrors] = useState<Errors>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitMsg, setSubmitMsg] = useState<string | null>(null);
-  const [logs, setLogs] = useState<Array<{ step: string; ok: boolean; detail: string }>>([]);
   const [editingOrderId, setEditingOrderId] = useState<string | null>(null);
 
   const cfg = getMetaConfig();
@@ -321,7 +320,6 @@ export function MetaAdsOrdersPage() {
     setState(formStateFromOrder(row));
     setErrors({});
     setStep("edit");
-    setLogs([]);
     setSubmitMsg(null);
     setEditingOrderId(row.id);
   }, [editId]);
@@ -420,9 +418,8 @@ export function MetaAdsOrdersPage() {
       }
       setEditingOrderId(null);
       clearEditQuery();
-      setLogs(res.result?.requestLogs ?? []);
       if (res.status === "submitted") {
-        setSubmitMsg("已送出到 Meta API");
+        setSubmitMsg("已送出，系統正在建立投放。");
       } else {
         setSubmitMsg(`送出失敗：${res.error ?? "未知錯誤"}`);
       }
@@ -472,7 +469,6 @@ export function MetaAdsOrdersPage() {
                 <div className="card-title">行銷活動</div>
                 <div className="card-desc">目標會依投放類型自動設定。</div>
               </div>
-              <span className="tag">正式模式</span>
             </div>
             <div className="card-bd">
               <div className="row cols2">
@@ -511,10 +507,6 @@ export function MetaAdsOrdersPage() {
                   <div className="label">日預算 TWD<span className="req">*</span></div>
                   <input value={state.dailyBudget} inputMode="numeric" onChange={(e) => setState((s) => ({ ...s, dailyBudget: e.target.value }))} />
                   {errors.dailyBudget && <div className="error">{errors.dailyBudget}</div>}
-                </div>
-                <div className="field">
-                  <div className="label">目前目標設定</div>
-                  <input value={`${goal.objective} / ${goal.optimizationGoal}`} readOnly />
                 </div>
               </div>
             </div>
@@ -676,17 +668,10 @@ export function MetaAdsOrdersPage() {
                     <option value="VIEW_MORE">查看更多</option>
                   </select>
                 </div>
-                <div className="field">
-                  <div className="label">身份資訊</div>
-                  <input value={`Page ${cfg.pageId || "-"} / IG ${cfg.instagramActorId || "-"}`} readOnly />
-                </div>
               </div>
 
               <div className="sep" />
               <div className="actions inline">
-                <button className="btn" onClick={() => nav("/settings")}>
-                  前往設定
-                </button>
                 <button className="btn primary" type="button" onClick={goConfirm}>
                   下一步
                 </button>
@@ -702,7 +687,7 @@ export function MetaAdsOrdersPage() {
             <div className="card-hd">
               <div>
                 <div className="card-title">確認資料</div>
-                <div className="card-desc">確認無誤後送出至 Meta API。</div>
+                <div className="card-desc">確認無誤後送出投放。</div>
               </div>
             </div>
             <div className="card-bd">
@@ -710,10 +695,6 @@ export function MetaAdsOrdersPage() {
                 <div className="field">
                   <div className="label">任務名稱</div>
                   <input value={previewInput.title || "-"} readOnly />
-                </div>
-                <div className="field">
-                  <div className="label">行銷活動 / 廣告組合 / 廣告</div>
-                  <input value={`${previewInput.campaignName} / ${previewInput.adsetName} / ${previewInput.adName}`} readOnly />
                 </div>
                 <div className="field">
                   <div className="label">投放目標</div>
@@ -736,28 +717,10 @@ export function MetaAdsOrdersPage() {
                   <input value={state.endTime ? formatDateTime(state.endTime) : "不設定"} readOnly />
                 </div>
                 <div className="field">
-                  <div className="label">追蹤貼文 ID</div>
-                  <input value={previewInput.trackingPostId || "-"} readOnly />
-                </div>
-                <div className="field">
                   <div className="label">目標 {targetMetricLabel}</div>
                   <input value={previewInput.targetValue == null ? "-" : previewInput.targetValue.toLocaleString("zh-TW")} readOnly />
                 </div>
               </div>
-
-              <details className="dense-details" style={{ marginTop: 12 }}>
-                <summary className="dense-summary">技術資料（必要時展開）</summary>
-                <div className="dense-panel">
-                  <div className="hint">Campaign Payload</div>
-                  <textarea rows={6} readOnly value={JSON.stringify(payloads.campaign, null, 2)} />
-                  <div className="hint" style={{ marginTop: 8 }}>AdSet Payload</div>
-                  <textarea rows={8} readOnly value={JSON.stringify(payloads.adset, null, 2)} />
-                  <div className="hint" style={{ marginTop: 8 }}>Creative Payload</div>
-                  <textarea rows={7} readOnly value={JSON.stringify(payloads.creative, null, 2)} />
-                  <div className="hint" style={{ marginTop: 8 }}>Ad Payload</div>
-                  <textarea rows={5} readOnly value={JSON.stringify(payloads.ad, null, 2)} />
-                </div>
-              </details>
 
               <div className="sep" />
               <div className="actions inline">
@@ -784,17 +747,7 @@ export function MetaAdsOrdersPage() {
             <div className="card-bd">
               {submitMsg && <div className="hint">{submitMsg}</div>}
               <div className="sep" />
-              <div className="list">
-                {logs.map((x, i) => (
-                  <div className="item" key={`${x.step}-${i}`}>
-                    <div className="item-hd">
-                      <div className="item-title">{x.step}</div>
-                      <span className="tag">{x.ok ? "OK" : "FAIL"}</span>
-                    </div>
-                    <div className="hint">{x.detail}</div>
-                  </div>
-                ))}
-              </div>
+              <div className="hint">建立完成後，可到投放成效頁查看最新進度與數據。</div>
               <div className="sep" />
               <div className="actions inline">
                 <button className="btn" onClick={() => { setState(defaultState()); setEditingOrderId(null); clearEditQuery(); setStep("edit"); }}>

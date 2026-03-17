@@ -1,9 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { PRICING } from "../lib/pricing";
 import { getConfig, getVendorLabel, type VendorKey } from "../config/appConfig";
-import { findServiceName } from "../config/serviceCatalog";
 import { getVendorKey } from "../config/vendorKeys";
 import { normalizeStatusResponse, postSmmPanel, statusParamFor } from "../lib/vendorApi";
 import { clearOrders, listOrders, updateOrder, type VendorSplitExec } from "../lib/ordersStore";
@@ -50,8 +49,8 @@ function formatVendorUserMessage(error?: string): string {
   if (!raw) return "";
   const lower = raw.toLowerCase();
 
-  if (lower.includes("not enough funds") || lower.includes("insufficient") || raw.includes("餘額不足")) {
-    return "供應商餘額不足，請通知管理員補充餘額後再重新送單。";
+  if (lower.includes("not enough funds") || lower.includes("insufficient") || raw.includes("椁橀涓嶈冻")) {
+    return "\u4f9b\u61c9\u5546\u9918\u984d\u4e0d\u8db3\uff0c\u8acb\u901a\u77e5\u7ba1\u7406\u54e1\u88dc\u5145\u9918\u984d\u5f8c\u518d\u91cd\u65b0\u9001\u55ae\u3002";
   }
 
   return raw;
@@ -59,6 +58,13 @@ function formatVendorUserMessage(error?: string): string {
 
 const META_AUTO_CHECK_INTERVAL_MS = 5 * 60 * 1000;
 const HOURLY_AUTO_REFRESH_INTERVAL_MS = 60 * 60 * 1000;
+const PLACEMENT_LABELS: Record<string, string> = {
+  fb_like: "Facebook 貼文讚",
+  fb_reach: "Facebook 觸及數",
+  fb_video_views: "Facebook 影片觀看",
+  ig_like: "Instagram 貼文讚",
+  ig_reels_views: "Instagram Reels 觀看",
+};
 
 function metricValueFromPerformance(row: MetaOrder, key: MetaKpiMetricKey): number | null {
   const hit = row.performance?.metrics?.find((m) => m.key === key);
@@ -102,7 +108,7 @@ export function AdPerformancePage() {
 
     const key = getVendorKey(vendor);
     if (!key) {
-      const error = `缺少 ${getVendorLabel(vendor)} API 金鑰`;
+      const error = "系統尚未完成更新設定，請通知管理員處理。";
       if (!options?.silent) {
         setMsg(error);
         setTimeout(() => setMsg(null), 3000);
@@ -163,15 +169,15 @@ export function AdPerformancePage() {
       }
 
       if (!options?.silent) {
-        setMsg(`已同步 ${getVendorLabel(vendor)}：${uniq.length.toLocaleString()} 筆`);
+        setMsg(`\u5df2\u66f4\u65b0 ${uniq.length.toLocaleString()} \u7b46\u9032\u884c\u4e2d\u6848\u4ef6\u3002`);
         setTimeout(() => setMsg(null), 2500);
         setRefresh((x) => x + 1);
       }
       return { syncedCount: uniq.length, skipped: false };
     } catch (e) {
-      const m = e instanceof Error ? e.message : "未知錯誤";
+      const m = e instanceof Error ? e.message : "鏈煡閷";
       if (!options?.silent) {
-        setMsg(`同步失敗：${m}`);
+        setMsg(`\u540c\u6b65\u5931\u6557\uff1a${m}`);
         setTimeout(() => setMsg(null), 3500);
       }
       return { syncedCount: 0, skipped: false, error: m };
@@ -192,44 +198,28 @@ export function AdPerformancePage() {
         // eslint-disable-next-line no-await-in-loop
         const result = await syncVendor(vendor, { silent: true });
         syncedCount += result.syncedCount;
-        if (result.error) errors.push(`${getVendorLabel(vendor)}: ${formatVendorUserMessage(result.error)}`);
+        if (result.error) errors.push(formatVendorUserMessage(result.error));
       }
 
       setRefresh((x) => x + 1);
       if (options?.silent) return;
 
       if (errors.length > 0) {
-        setMsg(`同步完成，但有錯誤：${errors.join(" / ")}`);
+        setMsg(`\u66f4\u65b0\u5b8c\u6210\uff0c\u4f46\u6709\u63d0\u9192\uff1a${errors.join(" / ")}`);
         setTimeout(() => setMsg(null), 4000);
         return;
       }
       if (syncedCount === 0) {
-        setMsg("目前沒有需要追蹤的廠商進行中案件。");
+        setMsg("\u76ee\u524d\u6c92\u6709\u9700\u8981\u8ffd\u8e64\u7684\u9032\u884c\u4e2d\u6848\u4ef6\u3002");
         setTimeout(() => setMsg(null), 2500);
         return;
       }
 
-      setMsg(`已同步 ${syncedCount.toLocaleString()} 筆廠商進行中案件。`);
+      setMsg(`\u5df2\u66f4\u65b0 ${syncedCount.toLocaleString()} \u7b46\u9032\u884c\u4e2d\u6848\u4ef6\u3002`);
       setTimeout(() => setMsg(null), 2500);
     } finally {
       setVendorRefreshing(false);
     }
-  };
-
-  const setSplitOrderId = (orderId: string, lineIdx: number, splitIdx: number, vendorOrderIdRaw: string) => {
-    const n = Number(vendorOrderIdRaw);
-    updateOrder(orderId, (o) => ({
-      ...o,
-      lines: o.lines.map((ln, li) =>
-        li !== lineIdx
-          ? ln
-          : {
-              ...ln,
-              splits: ln.splits.map((sp, si) => (si === splitIdx ? { ...sp, vendorOrderId: Number.isFinite(n) ? n : undefined } : sp)),
-            },
-      ),
-    }));
-    setRefresh((x) => x + 1);
   };
 
   const syncMetaOne = async (
@@ -239,7 +229,7 @@ export function AdPerformancePage() {
     const adId = row.submitResult?.adId;
     if (!adId) {
       if (!options?.silent) {
-        setMsg("這筆資料缺少 ad_id");
+        setMsg("\u9019\u7b46\u8cc7\u6599\u7f3a\u5c11 ad_id");
         setTimeout(() => setMsg(null), 2500);
       }
       return { ok: false };
@@ -249,9 +239,9 @@ export function AdPerformancePage() {
     try {
       const result = await fetchMetaAdSnapshot({ cfg: metaCfg, adId, goal: row.goal });
       if (!result.ok) {
-        updateMetaOrder(row.id, (r) => ({ ...r, error: result.detail ?? "同步失敗", targetLastCheckedAt: new Date().toISOString() }));
+        updateMetaOrder(row.id, (r) => ({ ...r, error: result.detail ?? "鍚屾澶辨晽", targetLastCheckedAt: new Date().toISOString() }));
         if (!options?.silent) {
-          setMsg(`Meta 同步失敗：${result.detail ?? "未知錯誤"}`);
+          setMsg(`Meta \u540c\u6b65\u5931\u6557\uff1a${result.detail ?? "\u672a\u77e5\u932f\u8aa4"}`);
           setTimeout(() => setMsg(null), 3500);
         }
         return { ok: false };
@@ -287,7 +277,7 @@ export function AdPerformancePage() {
           nextApiStatus = pauseResult.statusText ?? "PAUSED";
           reachedAt = nowIso;
         } else if (!postError) {
-          postError = pauseResult.detail ?? "達標停投失敗";
+          postError = pauseResult.detail ?? "閬旀鍋滄姇澶辨晽";
         }
       } else if (row.targetReachedAt) {
         reachedAt = undefined;
@@ -305,20 +295,20 @@ export function AdPerformancePage() {
         error: postError,
       }));
       if (!options?.silent) {
-        setMsg(pausedByTarget ? "已達目標，已自動暫停這筆 Meta 投放。" : `Meta 已同步：${adId}`);
+        setMsg(pausedByTarget ? "\u5df2\u9054\u76ee\u6a19\uff0c\u5df2\u81ea\u52d5\u66ab\u505c\u9019\u7b46\u6295\u653e\u3002" : `Meta \u5df2\u540c\u6b65\uff1a${adId}`);
         setTimeout(() => setMsg(null), 2200);
       }
       if (!options?.fromAutoLoop) setRefresh((x) => x + 1);
       return { ok: true, pausedByTarget };
     } catch (e) {
-      const errMsg = e instanceof Error ? e.message : "同步失敗";
+      const errMsg = e instanceof Error ? e.message : "鍚屾澶辨晽";
       updateMetaOrder(row.id, (r) => ({
         ...r,
         error: errMsg,
         targetLastCheckedAt: new Date().toISOString(),
       }));
       if (!options?.silent) {
-        setMsg(`Meta 同步失敗：${errMsg}`);
+        setMsg(`Meta \u540c\u6b65\u5931\u6557\uff1a${errMsg}`);
         setTimeout(() => setMsg(null), 3500);
       }
       return { ok: false };
@@ -342,7 +332,7 @@ export function AdPerformancePage() {
   const updateMetaDeliveryStatus = async (row: MetaOrder, nextStatus: "PAUSED" | "ACTIVE") => {
     const adId = row.submitResult?.adId;
     if (!adId) {
-      setMsg("這筆資料缺少 ad_id，無法切換狀態。");
+      setMsg("\u9019\u7b46\u8cc7\u6599\u7f3a\u5c11 ad_id\uff0c\u7121\u6cd5\u5207\u63db\u72c0\u614b\u3002");
       setTimeout(() => setMsg(null), 2500);
       return;
     }
@@ -352,7 +342,7 @@ export function AdPerformancePage() {
     try {
       const result = await updateMetaAdDelivery({ cfg: metaCfg, adId, status: nextStatus });
       if (!result.ok) {
-        setMsg(`Meta 狀態更新失敗：${result.detail ?? "未知錯誤"}`);
+        setMsg(`Meta \u72c0\u614b\u66f4\u65b0\u5931\u6557\uff1a${result.detail ?? "\u672a\u77e5\u932f\u8aa4"}`);
         setTimeout(() => setMsg(null), 3500);
         return;
       }
@@ -362,7 +352,7 @@ export function AdPerformancePage() {
         apiStatusText: result.statusText ?? nextStatus,
         error: "",
       }));
-      setMsg(nextStatus === "PAUSED" ? "已暫停 Meta 投放。" : "已重新啟用 Meta 投放。");
+      setMsg(nextStatus === "PAUSED" ? "\u5df2\u66ab\u505c Meta \u6295\u653e\u3002" : "\u5df2\u91cd\u65b0\u555f\u7528 Meta \u6295\u653e\u3002");
       setTimeout(() => setMsg(null), 2200);
       setRefresh((x) => x + 1);
     } finally {
@@ -412,7 +402,7 @@ export function AdPerformancePage() {
           if (result.pausedByTarget) pausedCount += 1;
         }
         if (pausedCount > 0) {
-          setMsg(`自動監控達標，已暫停 ${pausedCount} 筆 Meta 投放。`);
+          setMsg(`\u5df2\u81ea\u52d5\u66ab\u505c ${pausedCount} \u7b46\u5df2\u9054\u76ee\u6a19\u7684 Meta \u6295\u653e\u3002`);
           setTimeout(() => setMsg(null), 3000);
         }
         setRefresh((x) => x + 1);
@@ -440,19 +430,13 @@ export function AdPerformancePage() {
       <div className="topbar">
         <div className="brand">
           <div className="brand-title">投放成效</div>
-          <div className="brand-sub">廠商互動與 Meta 官方投廣都在這裡查看。</div>
+          <div className="brand-sub">廠商互動與 Meta 投放都在這裡查看。</div>
         </div>
         <div className="pill">
           <span className="tag">{user?.displayName ?? user?.username}</span>
-          <button className="btn" onClick={() => nav("/ad-orders")}>
-            廠商互動下單
-          </button>
-          <button className="btn" onClick={() => nav("/meta-ads-orders")}>
-            Meta 官方投廣
-          </button>
-          <button className="btn" onClick={() => nav("/settings")}>
-            控制設定
-          </button>
+          <button className="btn" onClick={() => nav("/ad-orders")}>廠商互動下單</button>
+          <button className="btn" onClick={() => nav("/meta-ads-orders")}>Meta官方投廣</button>
+          <button className="btn" onClick={() => nav("/settings")}>控制設定</button>
           <button
             className="btn danger"
             onClick={() => {
@@ -460,7 +444,7 @@ export function AdPerformancePage() {
               nav("/login", { replace: true });
             }}
           >
-            登出
+            ??
           </button>
         </div>
       </div>
@@ -473,19 +457,9 @@ export function AdPerformancePage() {
 
       <div className="card">
         <div className="card-bd">
-          <div className="hint">
-            其他使用者新增或更新案件後，這頁會自動帶入最新狀態與進度。
-          </div>
-          <div className="hint" style={{ marginTop: 6 }}>
-            本頁開啟期間，系統會每小時自動更新一次進行中或尚未完成的案件進度；你也可以隨時手動同步。
-          </div>
-          <div className="hint" style={{ marginTop: 6 }}>
-            頁面開啟期間會持續檢查最新狀態，方便多人同時追蹤同一批案件。
-          </div>
-          <div className="hint" style={{ marginTop: 6 }}>
-            最近一次每小時自動更新：{hourlyAutoLastRunAt ? new Date(hourlyAutoLastRunAt).toLocaleString("zh-TW") : "尚未執行"}
-            {hourlyAutoRunning ? "（同步中）" : ""}
-          </div>
+          <div className="hint">其他同事新增或更新案件後，這頁會自動帶入最新狀態。</div>
+          <div className="hint" style={{ marginTop: 6 }}>頁面開啟期間，系統每小時會自動更新一次進行中案件；你也可以手動同步。</div>
+          <div className="hint" style={{ marginTop: 6 }}>最近一次每小時自動更新：{hourlyAutoLastRunAt ? new Date(hourlyAutoLastRunAt).toLocaleString("zh-TW") : "尚未執行"}{hourlyAutoRunning ? "（同步中）" : ""}</div>
         </div>
       </div>
 
@@ -493,98 +467,62 @@ export function AdPerformancePage() {
         <div className="card-hd">
           <div>
             <div className="card-title">廠商互動成效</div>
-            <div className="card-desc">查看拆單結果與供應商回傳狀態。</div>
+            <div className="card-desc">查看案件最新進度與執行結果。</div>
           </div>
         </div>
         <div className="card-bd">
           <div className="actions inline">
-            <button className="btn" type="button" onClick={() => setRefresh((x) => x + 1)}>
-              重新整理
-            </button>
+            <button className="btn" type="button" onClick={() => setRefresh((x) => x + 1)}>重新整理</button>
             <button className="btn" type="button" onClick={refreshVendorTracking} disabled={vendorRefreshing}>
               {vendorRefreshing ? "同步中" : "同步進行中案件"}
             </button>
-            <button
-              className="btn danger"
-              type="button"
-              onClick={() => {
-                clearOrders();
-                setRefresh((x) => x + 1);
-              }}
-            >
-              清空廠商案件
-            </button>
+            <button className="btn danger" type="button" onClick={() => { clearOrders(); setRefresh((x) => x + 1); }}>清空案件</button>
           </div>
 
           <div className="sep" />
 
           {orders.length === 0 ? (
-            <div className="hint">目前沒有廠商互動訂單。</div>
+            <div className="hint">目前沒有廠商互動案件。</div>
           ) : (
             <div className="list">
-              {orders.map((o) => (
-                <div className="item" key={o.id}>
+              {orders.map((order) => (
+                <div className="item" key={order.id}>
                   <div className="item-hd">
-                    <div className="item-title">
-                      {o.orderNo} / {o.caseName}
-                    </div>
-                    <span className="tag">{new Date(o.createdAt).toLocaleString("zh-TW")}</span>
+                    <div className="item-title">{order.orderNo} / {order.caseName}</div>
+                    <span className="tag">{new Date(order.createdAt).toLocaleString("zh-TW")}</span>
                   </div>
-
-                  <div className="hint">
-                    申請人：{o.applicant} / 類型：{o.kind === "new" ? "新案" : "加購"} / 金額：NT$ {o.totalAmount.toLocaleString()}
-                  </div>
+                  <div className="hint">{`申請人：${order.applicant} / 種類：${order.kind === "new" ? "新案" : "加購"} / 金額：NT$ ${order.totalAmount.toLocaleString()}`}</div>
 
                   <div className="sep" />
                   <div className="list">
-                    {o.lines.map((ln, idx) => (
-                      <div className="item" key={`${o.id}-${idx}`}>
+                    {order.lines.map((line, lineIndex) => (
+                      <div className="item" key={`${order.id}-${lineIndex}`}>
                         <div className="item-hd">
-                          <div className="item-title">
-                            {PRICING[ln.placement]?.label ?? ln.placement} / 數量 {ln.quantity.toLocaleString()}
-                          </div>
-                          <div style={{ fontWeight: 800 }}>NT$ {ln.amount.toLocaleString()}</div>
+                          <div className="item-title">{PLACEMENT_LABELS[line.placement] ?? line.placement} / ?? {line.quantity.toLocaleString()}</div>
+                          <div style={{ fontWeight: 800 }}>NT$ {line.amount.toLocaleString()}</div>
                         </div>
-                        {ln.warnings.length > 0 ? (
-                          <div className="hint" style={{ marginTop: 8, color: "rgba(245, 158, 11, 0.95)" }}>
-                            {ln.warnings.join(" / ")}
-                          </div>
-                        ) : null}
+                        {line.warnings.length > 0 ? <div className="hint" style={{ marginTop: 8, color: "rgba(245, 158, 11, 0.95)" }}>這筆案件有管理提醒，若持續異常請通知管理員。</div> : null}
 
-                        {ln.splits.length === 0 ? (
-                          <div className="hint">尚未設定可用服務。</div>
+                        {line.splits.length === 0 ? (
+                          <div className="hint">這個投放項目尚未完成系統設定，請通知管理員。</div>
                         ) : (
                           <div className="list" style={{ marginTop: 8 }}>
-                            {ln.splits.map((s, splitIdx) => (
-                              <div className="item" key={`${o.id}-${idx}-${s.vendor}-${s.serviceId}`}>
+                            {line.splits.map((split, splitIndex) => (
+                              <div className="item" key={`${order.id}-${lineIndex}-${split.vendor}-${split.serviceId}`}>
                                 <div className="item-hd">
-                                  <div className="item-title">
-                                    {getVendorLabel(s.vendor)} / 服務編號 {s.serviceId}
-                                  </div>
-                                  <div style={{ fontWeight: 800 }}>{s.quantity.toLocaleString()}</div>
+                                  <div className="item-title">{`執行批次 ${splitIndex + 1}`}</div>
+                                  <div style={{ fontWeight: 800 }}>{split.quantity.toLocaleString()}</div>
                                 </div>
-
-                                {findServiceName(s.vendor, s.serviceId) && <div className="hint">{findServiceName(s.vendor, s.serviceId)}</div>}
-
-                                <div className="row cols3" style={{ marginTop: 10 }}>
+                                <div className="row cols2" style={{ marginTop: 10 }}>
                                   <div className="field">
-                                    <div className="label">廠商訂單編號</div>
-                                    <input
-                                      value={s.vendorOrderId == null ? "" : String(s.vendorOrderId)}
-                                      inputMode="numeric"
-                                      onChange={(e) => setSplitOrderId(o.id, idx, splitIdx, e.target.value)}
-                                      placeholder="例如 123456"
-                                    />
-                                  </div>
-                                  <div className="field">
-                                    <div className="label">狀態</div>
-                                    <input value={s.vendorStatus ?? (s.vendorOrderId ? "待同步" : "未下單")} readOnly />
-                                    {s.error ? <div className="hint" style={{ color: "rgba(245, 158, 11, 0.95)" }}>{formatVendorUserMessage(s.error)}</div> : null}
+                                    <div className="label">執行進度</div>
+                                    <input value={split.vendorStatus ?? (split.vendorOrderId ? "待更新" : "處理中")} readOnly />
+                                    {split.error ? <div className="hint" style={{ color: "rgba(245, 158, 11, 0.95)" }}>{formatVendorUserMessage(split.error)}</div> : null}
                                   </div>
                                   <div className="field">
                                     <div className="label">剩餘數量</div>
-                                    <input value={s.remains == null ? "" : String(s.remains)} readOnly />
-                                    <div className="hint">{s.lastSyncAt ? new Date(s.lastSyncAt).toLocaleString("zh-TW") : "-"}</div>
+                                    <input value={split.remains == null ? "" : String(split.remains)} readOnly />
+                                    <div className="hint">{split.lastSyncAt ? new Date(split.lastSyncAt).toLocaleString("zh-TW") : "-"}</div>
                                   </div>
                                 </div>
                               </div>
@@ -604,137 +542,86 @@ export function AdPerformancePage() {
       <div className="card" style={{ marginTop: 12 }}>
         <div className="card-hd">
           <div>
-            <div className="card-title">Meta 官方投廣成效</div>
-            <div className="card-desc">查看官方投廣狀態與 KPI。</div>
+            <div className="card-title">Meta官方投廣成效</div>
+            <div className="card-desc">查看投放進度、KPI 與控制操作。</div>
           </div>
         </div>
         <div className="card-bd">
           <div className="actions inline">
-            <button className="btn" onClick={() => setRefresh((x) => x + 1)}>
-              重新整理
-            </button>
-            <button className="btn" onClick={syncAllMeta}>
-              全部同步
-            </button>
-            <button className="btn" onClick={() => setMetaAutoEnabled((v) => !v)}>
-              {metaAutoEnabled ? "自動停投：開啟" : "自動停投：關閉"}
-            </button>
-            <button
-              className="btn danger"
-              onClick={() => {
-                clearMetaOrders();
-                setRefresh((x) => x + 1);
-              }}
-            >
-              清空 Meta 案件
-            </button>
+            <button className="btn" onClick={() => setRefresh((x) => x + 1)}>重新整理</button>
+            <button className="btn" onClick={syncAllMeta}>全部同步</button>
+            <button className="btn" onClick={() => setMetaAutoEnabled((value) => !value)}>{metaAutoEnabled ? "自動停投：開啟" : "自動停投：關閉"}</button>
+            <button className="btn danger" onClick={() => { clearMetaOrders(); setRefresh((x) => x + 1); }}>??Meta??</button>
           </div>
 
           <div className="sep" />
-          <div className="hint" style={{ marginBottom: 8 }}>
-            本區會每小時自動同步進行中案件；若有設定目標停投，另會每 5 分鐘檢查一次。
-          </div>
-
-          <div className="hint" style={{ marginBottom: 8 }}>
-            目標停投每 5 分鐘檢查一次執行中案件，達標後會自動暫停投放。
-            {metaAutoRunning ? "（檢查中）" : ""}
-          </div>
+          <div className="hint">本頁開啟期間，系統每小時會自動同步進行中案件；若有設定目標停投，另會每 5 分鐘檢查一次。</div>
+          <div className="hint" style={{ marginTop: 6 }}>目標停投檢查：{metaAutoRunning ? "檢查中" : "待命中"}</div>
 
           {metaRows.length === 0 ? (
-            <div className="hint">目前沒有 Meta 官方投廣案件。</div>
+            <div className="hint">目前沒有 Meta 投放案件。</div>
           ) : (
             <div className="list">
-              {metaRows.map((r) => {
-                const g = META_AD_GOALS[r.goal];
-                const syncKey = `meta:${r.id}`;
-                const adId = r.submitResult?.adId;
-                const canPause = !!adId && r.status !== "paused";
-                const canResume = !!adId && r.status === "paused";
-                const metricLabel = getGoalPrimaryMetricLabel(r.goal);
+              {metaRows.map((row) => {
+                const goal = META_AD_GOALS[row.goal];
+                const syncKey = `meta:${row.id}`;
+                const adId = row.submitResult?.adId;
+                const canPause = !!adId && row.status !== "paused";
+                const canResume = !!adId && row.status === "paused";
+                const metricLabel = getGoalPrimaryMetricLabel(row.goal);
                 return (
-                  <div className="item" key={r.id}>
+                  <div className="item" key={row.id}>
                     <div className="item-hd">
-                      <div className="item-title">{r.campaignName}</div>
-                      <span className="tag">{new Date(r.createdAt).toLocaleString("zh-TW")}</span>
+                      <div className="item-title">{row.campaignName}</div>
+                      <span className="tag">{new Date(row.createdAt).toLocaleString("zh-TW")}</span>
                     </div>
 
                     <div className="row cols2">
                       <div className="field">
                         <div className="label">投放目標</div>
-                        <input value={g.label} readOnly />
+                        <input value={goal.label} readOnly />
                       </div>
                       <div className="field">
                         <div className="label">目前狀態</div>
-                        <input value={r.apiStatusText ?? r.status} readOnly />
-                      </div>
-                      <div className="field">
-                        <div className="label">Campaign / AdSet / Ad</div>
-                        <input value={`${r.submitResult?.campaignId ?? "-"} / ${r.submitResult?.adsetId ?? "-"} / ${r.submitResult?.adId ?? "-"}`} readOnly />
-                      </div>
-                      <div className="field">
-                        <div className="label">追蹤貼文 ID</div>
-                        <input value={r.trackingPostId ?? "-"} readOnly />
+                        <input value={row.apiStatusText ?? row.status} readOnly />
                       </div>
                       <div className="field">
                         <div className="label">目標進度</div>
-                        <input
-                          value={r.targetValue ? `${(r.targetCurrentValue ?? 0).toLocaleString("zh-TW")} / ${r.targetValue.toLocaleString("zh-TW")} ${metricLabel}` : "未設定"}
-                          readOnly
-                        />
+                        <input value={row.targetValue ? `${(row.targetCurrentValue ?? 0).toLocaleString("zh-TW")} / ${row.targetValue.toLocaleString("zh-TW")} ${metricLabel}` : "未設定"} readOnly />
                       </div>
                       <div className="field">
-                        <div className="label">操作</div>
+                        <div className="label">??</div>
                         <div className="actions inline">
-                          <button className="btn" onClick={() => syncMetaOne(r)} disabled={!!syncing[syncKey]}>
-                            {syncing[syncKey] ? "同步中" : "同步"}
-                          </button>
-                          <button className="btn" onClick={() => updateMetaDeliveryStatus(r, "PAUSED")} disabled={!canPause || !!syncing[syncKey]}>
-                            暫停
-                          </button>
-                          <button className="btn" onClick={() => updateMetaDeliveryStatus(r, "ACTIVE")} disabled={!canResume || !!syncing[syncKey]}>
-                            重新啟用
-                          </button>
-                          <button className="btn" onClick={() => nav(`/meta-ads-orders?edit=${encodeURIComponent(r.id)}`)}>
-                            重新編輯
-                          </button>
+                          <button className="btn" onClick={() => syncMetaOne(row)} disabled={!!syncing[syncKey]}>{syncing[syncKey] ? "同步中" : "同步"}</button>
+                          <button className="btn" onClick={() => updateMetaDeliveryStatus(row, "PAUSED")} disabled={!canPause || !!syncing[syncKey]}>??</button>
+                          <button className="btn" onClick={() => updateMetaDeliveryStatus(row, "ACTIVE")} disabled={!canResume || !!syncing[syncKey]}>重新啟用</button>
+                          <button className="btn" onClick={() => nav(`/meta-ads-orders?edit=${encodeURIComponent(row.id)}`)}>重新編輯</button>
                         </div>
                       </div>
                     </div>
 
-                    {r.performance?.metrics?.length ? (
+                    {row.performance?.metrics?.length ? (
                       <>
                         <div className="sep" />
                         <div className="dense-table">
-                          <div className="dense-th">指標</div>
-                          <div className="dense-th">數值</div>
-                          {r.performance.metrics.map((m) => (
-                            <div className="dense-tr" key={`${r.id}-${m.key}`}>
-                              <div className="dense-td">
-                                <div className="dense-title">{m.label}</div>
-                              </div>
-                              <div className="dense-td">
-                                <div className="dense-title">{m.value.toLocaleString("zh-TW")}</div>
-                              </div>
+                          <div className="dense-th">??</div>
+                          <div className="dense-th">??</div>
+                          {row.performance.metrics.map((metric) => (
+                            <div className="dense-tr" key={`${row.id}-${metric.key}`}>
+                              <div className="dense-td"><div className="dense-title">{metric.label}</div></div>
+                              <div className="dense-td"><div className="dense-title">{metric.value.toLocaleString("zh-TW")}</div></div>
                             </div>
                           ))}
                         </div>
-                        {r.performance.updatedAt && <div className="hint" style={{ marginTop: 8 }}>{new Date(r.performance.updatedAt).toLocaleString("zh-TW")}</div>}
-                        {r.targetLastCheckedAt && (
-                          <div className="hint" style={{ marginTop: 6 }}>
-                            目標檢查時間：{new Date(r.targetLastCheckedAt).toLocaleString("zh-TW")}
-                          </div>
-                        )}
-                        {r.targetReachedAt && (
-                          <div className="hint" style={{ marginTop: 6, color: "rgba(16, 185, 129, 0.95)" }}>
-                            已達目標並自動停投：{new Date(r.targetReachedAt).toLocaleString("zh-TW")}
-                          </div>
-                        )}
+                        {row.performance.updatedAt ? <div className="hint" style={{ marginTop: 8 }}>{new Date(row.performance.updatedAt).toLocaleString("zh-TW")}</div> : null}
+                        {row.targetLastCheckedAt ? <div className="hint" style={{ marginTop: 6 }}>{`目標檢查時間：${new Date(row.targetLastCheckedAt).toLocaleString("zh-TW")}`}</div> : null}
+                        {row.targetReachedAt ? <div className="hint" style={{ marginTop: 6, color: "rgba(16, 185, 129, 0.95)" }}>{`已達目標並自動停止：${new Date(row.targetReachedAt).toLocaleString("zh-TW")}`}</div> : null}
                       </>
                     ) : (
                       <div className="hint" style={{ marginTop: 8 }}>尚未同步 KPI</div>
                     )}
 
-                    {r.error ? <div className="hint" style={{ marginTop: 8, color: "rgba(220, 38, 38, 0.95)" }}>{r.error}</div> : null}
+                    {row.error ? <div className="hint" style={{ marginTop: 8, color: "rgba(220, 38, 38, 0.95)" }}>{row.error}</div> : null}
                   </div>
                 );
               })}
