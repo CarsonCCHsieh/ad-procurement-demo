@@ -1,0 +1,19 @@
+{
+  "vendors": {
+    "smmraja": {
+      "apiBaseUrl": "https://www.smmraja.com/api/v3",
+      "key": "paste_vendor_key_here",
+      "enabled": true
+    },
+    "urpanel": {
+      "apiBaseUrl": "https://urpanel.com/api/v2",
+      "key": "paste_vendor_key_here",
+      "enabled": true
+    },
+    "justanotherpanel": {
+      "apiBaseUrl": "https://justanotherpanel.com/api/v2",
+      "key": "paste_vendor_key_here",
+      "enabled": true
+    }
+  }
+}

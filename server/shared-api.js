@@ -9,6 +9,7 @@ const PORT = Number(process.env.SHARED_API_PORT || 8787);
 const DB_PATH = resolve(process.cwd(), process.env.SHARED_API_DB || "./data/shared-demo.sqlite");
 const DIST_DIR = resolve(process.cwd(), "./dist");
 const META_SECRET_PATH = resolve(process.cwd(), process.env.META_LOCAL_SECRET_PATH || "./data/meta-local-secrets.json");
+const VENDOR_SECRET_PATH = resolve(process.cwd(), process.env.VENDOR_LOCAL_SECRET_PATH || "./data/vendor-local-secrets.json");
 
 mkdirSync(dirname(DB_PATH), { recursive: true });
 
@@ -31,6 +32,7 @@ db.exec(`
 `);
 
 const selectAllStmt = db.prepare("SELECT storage_key, storage_value FROM state_entries");
+const selectEntryStmt = db.prepare("SELECT storage_value FROM state_entries WHERE storage_key = ?");
 const selectMetaStmt = db.prepare("SELECT revision, updated_at FROM state_meta WHERE id = 1");
 const upsertEntryStmt = db.prepare(`
   INSERT INTO state_entries (storage_key, storage_value, updated_at, updated_by)
@@ -49,6 +51,13 @@ const bumpRevisionStmt = db.prepare(`
 `);
 
 let metaPagesCache = null;
+const APP_CONFIG_KEY = "ad_demo_config_v1";
+const VENDOR_KEYS_KEY = "ad_demo_vendor_keys_v1";
+const DEFAULT_VENDOR_BASES = {
+  smmraja: "https://www.smmraja.com/api/v3",
+  urpanel: "https://urpanel.com/api/v2",
+  justanotherpanel: "https://justanotherpanel.com/api/v2",
+};
 
 function json(res, status, payload) {
   res.writeHead(status, {
@@ -128,6 +137,16 @@ function loadMetaSecrets() {
       preferredPageId: typeof raw.preferredPageId === "string" ? raw.preferredPageId.trim() : "",
       preferredPageName: typeof raw.preferredPageName === "string" ? raw.preferredPageName.trim() : "",
     };
+  } catch {
+    return null;
+  }
+}
+
+function loadVendorSecrets() {
+  if (!existsSync(VENDOR_SECRET_PATH)) return null;
+  try {
+    const raw = JSON.parse(readFileSync(VENDOR_SECRET_PATH, "utf-8"));
+    return raw && typeof raw === "object" ? raw : null;
   } catch {
     return null;
   }
@@ -285,6 +304,154 @@ function currentState() {
   };
 }
 
+function readSharedJson(key) {
+  try {
+    const row = selectEntryStmt.get(key);
+    if (!row?.storage_value) return null;
+    return JSON.parse(String(row.storage_value));
+  } catch {
+    return null;
+  }
+}
+
+function formEncode(params) {
+  const body = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v == null) continue;
+    body.set(k, String(v));
+  }
+  return body.toString();
+}
+
+async function postVendorPanel({ baseUrl, key, action, payload = {} }) {
+  const res = await fetch(baseUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: formEncode({ key, action, ...payload }),
+  });
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { error: "Non-JSON response", raw: text.slice(0, 400) };
+  }
+}
+
+function toNum(x) {
+  const n = typeof x === "number" ? x : typeof x === "string" ? Number(x) : NaN;
+  return Number.isFinite(n) ? n : undefined;
+}
+
+function getVendorRuntime(vendor) {
+  const cfg = readSharedJson(APP_CONFIG_KEY);
+  const keys = readSharedJson(VENDOR_KEYS_KEY);
+  const vendorCfg = Array.isArray(cfg?.vendors) ? cfg.vendors.find((v) => v?.key === vendor) : null;
+  const fallback = loadVendorSecrets()?.vendors?.[vendor] ?? {};
+  const key = typeof keys?.keys?.[vendor] === "string" && keys.keys[vendor].trim()
+    ? keys.keys[vendor].trim()
+    : typeof fallback?.key === "string"
+      ? fallback.key.trim()
+      : "";
+  return {
+    baseUrl: typeof vendorCfg?.apiBaseUrl === "string" && vendorCfg.apiBaseUrl.trim()
+      ? vendorCfg.apiBaseUrl.trim()
+      : typeof fallback?.apiBaseUrl === "string" && fallback.apiBaseUrl.trim()
+        ? fallback.apiBaseUrl.trim()
+        : DEFAULT_VENDOR_BASES[vendor] || "",
+    enabled: vendorCfg?.enabled != null ? !!vendorCfg.enabled : fallback?.enabled !== false,
+    key,
+  };
+}
+
+function statusParamFor(vendor, orderIds) {
+  const joined = orderIds.join(",");
+  if (orderIds.length <= 1) return { key: "order", value: joined };
+  if (vendor === "smmraja") return { key: "order", value: joined };
+  return { key: "orders", value: joined };
+}
+
+function normalizeSingleStatus(resp) {
+  if (!resp || typeof resp !== "object") return { error: "Empty response" };
+  if (typeof resp.error === "string") return { error: resp.error };
+  return {
+    status: typeof resp.status === "string" ? resp.status : undefined,
+    remains: toNum(resp.remains),
+    start_count: toNum(resp.start_count),
+    charge: toNum(resp.charge),
+    currency: typeof resp.currency === "string" ? resp.currency : undefined,
+    error: typeof resp.error === "string" ? resp.error : undefined,
+  };
+}
+
+async function fetchVendorStatus(vendor, orderId) {
+  const runtime = getVendorRuntime(vendor);
+  if (!runtime.enabled || !runtime.baseUrl || !runtime.key) {
+    return { error: "供應商設定不完整" };
+  }
+  const param = statusParamFor(vendor, [orderId]);
+  const resp = await postVendorPanel({
+    baseUrl: runtime.baseUrl,
+    key: runtime.key,
+    action: "status",
+    payload: { [param.key]: param.value },
+  });
+  return normalizeSingleStatus(resp);
+}
+
+async function submitVendorSplit({ vendor, serviceId, quantity, link }) {
+  const runtime = getVendorRuntime(vendor);
+  if (!runtime.enabled) {
+    return { ok: false, error: "供應商未啟用" };
+  }
+  if (!runtime.baseUrl || !runtime.key) {
+    return { ok: false, error: "供應商 API 設定不完整" };
+  }
+  if (!serviceId || serviceId <= 0) {
+    return { ok: false, error: "serviceId 未設定" };
+  }
+
+  const resp = await postVendorPanel({
+    baseUrl: runtime.baseUrl,
+    key: runtime.key,
+    action: "add",
+    payload: {
+      service: serviceId,
+      link,
+      quantity,
+    },
+  });
+
+  if (typeof resp?.error === "string") {
+    return { ok: false, error: resp.error };
+  }
+
+  const vendorOrderId = toNum(resp?.order ?? resp?.id ?? resp?.data?.order);
+  if (!vendorOrderId || vendorOrderId <= 0) {
+    return { ok: false, error: "供應商未回傳有效訂單編號", raw: resp };
+  }
+
+  let status = {
+    status: "submitted",
+    remains: undefined,
+    start_count: undefined,
+    charge: undefined,
+    currency: undefined,
+    error: undefined,
+  };
+  try {
+    status = { ...status, ...await fetchVendorStatus(vendor, vendorOrderId) };
+  } catch {
+    // Keep submitted status if status API is temporarily unavailable.
+  }
+
+  return {
+    ok: true,
+    vendorOrderId,
+    status,
+    raw: resp,
+  };
+}
+
 const server = http.createServer(async (req, res) => {
   try {
     if (!req.url) {
@@ -315,6 +482,101 @@ const server = http.createServer(async (req, res) => {
         pageName: url.searchParams.get("pageName") || "",
       });
       json(res, result.ok ? 200 : 400, result);
+      return;
+    }
+
+    if (req.method === "POST" && req.url === "/api/vendor/submit-order") {
+      const raw = await readBody(req);
+      const payload = JSON.parse(String(raw || "{}"));
+      const links = Array.isArray(payload?.links) ? payload.links.filter((x) => typeof x === "string" && x.trim()) : [];
+      const lines = Array.isArray(payload?.lines) ? payload.lines : [];
+      const firstLink = links[0] ?? "";
+
+      if (!firstLink) {
+        json(res, 400, { ok: false, error: "缺少可送單的連結" });
+        return;
+      }
+      if (lines.length === 0) {
+        json(res, 400, { ok: false, error: "缺少送單項目" });
+        return;
+      }
+
+      const now = new Date().toISOString();
+      const submittedLines = [];
+      let successCount = 0;
+      let failureCount = 0;
+
+      for (const line of lines) {
+        const nextLine = {
+          placement: line?.placement,
+          quantity: Number(line?.quantity ?? 0),
+          amount: Number(line?.amount ?? 0),
+          warnings: Array.isArray(line?.warnings) ? [...line.warnings] : [],
+          splits: [],
+        };
+        if (links.length > 1) {
+          nextLine.warnings.push("本次供應商自動下單使用第一個連結送出，其餘連結保留在案件紀錄。");
+        }
+
+        for (const split of Array.isArray(line?.splits) ? line.splits : []) {
+          const result = await submitVendorSplit({
+            vendor: split?.vendor,
+            serviceId: Number(split?.serviceId ?? 0),
+            quantity: Number(split?.quantity ?? 0),
+            link: firstLink,
+          });
+
+          if (result.ok) {
+            successCount += 1;
+            nextLine.splits.push({
+              ...split,
+              vendorOrderId: result.vendorOrderId,
+              vendorStatus: result.status?.status ?? "submitted",
+              remains: result.status?.remains,
+              startCount: result.status?.start_count,
+              charge: result.status?.charge,
+              currency: result.status?.currency,
+              error: result.status?.error ?? "",
+              lastSyncAt: now,
+            });
+          } else {
+            failureCount += 1;
+            nextLine.splits.push({
+              ...split,
+              vendorStatus: "failed",
+              error: result.error ?? "送單失敗",
+              lastSyncAt: now,
+            });
+          }
+        }
+
+        submittedLines.push(nextLine);
+      }
+
+      let orderStatus = "submitted";
+      if (successCount === 0) orderStatus = "failed";
+      else if (failureCount > 0) orderStatus = "partial";
+
+      json(res, 200, {
+        ok: true,
+        order: {
+          id: String(Date.now()),
+          createdAt: now,
+          applicant: typeof payload?.applicant === "string" ? payload.applicant : "",
+          orderNo: typeof payload?.orderNo === "string" ? payload.orderNo : "",
+          caseName: typeof payload?.caseName === "string" ? payload.caseName : "",
+          kind: payload?.kind === "upsell" ? "upsell" : "new",
+          links,
+          lines: submittedLines,
+          totalAmount: Number(payload?.totalAmount ?? 0),
+          status: orderStatus,
+        },
+        summary: {
+          successCount,
+          failureCount,
+          usedLink: firstLink,
+        },
+      });
       return;
     }
 

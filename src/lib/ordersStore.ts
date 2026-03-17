@@ -31,7 +31,7 @@ export type DemoOrder = {
   links: string[];
   lines: DemoOrderLine[];
   totalAmount: number;
-  status: "planned";
+  status: "planned" | "submitted" | "partial" | "failed";
 };
 
 const STORAGE_KEY = "ad_demo_orders_v1";
@@ -61,17 +61,26 @@ export function listOrders(): DemoOrder[] {
   return readAll().sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
 }
 
-export function addOrder(order: Omit<DemoOrder, "id" | "createdAt" | "status">): DemoOrder {
+export function addOrder(
+  order: Omit<DemoOrder, "id" | "createdAt" | "status"> & { status?: DemoOrder["status"] },
+): DemoOrder {
   const full: DemoOrder = {
     ...order,
     id: String(Date.now()),
     createdAt: new Date().toISOString(),
-    status: "planned",
+    status: order.status ?? "planned",
   };
   const all = readAll();
   all.push(full);
   writeAll(all);
   return full;
+}
+
+export function insertOrder(order: DemoOrder): DemoOrder {
+  const all = readAll().filter((x) => x.id !== order.id);
+  all.push(order);
+  writeAll(all);
+  return order;
 }
 
 export function updateOrder(orderId: string, updater: (order: DemoOrder) => DemoOrder): DemoOrder | null {

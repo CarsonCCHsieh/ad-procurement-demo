@@ -5,10 +5,10 @@ import { PRICING, type AdPlacement } from "../lib/pricing";
 import { isValidUrl, parseLinks } from "../lib/validate";
 import { getConfig, getPlacementConfig, getVendorLabel, type VendorKey } from "../config/appConfig";
 import { planSplit } from "../lib/split";
-import { addOrder } from "../lib/ordersStore";
+import { addOrder, insertOrder, type DemoOrder } from "../lib/ordersStore";
 import { findServiceName } from "../config/serviceCatalog";
 import { calcInternalLineAmount, shouldShowPrices } from "../lib/internalPricing";
-import { SHARED_SYNC_EVENT } from "../lib/sharedSync";
+import { flushAllSharedState, SHARED_SYNC_EVENT } from "../lib/sharedSync";
 
 type OrderKind = "new" | "upsell";
 
@@ -89,6 +89,9 @@ export function AdOrdersPage() {
   const [step, setStep] = useState<"edit" | "confirm" | "submitted">("edit");
   const [state, setState] = useState<FormState>(() => defaultState());
   const [errors, setErrors] = useState<FormErrors>({});
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [submittedSummary, setSubmittedSummary] = useState<string>("");
 
   const cfg = getConfig();
   const vendorEnabled = (v: VendorKey) => cfg.vendors.some((x) => x.key === v && x.enabled);
@@ -125,15 +128,15 @@ export function AdOrdersPage() {
   const toConfirm = () => {
     const e = validate(state);
     setErrors(e);
+    setSubmitError(null);
     if (Object.keys(e).length > 0) return;
     setStep("confirm");
   };
 
-  const onConfirmSubmit = () => {
-    // MVP checkpoint: store a planned order locally (尚未串接供應商下單)。
+  const buildDraftOrder = () => {
     const applicant = user?.displayName ?? user?.username ?? "";
     const links = parseLinks(state.linksRaw);
-    addOrder({
+    return {
       applicant,
       orderNo: state.orderNo.trim(),
       caseName: state.caseName.trim(),
@@ -152,8 +155,63 @@ export function AdOrdersPage() {
         };
       }),
       totalAmount: computed.total,
+    };
+  };
+
+  const submitViaBackend = async (draft: ReturnType<typeof buildDraftOrder>) => {
+    await flushAllSharedState();
+    const res = await fetch("/api/vendor/submit-order", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(draft),
     });
-    setStep("submitted");
+    const data = (await res.json()) as {
+      ok?: boolean;
+      error?: string;
+      order?: DemoOrder;
+      summary?: { successCount?: number; failureCount?: number; usedLink?: string };
+    };
+    if (!res.ok || !data.ok || !data.order) {
+      throw new Error(data.error || `HTTP ${res.status}`);
+    }
+    return data;
+  };
+
+  const onConfirmSubmit = async () => {
+    setSubmitError(null);
+    const missingPlan = computed.linePlans.some((plan) => plan.splits.length === 0);
+    if (missingPlan) {
+      setSubmitError("仍有項目尚未完成拆單設定，無法正式送單。請先到控制設定補齊服務項目。");
+      return;
+    }
+
+    const draft = buildDraftOrder();
+    setSubmitting(true);
+    try {
+      const sameOriginApi = window.location.origin.startsWith("http");
+      if (sameOriginApi) {
+        const data = await submitViaBackend(draft);
+        insertOrder(data.order);
+        const successCount = Number(data.summary?.successCount ?? 0);
+        const failureCount = Number(data.summary?.failureCount ?? 0);
+        if (failureCount > 0 && successCount > 0) {
+          setSubmittedSummary(`已送出，${successCount} 筆成功、${failureCount} 筆失敗。`);
+        } else if (failureCount > 0) {
+          setSubmittedSummary(`送單失敗，${failureCount} 筆未成功。`);
+        } else {
+          setSubmittedSummary(`已送出 ${successCount} 筆供應商訂單。`);
+        }
+      } else {
+        addOrder({ ...draft, status: "planned" });
+        setSubmittedSummary("目前環境無法直接送到供應商，已先建立待處理工單。");
+      }
+      setStep("submitted");
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "送單失敗";
+      setSubmitError(`送單失敗：${msg}`);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const applicant = user?.displayName ?? user?.username ?? "";
@@ -500,10 +558,11 @@ export function AdOrdersPage() {
                 <button className="btn" type="button" onClick={() => setStep("edit")}>
                   返回修改
                 </button>
-                <button className="btn primary" type="button" onClick={onConfirmSubmit}>
-                  確認送出
+                <button className="btn primary" type="button" onClick={() => void onConfirmSubmit()} disabled={submitting}>
+                  {submitting ? "送出中..." : "確認送出"}
                 </button>
               </div>
+              {submitError ? <div className="error" style={{ marginTop: 10 }}>{submitError}</div> : null}
             </div>
           </div>
         </div>
@@ -519,6 +578,8 @@ export function AdOrdersPage() {
               </div>
             </div>
             <div className="card-bd">
+              <div className="hint">{submittedSummary || "送出後可到「投放成效」查看進度。"}</div>
+              <div className="sep" />
               <div className="actions">
                 <button className="btn" type="button" onClick={() => setStep("edit")}>
                   再次下單
@@ -527,8 +588,6 @@ export function AdOrdersPage() {
                   前往投放成效
                 </button>
               </div>
-              <div className="sep" />
-              <div className="hint">送出後可到「投放成效」查看進度。</div>
             </div>
           </div>
         </div>

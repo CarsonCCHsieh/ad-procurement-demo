@@ -29,6 +29,12 @@ let flushTimer: number | null = null;
 let flushRunning = false;
 const pendingKeys = new Set<string>();
 
+function currentSharedValues(keys: readonly string[] = SHARED_STORAGE_KEYS): Record<string, string | null> {
+  const values: Record<string, string | null> = {};
+  for (const key of keys) values[key] = localStorage.getItem(key);
+  return values;
+}
+
 function getClientId() {
   try {
     const current = localStorage.getItem(CLIENT_ID_KEY);
@@ -71,6 +77,14 @@ async function postBatch(values: Record<string, string | null>) {
   }
 }
 
+async function fetchRemoteState() {
+  const res = await fetch(`${API_BASE}/api/state`, {
+    headers: { "Cache-Control": "no-store" },
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as { revision?: number; values?: Record<string, string | null> };
+}
+
 async function flushPending() {
   if (!API_BASE || flushRunning || pendingKeys.size === 0) return;
   flushRunning = true;
@@ -111,11 +125,7 @@ export function queueSharedWrite(key: string) {
 
 export async function pullSharedState() {
   if (!API_BASE) return { applied: false, changedKeys: [] as string[] };
-  const res = await fetch(`${API_BASE}/api/state`, {
-    headers: { "Cache-Control": "no-store" },
-  });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const data = (await res.json()) as { revision?: number; values?: Record<string, string | null> };
+  const data = await fetchRemoteState();
   const revision = typeof data.revision === "number" ? data.revision : 0;
   if (revision <= lastSeenRevision || !data.values) {
     return { applied: false, changedKeys: [] as string[] };
@@ -124,6 +134,32 @@ export async function pullSharedState() {
   lastSeenRevision = revision;
   if (changedKeys.length > 0) dispatchSyncEvent(changedKeys);
   return { applied: changedKeys.length > 0, changedKeys };
+}
+
+export async function flushAllSharedState() {
+  if (!API_BASE) return;
+  const values = currentSharedValues();
+  await postBatch(values);
+}
+
+async function seedMissingLocalState() {
+  if (!API_BASE) return;
+  const data = await fetchRemoteState();
+  const remoteValues = data.values ?? {};
+  const localValues = currentSharedValues();
+  const missing: Record<string, string | null> = {};
+
+  for (const key of SHARED_STORAGE_KEYS) {
+    const remoteHas = Object.prototype.hasOwnProperty.call(remoteValues, key) && remoteValues[key] != null;
+    const localHas = localValues[key] != null;
+    if (!remoteHas && localHas) {
+      missing[key] = localValues[key];
+    }
+  }
+
+  if (Object.keys(missing).length > 0) {
+    await postBatch(missing);
+  }
 }
 
 export function startSharedStateSync(options?: { intervalMs?: number }) {
@@ -138,7 +174,10 @@ export function startSharedStateSync(options?: { intervalMs?: number }) {
     void flushPending();
   };
 
-  void pullSharedState();
+  void (async () => {
+    await seedMissingLocalState();
+    await pullSharedState();
+  })();
   const timer = window.setInterval(() => {
     void pullSharedState();
   }, intervalMs);

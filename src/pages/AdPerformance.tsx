@@ -533,6 +533,11 @@ export function AdPerformancePage() {
                           </div>
                           <div style={{ fontWeight: 800 }}>NT$ {ln.amount.toLocaleString()}</div>
                         </div>
+                        {ln.warnings.length > 0 ? (
+                          <div className="hint" style={{ marginTop: 8, color: "rgba(245, 158, 11, 0.95)" }}>
+                            {ln.warnings.join(" / ")}
+                          </div>
+                        ) : null}
 
                         {ln.splits.length === 0 ? (
                           <div className="hint">尚未設定可用服務。</div>
