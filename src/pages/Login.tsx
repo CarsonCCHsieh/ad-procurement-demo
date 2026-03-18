@@ -66,7 +66,7 @@ export function LoginPage() {
               </div>
             </div>
 
-            {error && <div className="error">{error}</div>}
+            {error ? <div className="error">{error}</div> : null}
 
             <div className="actions">
               <button className="btn primary" type="submit">
