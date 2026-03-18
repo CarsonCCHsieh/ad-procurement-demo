@@ -118,6 +118,14 @@ export function updateOrder(orderId: string, updater: (order: DemoOrder) => Demo
   return next;
 }
 
+export function removeOrder(orderId: string): boolean {
+  const all = readAll();
+  const next = all.filter((order) => order.id !== orderId);
+  if (next.length === all.length) return false;
+  writeAll(next);
+  return true;
+}
+
 export function clearOrders() {
   writeAll([]);
 }

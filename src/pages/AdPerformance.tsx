@@ -5,12 +5,12 @@ import { API_BASE, apiUrl } from "../lib/apiBase";
 import { getConfig, getPlacementLabel, type VendorKey } from "../config/appConfig";
 import { getVendorKey } from "../config/vendorKeys";
 import { normalizeStatusResponse, postSmmPanel, statusParamFor } from "../lib/vendorApi";
-import { clearOrders, listOrders, updateOrder, type DemoOrder, type DemoOrderBatch, type VendorSplitExec } from "../lib/ordersStore";
+import { clearOrders, listOrders, removeOrder, updateOrder, type DemoOrder, type DemoOrderBatch, type VendorSplitExec } from "../lib/ordersStore";
 import { clearMetaOrders, listMetaOrders, updateMetaOrder, type MetaOrder } from "../lib/metaOrdersStore";
 import { getMetaConfig } from "../config/metaConfig";
 import { fetchMetaAdSnapshot, fetchMetaPostMetrics, updateMetaAdDelivery } from "../lib/metaGraphApi";
 import { getGoalPrimaryMetricKey, getGoalPrimaryMetricLabel, META_AD_GOALS, type MetaKpiMetricKey } from "../lib/metaGoals";
-import { fetchSharedValues, pullSharedState, SHARED_SYNC_EVENT } from "../lib/sharedSync";
+import { fetchSharedValues, flushAllSharedState, pullSharedState, SHARED_SYNC_EVENT } from "../lib/sharedSync";
 import { getLineBatches } from "../lib/orderSchedule";
 
 function mapMetaStatus(s: string): MetaOrder["status"] {
@@ -132,6 +132,9 @@ export function AdPerformancePage() {
         order.lines.flatMap((line, lineIndex) =>
           getLineBatches(line).map((batch, batchIndex) => ({
             id: `${order.id}-${lineIndex}-${batch.id}`,
+            orderId: order.id,
+            lineIndex,
+            batchId: batch.id,
             applicant: order.applicant,
             caseName:
               batch.stageCount > 1
@@ -166,6 +169,9 @@ export function AdPerformancePage() {
         order.lines.flatMap((line, lineIndex) =>
           getLineBatches(line).map((batch) => ({
             id: `${order.id}-${lineIndex}-${batch.id}`,
+            orderId: order.id,
+            lineIndex,
+            batchId: batch.id,
             applicant: order.applicant,
             caseName:
               batch.stageCount > 1
@@ -200,6 +206,55 @@ export function AdPerformancePage() {
   const metaCfg = getMetaConfig();
 
   const setSyncFlag = (k: string, v: boolean) => setSyncing((s) => ({ ...s, [k]: v }));
+
+  const deriveOrderStatus = (lines: Array<{ batches?: DemoOrderBatch[] }>) => {
+    const batches = lines.flatMap((line) => line.batches ?? []);
+    if (batches.length === 0) return "planned" as const;
+    const statuses = batches.map((batch) => batch.status);
+    if (statuses.every((status) => status === "scheduled")) return "planned" as const;
+    if (statuses.every((status) => status === "failed")) return "failed" as const;
+    if (statuses.some((status) => status === "failed" || status === "partial")) return "partial" as const;
+    return "submitted" as const;
+  };
+
+  const deleteVendorRow = async (orderId: string, lineIndex: number, batchId: string) => {
+    const order = listOrders().find((item) => item.id === orderId);
+    if (!order) return;
+
+    const nextLines = order.lines
+      .map((line, currentLineIndex) => {
+        const batches = getLineBatches(line);
+        if (currentLineIndex !== lineIndex) {
+          return { ...line, batches, splits: batches.flatMap((batch) => batch.splits) };
+        }
+
+        const remainingBatches = batches.filter((batch) => batch.id !== batchId);
+        if (remainingBatches.length === 0) return null;
+        return {
+          ...line,
+          quantity: remainingBatches.reduce((sum, batch) => sum + batch.quantity, 0),
+          amount: remainingBatches.reduce((sum, batch) => sum + batch.amount, 0),
+          batches: remainingBatches,
+          splits: remainingBatches.flatMap((batch) => batch.splits),
+        };
+      })
+      .filter(Boolean) as DemoOrder["lines"];
+
+    if (nextLines.length === 0) {
+      removeOrder(orderId);
+    } else {
+      updateOrder(orderId, (current) => ({
+        ...current,
+        lines: nextLines,
+        totalAmount: nextLines.reduce((sum, line) => sum + line.amount, 0),
+        status: deriveOrderStatus(nextLines),
+      }));
+    }
+
+    await flushAllSharedState();
+    await pullLatestOrders();
+    setRefresh((x) => x + 1);
+  };
 
   const pullLatestOrders = async () => {
     try {
@@ -678,6 +733,8 @@ export function AdPerformancePage() {
               <div className="dense-th">剩餘數量</div>
               <div className="dense-th">執行進度</div>
 
+              {canManage ? <div className="dense-th">刪除</div> : null}
+
               {visibleVendorRows.map((row) => (
                 <div className="dense-tr" key={row.id}>
                   <div className="dense-td">
@@ -704,6 +761,11 @@ export function AdPerformancePage() {
                       更新時間：{row.lastSyncAt ? new Date(row.lastSyncAt).toLocaleString("zh-TW") : "-"}
                     </div>
                   </div>
+                  {canManage ? (
+                    <div className="dense-td">
+                      <button className="btn danger" type="button" onClick={() => void deleteVendorRow(row.orderId, row.lineIndex, row.batchId)}>刪除</button>
+                    </div>
+                  ) : null}
                 </div>
               ))}
             </div>
