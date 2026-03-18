@@ -744,6 +744,10 @@ textarea:focus {
   grid-template-columns: 130px minmax(260px, 1.5fr) 100px 110px 110px minmax(240px, 1.3fr);
 }
 
+.dense-table.performance-table--managed {
+  grid-template-columns: 120px minmax(240px, 1.35fr) 100px 110px 110px minmax(220px, 1.2fr) 88px;
+}
+
 .dense-table.suppliers-table::-webkit-scrollbar {
   display: none;
 }
@@ -1150,6 +1154,10 @@ textarea:focus {
 
   .dense-table.performance-table .dense-td:nth-child(6)::before {
     content: "\57F7\884C\9032\5EA6";
+  }
+
+  .dense-table.performance-table--managed .dense-td:nth-child(7)::before {
+    content: "\522A\9664";
   }
 
   .settings-page .dense-input,

@@ -713,27 +713,26 @@ export function AdPerformancePage() {
         </div>
         <div className="card-bd">
           <div className="actions inline">
-            <button className="btn" type="button" onClick={() => void pullLatestOrders()}>重新整理</button>
+            <button className="btn" type="button" onClick={() => void pullLatestOrders()}>{"重新整理"}</button>
             <button className="btn" type="button" onClick={refreshVendorTracking} disabled={vendorRefreshing}>
-              {vendorRefreshing ? "同步中" : "同步進行中案件"}
+              {vendorRefreshing ? "同步中..." : "同步進行中案件"}
             </button>
-            <button className="btn danger" type="button" onClick={() => { clearOrders(); setRefresh((x) => x + 1); }}>清空案件</button>
+            <button className="btn danger" type="button" onClick={() => { clearOrders(); setRefresh((x) => x + 1); }}>{"清空案件"}</button>
           </div>
 
           <div className="sep" />
 
           {visibleVendorRows.length === 0 ? (
-            <div className="hint">目前沒有廠商互動案件。</div>
+            <div className="hint">{"目前沒有廠商互動案件。"}</div>
           ) : (
-            <div className="dense-table performance-table">
-              <div className="dense-th">申請人</div>
-              <div className="dense-th">案件名</div>
-              <div className="dense-th">案件種類</div>
-              <div className="dense-th">金額</div>
-              <div className="dense-th">剩餘數量</div>
-              <div className="dense-th">執行進度</div>
-
-              {canManage ? <div className="dense-th">刪除</div> : null}
+            <div className={`dense-table performance-table${canManage ? " performance-table--managed" : ""}`}>
+              <div className="dense-th">{"申請人"}</div>
+              <div className="dense-th">{"案件名"}</div>
+              <div className="dense-th">{"案件種類"}</div>
+              <div className="dense-th">{"金額"}</div>
+              <div className="dense-th">{"剩餘數量"}</div>
+              <div className="dense-th">{"執行進度"}</div>
+              {canManage ? <div className="dense-th">{"刪除"}</div> : null}
 
               {visibleVendorRows.map((row) => (
                 <div className="dense-tr" key={row.id}>
@@ -758,12 +757,12 @@ export function AdPerformancePage() {
                       {row.progressText}
                     </div>
                     <div className="dense-meta">
-                      更新時間：{row.lastSyncAt ? new Date(row.lastSyncAt).toLocaleString("zh-TW") : "-"}
+                      {"更新時間："}{row.lastSyncAt ? new Date(row.lastSyncAt).toLocaleString("zh-TW") : "-"}
                     </div>
                   </div>
                   {canManage ? (
                     <div className="dense-td">
-                      <button className="btn danger" type="button" onClick={() => void deleteVendorRow(row.orderId, row.lineIndex, row.batchId)}>刪除</button>
+                      <button className="btn danger" type="button" onClick={() => void deleteVendorRow(row.orderId, row.lineIndex, row.batchId)}>{"刪除"}</button>
                     </div>
                   ) : null}
                 </div>
