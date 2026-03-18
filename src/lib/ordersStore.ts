@@ -13,12 +13,34 @@ export type VendorSplitExec = PlannedSplit & {
   error?: string;
 };
 
+export type OrderSubmitMode = "instant" | "average";
+
+export type DemoOrderBatchStatus = "scheduled" | "submitted" | "partial" | "failed" | "completed";
+
+export type DemoOrderBatch = {
+  id: string;
+  stageIndex: number;
+  stageCount: number;
+  plannedDate?: string; // YYYY-MM-DD
+  quantity: number;
+  amount: number;
+  warnings: string[];
+  splits: VendorSplitExec[];
+  status: DemoOrderBatchStatus;
+  submittedAt?: string;
+  lastSyncAt?: string;
+};
+
 export type DemoOrderLine = {
   placement: AdPlacement;
   quantity: number;
   amount: number;
   splits: VendorSplitExec[];
   warnings: string[];
+  mode?: OrderSubmitMode;
+  startDate?: string;
+  endDate?: string;
+  batches?: DemoOrderBatch[];
 };
 
 export type DemoOrder = {
@@ -32,6 +54,9 @@ export type DemoOrder = {
   lines: DemoOrderLine[];
   totalAmount: number;
   status: "planned" | "submitted" | "partial" | "failed";
+  mode?: OrderSubmitMode;
+  scheduleStartDate?: string;
+  scheduleEndDate?: string;
 };
 
 const STORAGE_KEY = "ad_demo_orders_v1";

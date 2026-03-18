@@ -1,15 +1,16 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import type { AdPlacement } from "../lib/pricing";
 import { isValidUrl, parseLinks } from "../lib/validate";
 import { getConfig, getEnabledPlacements, getPlacementConfig, getPlacementLabel, type VendorKey } from "../config/appConfig";
 import { planSplit } from "../lib/split";
-import { addOrder, insertOrder, type DemoOrder } from "../lib/ordersStore";
+import { addOrder, insertOrder, type DemoOrder, type OrderSubmitMode } from "../lib/ordersStore";
 import { calcInternalLineAmount, shouldShowPrices } from "../lib/internalPricing";
 import { getPlacementMinUnit } from "../config/pricingConfig";
 import { apiUrl } from "../lib/apiBase";
 import { flushAllSharedState, pullSharedState, SHARED_SYNC_EVENT } from "../lib/sharedSync";
+import { buildAverageBatches, buildInstantBatches, countAverageExecutionDays } from "../lib/orderSchedule";
 
 type OrderKind = "new" | "upsell";
 
@@ -22,6 +23,9 @@ type FormState = {
   orderNo: string;
   caseName: string;
   kind: OrderKind;
+  submitMode: OrderSubmitMode;
+  scheduleStartDate: string;
+  scheduleEndDate: string;
   linksRaw: string;
   items: LineItem[];
 };
@@ -39,6 +43,9 @@ function defaultState(defaultPlacement: AdPlacement): FormState {
     orderNo: "",
     caseName: "",
     kind: "new",
+    submitMode: "instant",
+    scheduleStartDate: "",
+    scheduleEndDate: "",
     linksRaw: "",
     items: [{ placement: defaultPlacement, target: String(getPlacementMinUnit(defaultPlacement)) }],
   };
@@ -49,6 +56,17 @@ function validate(state: FormState): FormErrors {
 
   if (!state.orderNo.trim()) errors.orderNo = "請填寫委刊單號";
   if (!state.caseName.trim()) errors.caseName = "請填寫案件名稱";
+
+  if (state.submitMode === "average") {
+    if (!state.scheduleStartDate) errors.scheduleStartDate = "請選擇起始日";
+    if (!state.scheduleEndDate) errors.scheduleEndDate = "請選擇結束日";
+    if (state.scheduleStartDate && state.scheduleEndDate) {
+      const dayCount = countAverageExecutionDays(state.scheduleStartDate, state.scheduleEndDate);
+      if (dayCount <= 0) {
+        errors.scheduleEndDate = "結束日需晚於起始日，系統會在結束日前一天完成";
+      }
+    }
+  }
 
   const links = parseLinks(state.linksRaw);
   if (links.length === 0) {
@@ -67,10 +85,21 @@ function validate(state: FormState): FormErrors {
     if (!item.placement) fieldErrors.placement = "請選擇投放項目";
     const qty = Number(item.target);
     const minUnit = getPlacementMinUnit(item.placement);
+    const averageDays =
+      state.submitMode === "average" && state.scheduleStartDate && state.scheduleEndDate
+        ? countAverageExecutionDays(state.scheduleStartDate, state.scheduleEndDate)
+        : 0;
     if (!Number.isFinite(qty) || !Number.isInteger(qty) || qty <= 0) {
       fieldErrors.target = "請輸入正整數";
     } else if (qty % minUnit !== 0) {
       fieldErrors.target = `數量需為 ${minUnit.toLocaleString()} 的倍數`;
+    } else if (state.submitMode === "average") {
+      const totalUnits = qty / minUnit;
+      if (averageDays <= 0) {
+        fieldErrors.target = "請先完成平均模式的日期設定";
+      } else if (totalUnits < averageDays) {
+        fieldErrors.target = `平均模式共有 ${averageDays.toLocaleString()} 天可執行，總數量至少需能分成 ${averageDays.toLocaleString()} 個最小單位`;
+      }
     }
     return fieldErrors;
   });
@@ -178,17 +207,41 @@ export function AdOrdersPage() {
     orderNo: state.orderNo.trim(),
     caseName: state.caseName.trim(),
     kind: state.kind,
+    mode: state.submitMode,
+    scheduleStartDate: state.submitMode === "average" ? state.scheduleStartDate : undefined,
+    scheduleEndDate: state.submitMode === "average" ? state.scheduleEndDate : undefined,
     links,
     lines: state.items.map((item, index) => {
       const qty = Number(item.target);
       const amount = Number.isFinite(qty) && qty > 0 ? calcInternalLineAmount(item.placement, qty) : 0;
       const plan = computed.linePlans[index] ?? { splits: [], warnings: [] as string[] };
+      const batches =
+        state.submitMode === "average" && state.scheduleStartDate && state.scheduleEndDate
+          ? buildAverageBatches({
+              startDate: state.scheduleStartDate,
+              endDate: state.scheduleEndDate,
+              quantity: Number.isFinite(qty) ? qty : 0,
+              amount,
+              minUnit: getPlacementMinUnit(item.placement),
+              warnings: plan.warnings,
+              splits: plan.splits,
+            })
+          : buildInstantBatches({
+              quantity: Number.isFinite(qty) ? qty : 0,
+              amount,
+              warnings: plan.warnings,
+              splits: plan.splits,
+            });
       return {
         placement: item.placement,
         quantity: Number.isFinite(qty) ? qty : 0,
         amount,
         splits: plan.splits,
         warnings: plan.warnings,
+        mode: state.submitMode,
+        startDate: state.submitMode === "average" ? state.scheduleStartDate : undefined,
+        endDate: state.submitMode === "average" ? state.scheduleEndDate : undefined,
+        batches,
       };
     }),
     totalAmount: computed.total,
@@ -318,7 +371,42 @@ export function AdOrdersPage() {
                     <option value="upsell">加購</option>
                   </select>
                 </div>
-                <div className="field" />
+                <div className="field">
+                  <div className="label">下單方式<span className="req">*</span></div>
+                  <select
+                    value={state.submitMode}
+                    onChange={(e) => setState((current) => ({ ...current, submitMode: e.target.value as OrderSubmitMode }))}
+                  >
+                    <option value="instant">預設</option>
+                    <option value="average">平均</option>
+                  </select>
+                  <div className="hint">預設會一次送完；平均會依走期拆成每日批次，並在結束日前一天完成。</div>
+                </div>
+                {state.submitMode === "average" ? (
+                  <>
+                    <div className="field">
+                      <div className="label">起始日<span className="req">*</span></div>
+                      <input
+                        type="date"
+                        value={state.scheduleStartDate}
+                        onChange={(e) => setState((current) => ({ ...current, scheduleStartDate: e.target.value }))}
+                      />
+                      {errors.scheduleStartDate && <div className="error">{errors.scheduleStartDate}</div>}
+                    </div>
+                    <div className="field">
+                      <div className="label">結束日<span className="req">*</span></div>
+                      <input
+                        type="date"
+                        value={state.scheduleEndDate}
+                        onChange={(e) => setState((current) => ({ ...current, scheduleEndDate: e.target.value }))}
+                      />
+                      <div className="hint">系統會在這一天之前完成，最後一天不再新增新訂單。</div>
+                      {errors.scheduleEndDate && <div className="error">{errors.scheduleEndDate}</div>}
+                    </div>
+                  </>
+                ) : (
+                  <div className="field" />
+                )}
                 <div className="field" style={{ gridColumn: "1 / -1" }}>
                   <div className="label">連結<span className="req">*</span></div>
                   <textarea
@@ -428,6 +516,21 @@ export function AdOrdersPage() {
                   <div className="label">日期</div>
                   <input value={nowString()} readOnly />
                 </div>
+                <div className="field">
+                  <div className="label">下單方式</div>
+                  <input value={state.submitMode === "average" ? "平均" : "預設"} readOnly />
+                </div>
+                <div className="field">
+                  <div className="label">走期</div>
+                  <input
+                    value={
+                      state.submitMode === "average" && state.scheduleStartDate && state.scheduleEndDate
+                        ? `${state.scheduleStartDate} ~ ${state.scheduleEndDate}`
+                        : "一次性送出"
+                    }
+                    readOnly
+                  />
+                </div>
               </div>
 
               <div className="sep" />
@@ -457,11 +560,30 @@ export function AdOrdersPage() {
                         {plan.splits.length === 0 ? (
                           <div className="error" style={{ marginTop: 6 }}>這個投放項目尚未完成系統設定，請通知管理員協助處理。</div>
                         ) : (
-                          <div className="hint" style={{ marginTop: 6 }}>系統會依設定自動安排投放，送出後可到投放成效查看最新進度。</div>
+                          <div className="hint" style={{ marginTop: 6 }}>
+                            {state.submitMode === "average" && state.scheduleStartDate && state.scheduleEndDate
+                              ? (() => {
+                                  const dayCount = countAverageExecutionDays(state.scheduleStartDate, state.scheduleEndDate);
+                                  return dayCount > 0
+                                    ? `系統會拆成 ${dayCount} 個執行日批次，並在 ${state.scheduleEndDate} 前一天完成。`
+                                    : "系統會依設定自動安排投放。";
+                                })()
+                              : "系統會依設定自動安排投放，送出後可到投放成效查看最新進度。"}
+                          </div>
                         )}
                         {plan.splits.length > 0 && plan.warnings.length > 0 && (
                           <div className="hint" style={{ marginTop: 6, color: "rgba(245, 158, 11, 0.95)" }}>目前設定需要管理員留意，若送出後有提醒請通知管理員。</div>
                         )}
+                        {state.submitMode === "average" && state.scheduleStartDate && state.scheduleEndDate ? (
+                          <div className="hint" style={{ marginTop: 6 }}>
+                            {(() => {
+                              const dayCount = countAverageExecutionDays(state.scheduleStartDate, state.scheduleEndDate);
+                              return dayCount > 0
+                                ? `成效頁會顯示為 ${state.caseName || "案件"}（1/${dayCount} 日）、（2/${dayCount} 日）...`
+                                : "請先完成日期設定。";
+                            })()}
+                          </div>
+                        ) : null}
                       </div>
                     );
                   })}

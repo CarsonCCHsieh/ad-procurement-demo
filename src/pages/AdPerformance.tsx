@@ -1,16 +1,17 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { API_BASE, apiUrl } from "../lib/apiBase";
-import { getConfig, getPlacementLabel, getVendorLabel, type VendorKey } from "../config/appConfig";
+import { getConfig, getPlacementLabel, type VendorKey } from "../config/appConfig";
 import { getVendorKey } from "../config/vendorKeys";
 import { normalizeStatusResponse, postSmmPanel, statusParamFor } from "../lib/vendorApi";
-import { clearOrders, listOrders, updateOrder, type DemoOrder, type VendorSplitExec } from "../lib/ordersStore";
+import { clearOrders, listOrders, updateOrder, type DemoOrder, type DemoOrderBatch, type VendorSplitExec } from "../lib/ordersStore";
 import { clearMetaOrders, listMetaOrders, updateMetaOrder, type MetaOrder } from "../lib/metaOrdersStore";
 import { getMetaConfig } from "../config/metaConfig";
 import { fetchMetaAdSnapshot, fetchMetaPostMetrics, updateMetaAdDelivery } from "../lib/metaGraphApi";
 import { getGoalPrimaryMetricKey, getGoalPrimaryMetricLabel, META_AD_GOALS, type MetaKpiMetricKey } from "../lib/metaGoals";
 import { fetchSharedValues, pullSharedState, SHARED_SYNC_EVENT } from "../lib/sharedSync";
+import { getLineBatches } from "../lib/orderSchedule";
 
 function mapMetaStatus(s: string): MetaOrder["status"] {
   const v = s.toUpperCase();
@@ -92,6 +93,18 @@ function summarizeVendorRemains(line: { quantity: number; splits: VendorSplitExe
   return values.reduce((sum, value) => sum + value, 0).toLocaleString("zh-TW");
 }
 
+function summarizeBatchProgress(batch: DemoOrderBatch): string {
+  if (batch.status === "scheduled") {
+    return batch.plannedDate ? "預計 " + batch.plannedDate + " 送出" : "待送出";
+  }
+  return summarizeVendorProgress(batch);
+}
+
+function summarizeBatchRemains(batch: DemoOrderBatch): string {
+  if (batch.status === "scheduled") return batch.quantity.toLocaleString("zh-TW");
+  return summarizeVendorRemains(batch);
+}
+
 export function AdPerformancePage() {
   const nav = useNavigate();
   const { user, signOut, hasRole } = useAuth();
@@ -116,46 +129,67 @@ export function AdPerformancePage() {
   const vendorRows = useMemo(
     () =>
       orders.flatMap((order) =>
-        order.lines.map((line, lineIndex) => ({
-          id: `${order.id}-${lineIndex}`,
-          applicant: order.applicant,
-          caseName: order.caseName,
-          orderNo: order.orderNo,
-          kind: order.kind === "new" ? "新案" : "加購",
-          amount: line.amount,
-          remainsText: summarizeVendorRemains(line),
-          progressText: summarizeVendorProgress(line),
-          placementText: `${getPlacementLabel(line.placement) ?? line.placement} / 數量 ${line.quantity.toLocaleString("zh-TW")}`,
-          lastSyncAt: line.splits
-            .map((split) => split.lastSyncAt)
-            .filter((value): value is string => !!value)
-            .sort()
-            .at(-1) ?? order.createdAt,
-          hasWarning: line.warnings.length > 0 || line.splits.some((split) => !!split.error),
-        })),
+        order.lines.flatMap((line, lineIndex) =>
+          getLineBatches(line).map((batch, batchIndex) => ({
+            id: `${order.id}-${lineIndex}-${batch.id}`,
+            applicant: order.applicant,
+            caseName:
+              batch.stageCount > 1
+                ? `${order.caseName}（${batch.stageIndex}/${batch.stageCount} 日）`
+                : order.caseName,
+            orderNo: order.orderNo,
+            kind: order.kind === "new" ? "新案" : "加購",
+            amount: batch.amount,
+            remainsText: summarizeBatchRemains(batch),
+            progressText: summarizeBatchProgress(batch),
+            placementText: `${getPlacementLabel(line.placement) ?? line.placement} / 數量 ${batch.quantity.toLocaleString("zh-TW")}`,
+            lastSyncAt:
+              batch.lastSyncAt ??
+              batch.submittedAt ??
+              batch.splits
+                .map((split) => split.lastSyncAt)
+                .filter((value): value is string => !!value)
+                .sort()
+                .at(-1) ??
+              order.createdAt,
+            hasWarning: batch.warnings.length > 0 || batch.splits.some((split) => !!split.error),
+            plannedDate: batch.plannedDate,
+            batchIndex,
+          })),
+        ),
       ),
     [orders],
   );
   const vendorFallbackRows = useMemo(
     () =>
       remoteOrdersFallback.flatMap((order) =>
-        order.lines.map((line, lineIndex) => ({
-          id: `${order.id}-${lineIndex}`,
-          applicant: order.applicant,
-          caseName: order.caseName,
-          orderNo: order.orderNo,
-          kind: order.kind === "new" ? "新案" : "加購",
-          amount: line.amount,
-          remainsText: summarizeVendorRemains(line),
-          progressText: summarizeVendorProgress(line),
-          placementText: `${getPlacementLabel(line.placement) ?? line.placement} / 數量 ${line.quantity.toLocaleString("zh-TW")}`,
-          lastSyncAt: line.splits
-            .map((split) => split.lastSyncAt)
-            .filter((value): value is string => !!value)
-            .sort()
-            .at(-1) ?? order.createdAt,
-          hasWarning: line.warnings.length > 0 || line.splits.some((split) => !!split.error),
-        })),
+        order.lines.flatMap((line, lineIndex) =>
+          getLineBatches(line).map((batch) => ({
+            id: `${order.id}-${lineIndex}-${batch.id}`,
+            applicant: order.applicant,
+            caseName:
+              batch.stageCount > 1
+                ? `${order.caseName}（${batch.stageIndex}/${batch.stageCount} 日）`
+                : order.caseName,
+            orderNo: order.orderNo,
+            kind: order.kind === "new" ? "新案" : "加購",
+            amount: batch.amount,
+            remainsText: summarizeBatchRemains(batch),
+            progressText: summarizeBatchProgress(batch),
+            placementText: `${getPlacementLabel(line.placement) ?? line.placement} / 數量 ${batch.quantity.toLocaleString("zh-TW")}`,
+            lastSyncAt:
+              batch.lastSyncAt ??
+              batch.submittedAt ??
+              batch.splits
+                .map((split) => split.lastSyncAt)
+                .filter((value): value is string => !!value)
+                .sort()
+                .at(-1) ??
+              order.createdAt,
+            hasWarning: batch.warnings.length > 0 || batch.splits.some((split) => !!split.error),
+            plannedDate: batch.plannedDate,
+          })),
+        ),
       ),
     [remoteOrdersFallback],
   );
@@ -214,15 +248,18 @@ export function AdPerformancePage() {
     }
 
     const ids: number[] = [];
-    for (const o of orders) {
-      for (const ln of o.lines) {
-        for (const sp of ln.splits) {
-          if (sp.vendor !== vendor || !sp.vendorOrderId) continue;
-          if (isVendorSplitDone(sp)) continue;
-          ids.push(sp.vendorOrderId);
+    for (const order of orders) {
+      for (const line of order.lines) {
+        for (const batch of getLineBatches(line)) {
+          for (const split of batch.splits) {
+            if (split.vendor !== vendor || !split.vendorOrderId) continue;
+            if (isVendorSplitDone(split)) continue;
+            ids.push(split.vendorOrderId);
+          }
         }
       }
     }
+
     const uniq = Array.from(new Set(ids)).filter((n) => Number.isFinite(n) && n > 0);
     if (uniq.length === 0) {
       return { syncedCount: 0, skipped: true };
@@ -240,33 +277,60 @@ export function AdPerformancePage() {
       });
       const mapped = normalizeStatusResponse(uniq, resp);
 
-      for (const o of orders) {
-        updateOrder(o.id, (ord) => ({
+      for (const order of orders) {
+        updateOrder(order.id, (ord) => ({
           ...ord,
-          lines: ord.lines.map((ln) => ({
-            ...ln,
-            splits: ln.splits.map((sp) => {
-              if (sp.vendor !== vendor || !sp.vendorOrderId) return sp;
-              if (isVendorSplitDone(sp)) return sp;
-              const st = mapped[sp.vendorOrderId];
-              if (!st) return { ...sp, lastSyncAt: new Date().toISOString(), error: "No status" };
+          lines: ord.lines.map((line) => {
+            const batches = getLineBatches(line).map((batch) => {
+              const nextSplits = batch.splits.map((split) => {
+                if (split.vendor !== vendor || !split.vendorOrderId) return split;
+                if (isVendorSplitDone(split)) return split;
+                const status = mapped[split.vendorOrderId];
+                if (!status) return { ...split, lastSyncAt: new Date().toISOString(), error: "No status" };
+                return {
+                  ...split,
+                  vendorStatus: status.status ?? split.vendorStatus,
+                  remains: status.remains ?? split.remains,
+                  startCount: status.start_count ?? split.startCount,
+                  charge: status.charge ?? split.charge,
+                  currency: status.currency ?? split.currency,
+                  lastSyncAt: new Date().toISOString(),
+                  error: status.error ?? "",
+                };
+              });
+
+              const nextStatus = nextSplits.every((split) => isVendorSplitDone(split))
+                ? "completed"
+                : nextSplits.some((split) => split.error || String(split.vendorStatus ?? "").toLowerCase().includes("fail"))
+                  ? "partial"
+                  : nextSplits.some((split) => !!split.vendorOrderId)
+                    ? "submitted"
+                    : batch.status;
+
               return {
-                ...sp,
-                vendorStatus: st.status ?? sp.vendorStatus,
-                remains: st.remains ?? sp.remains,
-                startCount: st.start_count ?? sp.startCount,
-                charge: st.charge ?? sp.charge,
-                currency: st.currency ?? sp.currency,
-                lastSyncAt: new Date().toISOString(),
-                error: st.error ?? "",
+                ...batch,
+                splits: nextSplits,
+                status: nextStatus,
+                lastSyncAt:
+                  nextSplits
+                    .map((split) => split.lastSyncAt)
+                    .filter((value): value is string => !!value)
+                    .sort()
+                    .at(-1) ?? batch.lastSyncAt,
               };
-            }),
-          })),
+            });
+
+            return {
+              ...line,
+              batches,
+              splits: batches.flatMap((batch) => batch.splits),
+            };
+          }),
         }));
       }
 
       if (!options?.silent) {
-        setMsg(`\u5df2\u66f4\u65b0 ${uniq.length.toLocaleString()} \u7b46\u9032\u884c\u4e2d\u6848\u4ef6\u3002`);
+        setMsg(`已更新 ${uniq.length.toLocaleString()} 筆進行中案件。`);
         setTimeout(() => setMsg(null), 2500);
         setRefresh((x) => x + 1);
       }
@@ -274,7 +338,7 @@ export function AdPerformancePage() {
     } catch (e) {
       const m = e instanceof Error ? e.message : "未知錯誤";
       if (!options?.silent) {
-        setMsg(`\u540c\u6b65\u5931\u6557\uff1a${m}`);
+        setMsg(`同步失敗：${m}`);
         setTimeout(() => setMsg(null), 3500);
       }
       return { syncedCount: 0, skipped: false, error: m };

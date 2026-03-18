@@ -1,4 +1,4 @@
-import http from "node:http";
+﻿import http from "node:http";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, extname, resolve } from "node:path";
 import { networkInterfaces } from "node:os";
@@ -51,6 +51,8 @@ const bumpRevisionStmt = db.prepare(`
 `);
 
 let metaPagesCache = null;
+let backgroundSyncRunning = false;
+
 const APP_CONFIG_KEY = "ad_demo_config_v1";
 const VENDOR_KEYS_KEY = "ad_demo_vendor_keys_v1";
 const ORDERS_KEY = "ad_demo_orders_v1";
@@ -59,6 +61,22 @@ const DEFAULT_VENDOR_BASES = {
   urpanel: "https://urpanel.com/api/v2",
   justanotherpanel: "https://justanotherpanel.com/api/v2",
 };
+const VENDOR_TERMINAL_STATUS = [
+  "complete",
+  "completed",
+  "done",
+  "success",
+  "successful",
+  "partial",
+  "cancel",
+  "canceled",
+  "cancelled",
+  "refund",
+  "refunded",
+  "fail",
+  "failed",
+  "error",
+];
 
 function json(res, status, payload) {
   res.writeHead(status, {
@@ -204,7 +222,7 @@ function readFirstInsightValue(raw) {
 async function fetchMetaPostMetricsSecure({ postId, pageId, pageName }) {
   const metaSecrets = loadMetaSecrets();
   if (!metaSecrets) {
-    return { ok: false, detail: "Meta 本機權杖尚未設定" };
+    return { ok: false, detail: "Meta 本機權限尚未設定" };
   }
 
   const normalizedPostId = String(postId || "").trim().replace(/^https?:\/\/[^/]+\//i, "");
@@ -220,7 +238,7 @@ async function fetchMetaPostMetricsSecure({ postId, pageId, pageName }) {
     (targetPageName && String(item?.name || "") === targetPageName),
   );
   if (!page?.access_token) {
-    return { ok: false, detail: "找不到對應粉專的存取權杖" };
+    return { ok: false, detail: "找不到對應粉專的存取權限" };
   }
 
   const pageToken = String(page.access_token);
@@ -418,23 +436,6 @@ async function fetchVendorStatus(vendor, orderId) {
   return normalizeSingleStatus(resp);
 }
 
-const VENDOR_TERMINAL_STATUS = [
-  "complete",
-  "completed",
-  "done",
-  "success",
-  "successful",
-  "partial",
-  "cancel",
-  "canceled",
-  "cancelled",
-  "refund",
-  "refunded",
-  "fail",
-  "failed",
-  "error",
-];
-
 function isVendorSplitDone(split) {
   const status = String(split?.vendorStatus ?? "").trim().toLowerCase();
   if (status && VENDOR_TERMINAL_STATUS.some((k) => status.includes(k))) return true;
@@ -442,55 +443,111 @@ function isVendorSplitDone(split) {
   return false;
 }
 
-async function syncSharedOrders() {
-  const orders = readSharedJson(ORDERS_KEY);
-  if (!Array.isArray(orders) || orders.length === 0) {
-    return { syncedCount: 0, orders: [] };
-  }
+function taipeiDateString(input = new Date()) {
+  const date = input instanceof Date ? input : new Date(input);
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Taipei",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const lookup = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${lookup.year}-${lookup.month}-${lookup.day}`;
+}
 
-  let syncedCount = 0;
-  const nextOrders = [];
+function cloneSplitForSchedule(split, quantity) {
+  return {
+    ...split,
+    quantity,
+    vendorOrderId: undefined,
+    vendorStatus: "scheduled",
+    remains: quantity,
+    startCount: undefined,
+    charge: undefined,
+    currency: undefined,
+    lastSyncAt: undefined,
+    error: "",
+  };
+}
 
-  for (const order of orders) {
-    const nextOrder = {
-      ...order,
-      lines: Array.isArray(order?.lines)
-        ? await Promise.all(
-            order.lines.map(async (line) => {
-              const splits = Array.isArray(line?.splits) ? line.splits : [];
-              const nextSplits = await Promise.all(
-                splits.map(async (split) => {
-                  if (!split?.vendor || !split?.vendorOrderId) return split;
-                  if (isVendorSplitDone(split)) return split;
+function normalizeBatchStatus(batch) {
+  const splits = Array.isArray(batch?.splits) ? batch.splits : [];
+  if (!splits.length) return "scheduled";
+  const hasOrder = splits.some((split) => !!split?.vendorOrderId);
+  const hasFailure = splits.some((split) => {
+    const status = String(split?.vendorStatus ?? "").toLowerCase();
+    return status.includes("fail") || status.includes("error") || status.includes("cancel") || status.includes("refund") || !!split?.error;
+  });
+  const allDone = splits.every((split) => isVendorSplitDone(split));
 
-                  const status = await fetchVendorStatus(split.vendor, split.vendorOrderId);
-                  syncedCount += 1;
-                  return {
-                    ...split,
-                    vendorStatus: status.status ?? split.vendorStatus,
-                    remains: status.remains ?? split.remains,
-                    startCount: status.start_count ?? split.startCount,
-                    charge: status.charge ?? split.charge,
-                    currency: status.currency ?? split.currency,
-                    error: status.error ?? "",
-                    lastSyncAt: new Date().toISOString(),
-                  };
-                }),
-              );
+  if (allDone) return hasFailure ? "partial" : "completed";
+  if (hasFailure && !hasOrder) return "failed";
+  if (hasFailure) return "partial";
+  if (hasOrder) return "submitted";
+  return "scheduled";
+}
 
-              return {
-                ...line,
-                splits: nextSplits,
-              };
-            }),
-          )
+function normalizeLineBatches(line) {
+  if (Array.isArray(line?.batches) && line.batches.length > 0) {
+    return line.batches.map((batch, index) => ({
+      id: typeof batch?.id === "string" && batch.id.trim() ? batch.id.trim() : `batch-${index + 1}`,
+      stageIndex: Number(batch?.stageIndex ?? index + 1),
+      stageCount: Number(batch?.stageCount ?? line.batches.length),
+      plannedDate: typeof batch?.plannedDate === "string" ? batch.plannedDate : undefined,
+      quantity: Number(batch?.quantity ?? 0),
+      amount: Number(batch?.amount ?? 0),
+      warnings: Array.isArray(batch?.warnings) ? [...batch.warnings] : [],
+      splits: Array.isArray(batch?.splits)
+        ? batch.splits.map((split) => ({ ...split, quantity: Number(split?.quantity ?? 0) }))
         : [],
-    };
-    nextOrders.push(nextOrder);
+      status: typeof batch?.status === "string" ? batch.status : normalizeBatchStatus(batch),
+      submittedAt: typeof batch?.submittedAt === "string" ? batch.submittedAt : undefined,
+      lastSyncAt: typeof batch?.lastSyncAt === "string" ? batch.lastSyncAt : undefined,
+    }));
   }
 
-  writeSharedJson(ORDERS_KEY, nextOrders, "server-sync");
-  return { syncedCount, orders: nextOrders };
+  return [
+    {
+      id: "batch-1",
+      stageIndex: 1,
+      stageCount: 1,
+      plannedDate: undefined,
+      quantity: Number(line?.quantity ?? 0),
+      amount: Number(line?.amount ?? 0),
+      warnings: Array.isArray(line?.warnings) ? [...line.warnings] : [],
+      splits: Array.isArray(line?.splits)
+        ? line.splits.map((split) => ({ ...split, quantity: Number(split?.quantity ?? 0) }))
+        : [],
+      status: normalizeBatchStatus(line),
+      submittedAt: undefined,
+      lastSyncAt: undefined,
+    },
+  ];
+}
+
+function flattenBatchSplits(batches) {
+  return (Array.isArray(batches) ? batches : []).flatMap((batch) => (Array.isArray(batch?.splits) ? batch.splits : []));
+}
+
+function buildLineFromBatches(line, batches) {
+  return {
+    ...line,
+    quantity: batches.reduce((sum, batch) => sum + Number(batch?.quantity ?? 0), 0),
+    amount: batches.reduce((sum, batch) => sum + Number(batch?.amount ?? 0), 0),
+    warnings: Array.isArray(line?.warnings) ? [...line.warnings] : [],
+    batches,
+    splits: flattenBatchSplits(batches),
+  };
+}
+
+function deriveOrderStatus(lines) {
+  const batches = (Array.isArray(lines) ? lines : []).flatMap((line) => normalizeLineBatches(line));
+  if (!batches.length) return "planned";
+  const statuses = batches.map((batch) => batch.status);
+  if (statuses.every((status) => status === "scheduled")) return "planned";
+  if (statuses.every((status) => status === "failed")) return "failed";
+  if (statuses.some((status) => status === "failed" || status === "partial")) return "partial";
+  return "submitted";
 }
 
 async function submitVendorSplit({ vendor, serviceId, quantity, link }) {
@@ -545,6 +602,159 @@ async function submitVendorSplit({ vendor, serviceId, quantity, link }) {
     status,
     raw: resp,
   };
+}
+
+async function submitBatch(batch, links) {
+  const firstLink = Array.isArray(links) ? links.find((link) => typeof link === "string" && link.trim()) : "";
+  const now = new Date().toISOString();
+  if (!firstLink) {
+    return {
+      batch: {
+        ...batch,
+        status: "failed",
+        lastSyncAt: now,
+        splits: (Array.isArray(batch?.splits) ? batch.splits : []).map((split) => ({
+          ...split,
+          vendorStatus: "failed",
+          error: "缺少可送單的連結",
+          lastSyncAt: now,
+        })),
+      },
+      submittedCount: 0,
+      failureCount: Array.isArray(batch?.splits) ? batch.splits.length : 0,
+    };
+  }
+
+  let submittedCount = 0;
+  let failureCount = 0;
+  const nextSplits = [];
+  for (const split of Array.isArray(batch?.splits) ? batch.splits : []) {
+    const result = await submitVendorSplit({
+      vendor: split?.vendor,
+      serviceId: Number(split?.serviceId ?? 0),
+      quantity: Number(split?.quantity ?? 0),
+      link: firstLink,
+    });
+
+    if (result.ok) {
+      submittedCount += 1;
+      nextSplits.push({
+        ...split,
+        vendorOrderId: result.vendorOrderId,
+        vendorStatus: result.status?.status ?? "submitted",
+        remains: result.status?.remains ?? split?.quantity ?? 0,
+        startCount: result.status?.start_count,
+        charge: result.status?.charge,
+        currency: result.status?.currency,
+        error: result.status?.error ?? "",
+        lastSyncAt: now,
+      });
+    } else {
+      failureCount += 1;
+      nextSplits.push({
+        ...split,
+        vendorStatus: "failed",
+        remains: split?.quantity ?? 0,
+        error: result.error ?? "送單失敗",
+        lastSyncAt: now,
+      });
+    }
+  }
+
+  const nextBatch = {
+    ...batch,
+    submittedAt: now,
+    lastSyncAt: now,
+    splits: nextSplits,
+  };
+  nextBatch.status = normalizeBatchStatus(nextBatch);
+  return { batch: nextBatch, submittedCount, failureCount };
+}
+
+async function syncSharedOrders() {
+  const orders = readSharedJson(ORDERS_KEY);
+  if (!Array.isArray(orders) || orders.length === 0) {
+    return { syncedCount: 0, orders: [] };
+  }
+
+  let syncedCount = 0;
+  const nextOrders = [];
+  const today = taipeiDateString();
+
+  for (const order of orders) {
+    const nextLines = [];
+    for (const line of Array.isArray(order?.lines) ? order.lines : []) {
+      const nextBatches = [];
+      for (const batch of normalizeLineBatches(line)) {
+        let nextBatch = {
+          ...batch,
+          splits: Array.isArray(batch?.splits) ? batch.splits.map((split) => ({ ...split })) : [],
+        };
+
+        const isDue = !nextBatch.plannedDate || nextBatch.plannedDate <= today;
+        if (nextBatch.status === "scheduled" && isDue) {
+          const submitResult = await submitBatch(nextBatch, order?.links);
+          nextBatch = submitResult.batch;
+          syncedCount += submitResult.submittedCount;
+        }
+
+        const refreshedSplits = [];
+        for (const split of nextBatch.splits) {
+          if (!split?.vendor || !split?.vendorOrderId || isVendorSplitDone(split)) {
+            refreshedSplits.push(split);
+            continue;
+          }
+          const status = await fetchVendorStatus(split.vendor, split.vendorOrderId);
+          syncedCount += 1;
+          refreshedSplits.push({
+            ...split,
+            vendorStatus: status.status ?? split.vendorStatus,
+            remains: status.remains ?? split.remains,
+            startCount: status.start_count ?? split.startCount,
+            charge: status.charge ?? split.charge,
+            currency: status.currency ?? split.currency,
+            error: status.error ?? "",
+            lastSyncAt: new Date().toISOString(),
+          });
+        }
+
+        nextBatch = {
+          ...nextBatch,
+          splits: refreshedSplits,
+          status: normalizeBatchStatus({ ...nextBatch, splits: refreshedSplits }),
+          lastSyncAt:
+            refreshedSplits
+              .map((split) => split.lastSyncAt)
+              .filter(Boolean)
+              .sort()
+              .at(-1) ?? nextBatch.lastSyncAt,
+        };
+        nextBatches.push(nextBatch);
+      }
+      nextLines.push(buildLineFromBatches(line, nextBatches));
+    }
+
+    nextOrders.push({
+      ...order,
+      lines: nextLines,
+      status: deriveOrderStatus(nextLines),
+    });
+  }
+
+  writeSharedJson(ORDERS_KEY, nextOrders, "server-sync");
+  return { syncedCount, orders: nextOrders };
+}
+
+async function processScheduledOrdersInBackground() {
+  if (backgroundSyncRunning) return;
+  backgroundSyncRunning = true;
+  try {
+    await syncSharedOrders();
+  } catch (error) {
+    console.error("[scheduled-orders]", error);
+  } finally {
+    backgroundSyncRunning = false;
+  }
 }
 
 const server = http.createServer(async (req, res) => {
@@ -603,6 +813,7 @@ const server = http.createServer(async (req, res) => {
       }
 
       const now = new Date().toISOString();
+      const today = taipeiDateString();
       const submittedLines = [];
       let successCount = 0;
       let failureCount = 0;
@@ -614,64 +825,64 @@ const server = http.createServer(async (req, res) => {
           amount: Number(line?.amount ?? 0),
           warnings: Array.isArray(line?.warnings) ? [...line.warnings] : [],
           splits: [],
+          mode: line?.mode === "average" ? "average" : "instant",
+          startDate: typeof line?.startDate === "string" ? line.startDate : undefined,
+          endDate: typeof line?.endDate === "string" ? line.endDate : undefined,
+          batches: [],
         };
         if (links.length > 1) {
           nextLine.warnings.push("本次供應商自動下單使用第一個連結送出，其餘連結保留在案件紀錄。");
         }
 
-        for (const split of Array.isArray(line?.splits) ? line.splits : []) {
-          const result = await submitVendorSplit({
-            vendor: split?.vendor,
-            serviceId: Number(split?.serviceId ?? 0),
-            quantity: Number(split?.quantity ?? 0),
-            link: firstLink,
-          });
-
-          if (result.ok) {
-            successCount += 1;
-            nextLine.splits.push({
-              ...split,
-              vendorOrderId: result.vendorOrderId,
-              vendorStatus: result.status?.status ?? "submitted",
-              remains: result.status?.remains,
-              startCount: result.status?.start_count,
-              charge: result.status?.charge,
-              currency: result.status?.currency,
-              error: result.status?.error ?? "",
-              lastSyncAt: now,
+        const nextBatches = [];
+        for (const batch of normalizeLineBatches(line)) {
+          const normalizedBatch = {
+            ...batch,
+            warnings: [...nextLine.warnings, ...(Array.isArray(batch?.warnings) ? batch.warnings : [])],
+            splits: Array.isArray(batch?.splits)
+              ? batch.splits.map((split) => cloneSplitForSchedule(split, Number(split?.quantity ?? 0)))
+              : [],
+          };
+          const isDue = !normalizedBatch.plannedDate || normalizedBatch.plannedDate <= today;
+          if (!isDue) {
+            nextBatches.push({
+              ...normalizedBatch,
+              status: "scheduled",
             });
-          } else {
-            failureCount += 1;
-            nextLine.splits.push({
-              ...split,
-              vendorStatus: "failed",
-              error: result.error ?? "送單失敗",
-              lastSyncAt: now,
-            });
+            continue;
           }
+
+          const result = await submitBatch(normalizedBatch, links);
+          successCount += result.submittedCount;
+          failureCount += result.failureCount;
+          nextBatches.push(result.batch);
         }
 
-        submittedLines.push(nextLine);
+        submittedLines.push(buildLineFromBatches(nextLine, nextBatches));
       }
 
-      let orderStatus = "submitted";
-      if (successCount === 0) orderStatus = "failed";
-      else if (failureCount > 0) orderStatus = "partial";
+      const order = {
+        id: String(Date.now()),
+        createdAt: now,
+        applicant: typeof payload?.applicant === "string" ? payload.applicant : "",
+        orderNo: typeof payload?.orderNo === "string" ? payload.orderNo : "",
+        caseName: typeof payload?.caseName === "string" ? payload.caseName : "",
+        kind: payload?.kind === "upsell" ? "upsell" : "new",
+        mode: payload?.mode === "average" ? "average" : "instant",
+        scheduleStartDate: typeof payload?.scheduleStartDate === "string" ? payload.scheduleStartDate : undefined,
+        scheduleEndDate: typeof payload?.scheduleEndDate === "string" ? payload.scheduleEndDate : undefined,
+        links,
+        lines: submittedLines,
+        totalAmount: Number(payload?.totalAmount ?? 0),
+        status: deriveOrderStatus(submittedLines),
+      };
+
+      const existingOrders = readSharedJson(ORDERS_KEY);
+      writeSharedJson(ORDERS_KEY, [...(Array.isArray(existingOrders) ? existingOrders : []), order], "server-submit");
 
       json(res, 200, {
         ok: true,
-        order: {
-          id: String(Date.now()),
-          createdAt: now,
-          applicant: typeof payload?.applicant === "string" ? payload.applicant : "",
-          orderNo: typeof payload?.orderNo === "string" ? payload.orderNo : "",
-          caseName: typeof payload?.caseName === "string" ? payload.caseName : "",
-          kind: payload?.kind === "upsell" ? "upsell" : "new",
-          links,
-          lines: submittedLines,
-          totalAmount: Number(payload?.totalAmount ?? 0),
-          status: orderStatus,
-        },
+        order,
         summary: {
           successCount,
           failureCount,
@@ -745,3 +956,8 @@ server.listen(PORT, HOST, () => {
     }
   }
 });
+
+void processScheduledOrdersInBackground();
+setInterval(() => {
+  void processScheduledOrdersInBackground();
+}, 60 * 1000);
