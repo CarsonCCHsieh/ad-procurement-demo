@@ -71,8 +71,10 @@ function validate(state: FormState): FormErrors {
   const links = parseLinks(state.linksRaw);
   if (links.length === 0) {
     errors.linksRaw = "請至少提供 1 個連結";
+  } else if (links.length > 1) {
+    errors.linksRaw = "一次只能填 1 個連結";
   } else if (!links.every(isValidUrl)) {
-    errors.linksRaw = "連結格式需為完整 URL，建議一行一個，例如 https://...";
+    errors.linksRaw = "連結格式需為完整 URL，例如 https://...";
   }
 
   if (!state.items.length) {
@@ -409,13 +411,12 @@ export function AdOrdersPage() {
                 )}
                 <div className="field" style={{ gridColumn: "1 / -1" }}>
                   <div className="label">連結<span className="req">*</span></div>
-                  <textarea
-                    rows={5}
+                  <input
                     value={state.linksRaw}
                     onChange={(e) => setState((current) => ({ ...current, linksRaw: e.target.value }))}
-                    placeholder={"https://...\nhttps://..."}
+                    placeholder="https://..."
                   />
-                  <div className="hint">一行一個網址，可填多筆。</div>
+                  <div className="hint">目前一次只接受 1 個網址。</div>
                   {errors.linksRaw && <div className="error">{errors.linksRaw}</div>}
                 </div>
               </div>

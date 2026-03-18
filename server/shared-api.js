@@ -807,6 +807,10 @@ const server = http.createServer(async (req, res) => {
         json(res, 400, { ok: false, error: "缺少可送單的連結" });
         return;
       }
+      if (links.length > 1) {
+        json(res, 400, { ok: false, error: "一次只能送出 1 個連結" });
+        return;
+      }
       if (lines.length === 0) {
         json(res, 400, { ok: false, error: "缺少送單項目" });
         return;
@@ -830,10 +834,6 @@ const server = http.createServer(async (req, res) => {
           endDate: typeof line?.endDate === "string" ? line.endDate : undefined,
           batches: [],
         };
-        if (links.length > 1) {
-          nextLine.warnings.push("本次供應商自動下單使用第一個連結送出，其餘連結保留在案件紀錄。");
-        }
-
         const nextBatches = [];
         for (const batch of normalizeLineBatches(line)) {
           const normalizedBatch = {
