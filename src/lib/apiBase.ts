@@ -1,4 +1,4 @@
-const FALLBACK_PUBLIC_API_BASE = "https://hungry-items-heal.loca.lt";
+const FALLBACK_PUBLIC_API_BASE = "https://bare-frog-dust-occupations.trycloudflare.com";
 
 export function resolveApiBase() {
   const envBase = (import.meta.env.VITE_SHARED_API_BASE ?? "").trim().replace(/\/$/, "");
