@@ -110,9 +110,27 @@ function isVendorKey(value: unknown): value is VendorKey {
   return value === "smmraja" || value === "urpanel" || value === "justanotherpanel";
 }
 
+function looksCorruptedLabel(value: string) {
+  return (
+    value.includes("?") ||
+    value.includes("锛") ||
+    value.includes("瑷") ||
+    value.includes("鍚") ||
+    value.includes("鏁") ||
+    value.includes("鎶") ||
+    value.includes("璜") ||
+    value.includes("鐩") ||
+    value.includes("閫") ||
+    value.includes("寤")
+  );
+}
+
 function normalizePlacementLabel(placement: string, label: unknown) {
-  if (typeof label === "string" && label.trim()) return label.trim();
-  return DEFAULT_PRICING_RULES[placement]?.label ?? placement;
+  const fallback = DEFAULT_PRICING_RULES[placement]?.label ?? placement;
+  if (typeof label !== "string") return fallback;
+  const trimmed = label.trim();
+  if (!trimmed || looksCorruptedLabel(trimmed)) return fallback;
+  return trimmed;
 }
 
 function normalizeConfig(raw: unknown): AppConfigV1 | null {
@@ -218,11 +236,11 @@ export function importConfigJson(json: string): { ok: boolean; message?: string 
   try {
     const parsed = JSON.parse(json);
     const normalized = normalizeConfig(parsed);
-    if (!normalized) return { ok: false, message: "設定檔格式不正確" };
+    if (!normalized) return { ok: false, message: "\u8a2d\u5b9a\u6a94\u683c\u5f0f\u4e0d\u6b63\u78ba" };
     saveConfig(normalized);
     return { ok: true };
   } catch {
-    return { ok: false, message: "JSON 解析失敗" };
+    return { ok: false, message: "\u004a\u0053\u004f\u004e \u89e3\u6790\u5931\u6557" };
   }
 }
 

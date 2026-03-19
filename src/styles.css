@@ -748,6 +748,14 @@ textarea:focus {
   grid-template-columns: 120px minmax(240px, 1.35fr) 100px 110px 110px minmax(220px, 1.2fr) 88px;
 }
 
+.dense-table.pricing-table {
+  grid-template-columns: minmax(220px, 1.35fr) 100px minmax(130px, 0.9fr) minmax(130px, 0.9fr) minmax(170px, 1fr);
+}
+
+.dense-table.metrics-table {
+  grid-template-columns: minmax(180px, 1fr) minmax(110px, 0.6fr);
+}
+
 .dense-table.suppliers-table::-webkit-scrollbar {
   display: none;
 }
@@ -1098,6 +1106,60 @@ textarea:focus {
     justify-content: flex-start;
   }
 
+  .settings-page .dense-table.pricing-table {
+    display: block;
+    border: 1px solid hsl(var(--border));
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .settings-page .dense-table.pricing-table > .dense-th {
+    display: none !important;
+  }
+
+  .settings-page .dense-table.pricing-table .dense-tr {
+    display: block;
+    border-bottom: 1px solid hsl(var(--border));
+  }
+
+  .settings-page .dense-table.pricing-table .dense-tr:last-child {
+    border-bottom: none;
+  }
+
+  .settings-page .dense-table.pricing-table .dense-td {
+    display: block;
+    padding: 8px 10px;
+    border-bottom: none;
+  }
+
+  .settings-page .dense-table.pricing-table .dense-td::before {
+    display: block;
+    margin-bottom: 5px;
+    font-size: 12px;
+    font-weight: 700;
+    color: hsl(var(--muted-foreground));
+  }
+
+  .settings-page .dense-table.pricing-table .dense-td:nth-child(1)::before {
+    content: "\54c1\9805";
+  }
+
+  .settings-page .dense-table.pricing-table .dense-td:nth-child(2)::before {
+    content: "\72c0\614b";
+  }
+
+  .settings-page .dense-table.pricing-table .dense-td:nth-child(3)::before {
+    content: "\6700\5c0f\55ae\4f4d";
+  }
+
+  .settings-page .dense-table.pricing-table .dense-td:nth-child(4)::before {
+    content: "\55ae\50f9";
+  }
+
+  .settings-page .dense-table.pricing-table .dense-td:nth-child(5)::before {
+    content: "\8a66\7b97";
+  }
+
   .dense-table.performance-table {
     display: block;
     border: 1px solid hsl(var(--border));
@@ -1158,6 +1220,48 @@ textarea:focus {
 
   .dense-table.performance-table--managed .dense-td:nth-child(7)::before {
     content: "\522A\9664";
+  }
+
+  .dense-table.metrics-table {
+    display: block;
+    border: 1px solid hsl(var(--border));
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .dense-table.metrics-table > .dense-th {
+    display: none !important;
+  }
+
+  .dense-table.metrics-table .dense-tr {
+    display: block;
+    border-bottom: 1px solid hsl(var(--border));
+  }
+
+  .dense-table.metrics-table .dense-tr:last-child {
+    border-bottom: none;
+  }
+
+  .dense-table.metrics-table .dense-td {
+    display: block;
+    padding: 8px 10px;
+    border-bottom: none;
+  }
+
+  .dense-table.metrics-table .dense-td::before {
+    display: block;
+    margin-bottom: 5px;
+    font-size: 12px;
+    font-weight: 700;
+    color: hsl(var(--muted-foreground));
+  }
+
+  .dense-table.metrics-table .dense-td:nth-child(1)::before {
+    content: "\6307\6a19";
+  }
+
+  .dense-table.metrics-table .dense-td:nth-child(2)::before {
+    content: "\6578\503c";
   }
 
   .settings-page .dense-input,

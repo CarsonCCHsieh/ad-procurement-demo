@@ -244,44 +244,25 @@ export function SettingsPage() {
     }
 
     const defaults = getDefaultPricingRule(placement);
-    setCfg((current) => ({
-      ...current,
-      placements: [
-        ...current.placements,
-        {
-          placement,
-          label,
-          enabled: true,
-          splitStrategy: "random",
-          suppliers: [],
-        },
-      ],
-    }));
-    setPricingCfg((current) => ({
-      ...current,
-      prices: { ...current.prices, [placement]: defaults.price },
-      minUnits: { ...current.minUnits, [placement]: defaults.minUnit },
-    }));
-    persistConfigDraft(
-      {
-        ...cfg,
-        placements: [
-          ...cfg.placements,
-          {
-            placement,
-            label,
-            enabled: true,
-            splitStrategy: "random",
-            suppliers: [],
-          },
-        ],
-      },
-      {
-        ...pricingCfg,
-        prices: { ...pricingCfg.prices, [placement]: defaults.price },
-        minUnits: { ...pricingCfg.minUnits, [placement]: defaults.minUnit },
-      },
-    );
+    const nextPlacement = {
+      placement,
+      label,
+      enabled: true,
+      splitStrategy: "random" as const,
+      suppliers: [],
+    };
+    const nextCfg = {
+      ...cfg,
+      placements: [...cfg.placements, nextPlacement],
+    };
+    const nextPricing = {
+      ...pricingCfg,
+      prices: { ...pricingCfg.prices, [placement]: defaults.price },
+      minUnits: { ...pricingCfg.minUnits, [placement]: defaults.minUnit },
+    };
+    setCfg(nextCfg);
+    setPricingCfg(nextPricing);
+    persistConfigDraft(nextCfg, nextPricing);
     setNewPlacementKey("");
     setNewPlacementLabel("");
     flashMsg("success", "已新增品項。");
@@ -326,7 +307,7 @@ export function SettingsPage() {
     try {
       const response = await fetch(`./services/${vendor}.json`, { cache: "no-store" });
       if (!response.ok) {
-        if (!silent) flashMsg("error", `載入 ${vendorLabel(vendor)} 服務清單失敗，HTTP ${response.status}。`, 4500);
+        if (!silent) flashMsg("error", `載入 ${vendorLabel(vendor)} 服務清單失敗：HTTP ${response.status}。`, 4500);
         return;
       }
 
@@ -349,7 +330,6 @@ export function SettingsPage() {
   const loadAllServices = async () => {
     let successCount = 0;
     for (const vendor of VENDORS) {
-      // eslint-disable-next-line no-await-in-loop
       await loadServicesFromSite(vendor, true);
       if (getVendorServices(vendor).length > 0) successCount += 1;
     }
@@ -480,7 +460,7 @@ export function SettingsPage() {
             </div>
           </div>
 
-          <div className="dense-table">
+          <div className="dense-table pricing-table">
             <div className="dense-th">品項</div>
             <div className="dense-th">狀態</div>
             <div className="dense-th">最小單位</div>
@@ -580,7 +560,7 @@ export function SettingsPage() {
                   </div>
 
                   <div className="field">
-                    <div className="label">API Base URL</div>
+                    <div className="label">API 入口網址</div>
                     <input
                       value={vendor.apiBaseUrl}
                       onChange={(event) => setVendorField(vendor.key, "apiBaseUrl", event.target.value)}
@@ -621,14 +601,14 @@ export function SettingsPage() {
         <CollapsibleCard
           accent="slate"
           title="品項對應"
-          desc="新增、停用或刪除前台品項，並決定每個品項實際對應哪些供應商服務。"
+          desc="新增、停用或刪除前台品項，並指定每個品項要拆到哪些供應商服務。"
           tag="品項"
           storageKey="sec:routing"
           defaultOpen
         >
           <div className="row cols2" style={{ marginBottom: 12 }}>
             <div className="field">
-              <div className="label">新項目代碼</div>
+              <div className="label">新品項代碼</div>
               <input
                 value={newPlacementKey}
                 onChange={(event) => setNewPlacementKey(event.target.value)}
@@ -637,7 +617,7 @@ export function SettingsPage() {
               <div className="hint">建議使用英文、小寫與底線，之後可長期沿用。</div>
             </div>
             <div className="field">
-              <div className="label">新項目名稱</div>
+              <div className="label">新品項名稱</div>
               <div className="actions inline">
                 <input
                   value={newPlacementLabel}
@@ -701,7 +681,7 @@ export function SettingsPage() {
                   <div className="dense-th">供應商</div>
                   <div className="dense-th">serviceId</div>
                   <div className="dense-th">預設配比</div>
-                  <div className="dense-th">單次上限</div>
+                  <div className="dense-th">單筆上限</div>
                   <div className="dense-th">操作</div>
 
                   {placementCfg.suppliers.map((supplier, index) => (
@@ -743,7 +723,7 @@ export function SettingsPage() {
                           currentServiceId={supplier.serviceId}
                           onPick={(service) => setSupplierField(placementCfg.placement, index, "serviceId", service.id)}
                           compact
-                          buttonLabel="從清單選"
+                          buttonLabel="從清單選擇"
                           buttonClassName="btn ghost sm"
                         />
                       </div>
