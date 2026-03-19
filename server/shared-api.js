@@ -385,11 +385,11 @@ function getVendorRuntime(vendor) {
   const keys = readSharedJson(VENDOR_KEYS_KEY);
   const vendorCfg = Array.isArray(cfg?.vendors) ? cfg.vendors.find((v) => v?.key === vendor) : null;
   const fallback = loadVendorSecrets()?.vendors?.[vendor] ?? {};
-  const key = typeof keys?.keys?.[vendor] === "string" && keys.keys[vendor].trim()
+  const sharedKey = typeof keys?.keys?.[vendor] === "string" && keys.keys[vendor].trim()
     ? keys.keys[vendor].trim()
-    : typeof fallback?.key === "string"
-      ? fallback.key.trim()
-      : "";
+    : "";
+  const localKey = typeof fallback?.key === "string" ? fallback.key.trim() : "";
+  const key = sharedKey || localKey;
   return {
     baseUrl: typeof vendorCfg?.apiBaseUrl === "string" && vendorCfg.apiBaseUrl.trim()
       ? vendorCfg.apiBaseUrl.trim()
@@ -398,6 +398,7 @@ function getVendorRuntime(vendor) {
         : DEFAULT_VENDOR_BASES[vendor] || "",
     enabled: vendorCfg?.enabled != null ? !!vendorCfg.enabled : fallback?.enabled !== false,
     key,
+    keySource: sharedKey ? "shared" : localKey ? "local" : "missing",
   };
 }
 
@@ -629,6 +630,10 @@ async function submitBatch(batch, links) {
   let failureCount = 0;
   const nextSplits = [];
   for (const split of Array.isArray(batch?.splits) ? batch.splits : []) {
+    if (split?.vendorOrderId) {
+      nextSplits.push(split);
+      continue;
+    }
     const result = await submitVendorSplit({
       vendor: split?.vendor,
       serviceId: Number(split?.serviceId ?? 0),
@@ -669,6 +674,104 @@ async function submitBatch(batch, links) {
   };
   nextBatch.status = normalizeBatchStatus(nextBatch);
   return { batch: nextBatch, submittedCount, failureCount };
+}
+
+async function fetchVendorBalance(vendor) {
+  const runtime = getVendorRuntime(vendor);
+  if (!runtime.enabled) {
+    return { ok: false, error: "供應商未啟用", source: runtime.keySource };
+  }
+  if (!runtime.baseUrl || !runtime.key) {
+    return { ok: false, error: "供應商 API 設定不完整", source: runtime.keySource };
+  }
+
+  const resp = await postVendorPanel({
+    baseUrl: runtime.baseUrl,
+    key: runtime.key,
+    action: "balance",
+  });
+
+  if (typeof resp?.error === "string") {
+    return { ok: false, error: resp.error, source: runtime.keySource };
+  }
+
+  return {
+    ok: true,
+    balance: typeof resp?.balance === "string" ? resp.balance : String(resp?.balance ?? ""),
+    currency: typeof resp?.currency === "string" ? resp.currency : "",
+    source: runtime.keySource,
+  };
+}
+
+async function retrySharedOrderBatch(orderId, lineIndex, batchId) {
+  const orders = readSharedJson(ORDERS_KEY);
+  if (!Array.isArray(orders)) {
+    throw new Error("找不到共享訂單資料");
+  }
+
+  const orderIndex = orders.findIndex((order) => String(order?.id) === String(orderId));
+  if (orderIndex < 0) {
+    throw new Error("找不到指定案件");
+  }
+
+  const order = orders[orderIndex];
+  const lines = Array.isArray(order?.lines) ? order.lines.map((line) => ({ ...line })) : [];
+  if (!Number.isInteger(lineIndex) || lineIndex < 0 || lineIndex >= lines.length) {
+    throw new Error("找不到指定項目");
+  }
+
+  const targetLine = lines[lineIndex];
+  const batches = normalizeLineBatches(targetLine);
+  const batchIndex = batches.findIndex((batch) => String(batch?.id) === String(batchId));
+  if (batchIndex < 0) {
+    throw new Error("找不到指定批次");
+  }
+
+  const today = taipeiDateString();
+  const targetBatch = batches[batchIndex];
+  if (targetBatch.plannedDate && targetBatch.plannedDate > today) {
+    throw new Error(`此批次預計 ${targetBatch.plannedDate} 送出，尚未到可重送時間`);
+  }
+
+  const resetBatch = {
+    ...targetBatch,
+    status: "scheduled",
+    splits: targetBatch.splits.map((split) => {
+      if (split?.vendorOrderId) return { ...split };
+      return {
+        ...split,
+        vendorStatus: "scheduled",
+        remains: Number(split?.quantity ?? 0),
+        startCount: undefined,
+        charge: undefined,
+        currency: undefined,
+        lastSyncAt: undefined,
+        error: "",
+      };
+    }),
+  };
+
+  const result = await submitBatch(resetBatch, order?.links);
+  batches[batchIndex] = result.batch;
+
+  const nextLine = buildLineFromBatches(targetLine, batches);
+  lines[lineIndex] = nextLine;
+  const nextOrder = {
+    ...order,
+    lines,
+    status: deriveOrderStatus(lines),
+  };
+
+  const nextOrders = orders.slice();
+  nextOrders[orderIndex] = nextOrder;
+  writeSharedJson(ORDERS_KEY, nextOrders, "server-retry-batch");
+
+  return {
+    order: nextOrder,
+    batch: result.batch,
+    submittedCount: result.submittedCount,
+    failureCount: result.failureCount,
+  };
 }
 
 async function syncSharedOrders() {
@@ -796,6 +899,18 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (req.method === "GET" && req.url.startsWith("/api/vendor/balance")) {
+      const url = new URL(req.url, `http://${req.headers.host || "127.0.0.1"}`);
+      const vendor = String(url.searchParams.get("vendor") || "").trim();
+      if (!vendor) {
+        json(res, 400, { ok: false, error: "缺少 vendor" });
+        return;
+      }
+      const result = await fetchVendorBalance(vendor);
+      json(res, result.ok ? 200 : 400, result);
+      return;
+    }
+
     if (req.method === "POST" && req.url === "/api/vendor/submit-order") {
       const raw = await readBody(req);
       const payload = JSON.parse(String(raw || "{}"));
@@ -899,6 +1014,23 @@ const server = http.createServer(async (req, res) => {
         syncedCount: result.syncedCount,
         orders: result.orders,
       });
+      return;
+    }
+
+    if (req.method === "POST" && req.url === "/api/vendor/retry-batch") {
+      const raw = await readBody(req);
+      const payload = JSON.parse(String(raw || "{}"));
+      const orderId = String(payload?.orderId || "").trim();
+      const lineIndex = Number(payload?.lineIndex);
+      const batchId = String(payload?.batchId || "").trim();
+
+      if (!orderId || !Number.isInteger(lineIndex) || !batchId) {
+        json(res, 400, { ok: false, error: "缺少重送所需參數" });
+        return;
+      }
+
+      const result = await retrySharedOrderBatch(orderId, lineIndex, batchId);
+      json(res, 200, { ok: true, ...result });
       return;
     }
 

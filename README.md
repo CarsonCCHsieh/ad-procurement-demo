@@ -52,6 +52,7 @@
 - 提供共享 state API
 - 保存多人共用資料
 - 代理供應商送單與狀態同步
+- 提供失敗批次重送與供應商餘額查詢
 - 代理 Meta post metrics 查詢
 - 保存 / 讀取本機 secrets
 - 本機模式下同時提供已 build 的前端靜態檔
@@ -67,6 +68,12 @@ Git 內只保留範本：
 - `.env.shared.example`
 - `server/meta-local.example.json`
 - `server/vendor-local.example.json`
+
+供應商 key 目前的實際優先順序：
+1. 共享設定 `ad_demo_vendor_keys_v1`
+2. 本機備援 `data/vendor-local-secrets.json`
+
+這是 demo 階段的權宜做法。正式環境應改成單一後端 secrets 來源，避免 fallback 與共享設定不一致。
 
 ## 目前哪些功能依賴本機後端
 
@@ -139,6 +146,8 @@ npm run doctor
 - `/api/state`
 - `/api/vendor/submit-order`
 - `/api/vendor/sync-shared-orders`
+- `/api/vendor/retry-batch`
+- `/api/vendor/balance`
 - `/api/meta/post-metrics`
 - SQLite state
 - 本機 secrets

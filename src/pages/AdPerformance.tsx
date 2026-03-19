@@ -130,7 +130,13 @@ type VendorRow = {
   placementText: string;
   lastSyncAt?: string;
   hasWarning: boolean;
+  canRetry: boolean;
 };
+
+function isBatchRetryable(batch: DemoOrderBatch): boolean {
+  if (batch.status === "scheduled") return false;
+  return batch.splits.some((split) => !split.vendorOrderId && (!!split.error || String(split.vendorStatus ?? "").toLowerCase().includes("fail")));
+}
 
 function buildVendorRows(source: DemoOrder[]): VendorRow[] {
   return source.flatMap((order) =>
@@ -158,6 +164,7 @@ function buildVendorRows(source: DemoOrder[]): VendorRow[] {
             .at(-1) ??
           order.createdAt,
         hasWarning: batch.warnings.length > 0 || batch.splits.some((split) => !!split.error),
+        canRetry: isBatchRetryable(batch),
       })),
     ),
   );
@@ -170,6 +177,7 @@ export function AdPerformancePage() {
   const [msg, setMsg] = useState<string | null>(null);
   const [syncing, setSyncing] = useState<Record<string, boolean>>({});
   const [vendorRefreshing, setVendorRefreshing] = useState(false);
+  const [retryingVendorRows, setRetryingVendorRows] = useState<Record<string, boolean>>({});
   const [metaAutoEnabled, setMetaAutoEnabled] = useState(true);
   const [metaAutoRunning, setMetaAutoRunning] = useState(false);
   const [hourlyAutoRunning, setHourlyAutoRunning] = useState(false);
@@ -272,6 +280,38 @@ export function AdPerformancePage() {
     await flushAllSharedState();
     await pullLatestOrders();
     setRefresh((value) => value + 1);
+  };
+
+  const retryVendorBatch = async (row: VendorRow) => {
+    setRetryingVendorRows((current) => ({ ...current, [row.id]: true }));
+    try {
+      const response = await fetch(apiUrl("/api/vendor/retry-batch"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orderId: row.orderId,
+          lineIndex: row.lineIndex,
+          batchId: row.batchId,
+        }),
+      });
+      const data = (await response.json()) as { ok?: boolean; submittedCount?: number; failureCount?: number; error?: string };
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || `HTTP ${response.status}`);
+      }
+
+      await pullLatestOrders();
+      setMsg(
+        data.submittedCount
+          ? `已重新送出 ${Number(data.submittedCount).toLocaleString("zh-TW")} 筆供應商訂單`
+          : "已重新整理失敗批次狀態",
+      );
+      setTimeout(() => setMsg(null), 2500);
+    } catch (error) {
+      setMsg(`重新送單失敗：${error instanceof Error ? error.message : "未知錯誤"}`);
+      setTimeout(() => setMsg(null), 3500);
+    } finally {
+      setRetryingVendorRows((current) => ({ ...current, [row.id]: false }));
+    }
   };
 
   const syncVendor = async (
@@ -771,6 +811,18 @@ export function AdPerformancePage() {
                     <div className="dense-title" style={row.hasWarning ? { color: "rgba(220, 38, 38, 0.95)" } : undefined}>
                       {row.progressText}
                     </div>
+                    {canManage && row.canRetry ? (
+                      <div className="actions inline" style={{ marginTop: 8 }}>
+                        <button
+                          className="btn"
+                          type="button"
+                          onClick={() => void retryVendorBatch(row)}
+                          disabled={!!retryingVendorRows[row.id]}
+                        >
+                          {retryingVendorRows[row.id] ? "重新送單中..." : "重新送單"}
+                        </button>
+                      </div>
+                    ) : null}
                     <div className="dense-meta">
                       更新時間：{row.lastSyncAt ? new Date(row.lastSyncAt).toLocaleString("zh-TW") : "-"}
                     </div>

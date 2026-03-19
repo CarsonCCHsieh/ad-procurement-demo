@@ -4,6 +4,7 @@ import { useAuth } from "../auth/AuthContext";
 import { CollapsibleCard } from "../components/CollapsibleCard";
 import { MetaSettingsCard } from "../components/MetaSettingsCard";
 import { ServicePicker } from "../components/ServicePicker";
+import { apiUrl } from "../lib/apiBase";
 import {
   DEFAULT_CONFIG,
   getConfig,
@@ -23,6 +24,13 @@ import { getDefaultPricingRule, type AdPlacement } from "../lib/pricing";
 import { flushAllSharedState, pullSharedState, SHARED_STORAGE_KEYS, SHARED_SYNC_EVENT } from "../lib/sharedSync";
 
 type MsgKind = "success" | "info" | "warn" | "error";
+type VendorBalanceState = {
+  loading?: boolean;
+  balance?: string;
+  currency?: string;
+  source?: string;
+  error?: string;
+};
 
 const VENDORS: VendorKey[] = ["smmraja", "urpanel", "justanotherpanel"];
 
@@ -70,6 +78,11 @@ export function SettingsPage() {
   });
   const [sampleQty, setSampleQty] = useState("2000");
   const [showVendorKeys, setShowVendorKeys] = useState(false);
+  const [vendorBalances, setVendorBalances] = useState<Record<VendorKey, VendorBalanceState>>({
+    smmraja: {},
+    urpanel: {},
+    justanotherpanel: {},
+  });
   const [newPlacementKey, setNewPlacementKey] = useState("");
   const [newPlacementLabel, setNewPlacementLabel] = useState("");
   const [metaCardKey, setMetaCardKey] = useState(0);
@@ -324,6 +337,49 @@ export function SettingsPage() {
       }
     } catch {
       if (!silent) flashMsg("error", `載入 ${vendorLabel(vendor)} 服務清單失敗，請確認網路或 JSON 檔案。`, 4500);
+    }
+  };
+
+  const queryVendorBalance = async (vendor: VendorKey) => {
+    setVendorBalances((current) => ({
+      ...current,
+      [vendor]: { ...current[vendor], loading: true, error: "" },
+    }));
+
+    try {
+      const response = await fetch(apiUrl(`/api/vendor/balance?vendor=${encodeURIComponent(vendor)}`), {
+        cache: "no-store",
+      });
+      const data = (await response.json()) as {
+        ok?: boolean;
+        balance?: string;
+        currency?: string;
+        source?: string;
+        error?: string;
+      };
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || `HTTP ${response.status}`);
+      }
+
+      setVendorBalances((current) => ({
+        ...current,
+        [vendor]: {
+          loading: false,
+          balance: data.balance,
+          currency: data.currency,
+          source: data.source,
+          error: "",
+        },
+      }));
+    } catch (error) {
+      setVendorBalances((current) => ({
+        ...current,
+        [vendor]: {
+          loading: false,
+          error: error instanceof Error ? error.message : "查詢失敗",
+        },
+      }));
     }
   };
 
@@ -584,7 +640,25 @@ export function SettingsPage() {
                   <div className="field">
                     <div className="label">服務清單</div>
                     <input value={`${getVendorServices(vendor.key).length.toLocaleString("zh-TW")} 筆`} readOnly />
+                    <div className="hint" style={{ marginTop: 8 }}>
+                      {vendorBalances[vendor.key].loading
+                        ? "正在查詢目前帳戶餘額..."
+                        : vendorBalances[vendor.key].error
+                          ? `餘額查詢失敗：${vendorBalances[vendor.key].error}`
+                          : vendorBalances[vendor.key].balance
+                            ? `目前餘額：${vendorBalances[vendor.key].balance} ${vendorBalances[vendor.key].currency || ""}（來源：${
+                                vendorBalances[vendor.key].source === "shared"
+                                  ? "共享設定"
+                                  : vendorBalances[vendor.key].source === "local"
+                                    ? "本機備援"
+                                    : "未設定"
+                              }）`
+                            : "尚未查詢目前帳戶餘額"}
+                    </div>
                     <div className="actions inline" style={{ marginTop: 8 }}>
+                      <button className="btn" type="button" onClick={() => void queryVendorBalance(vendor.key)}>
+                        查詢餘額
+                      </button>
                       <button className="btn" type="button" onClick={() => void loadServicesFromSite(vendor.key)}>載入服務</button>
                       <button className="btn danger" type="button" onClick={() => { clearVendorServices(vendor.key); refreshAll(); }}>清空清單</button>
                       <button className="btn" type="button" onClick={() => { clearVendorKey(vendor.key); refreshAll(); }}>清空 Key</button>
