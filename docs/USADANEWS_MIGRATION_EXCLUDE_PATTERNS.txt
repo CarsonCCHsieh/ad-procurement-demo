@@ -1,9 +1,0 @@
-/wp-content/cache/**
-/wp-content/upgrade/**
-/wp-content/upgrade-temp-backup/**
-/wp-content/uploads/vt-logs/**
-/wp-content/uploads/wpallimport/**
-/wp-content/uploads/vt-remaining.json
-*.bak
-*.old
-*.zip
