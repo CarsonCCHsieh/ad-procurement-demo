@@ -1,95 +1,88 @@
-# USADA 主機搬移執行手冊（Linode + Cloudflare）
+# USADA 主機搬移操作手冊
 
-最後更新：2026-03-20（Asia/Taipei）
+最後更新：2026-03-20
 
-## 目標
-- 將 `usadanews.com` 從 A2 Hosting 搬移到 Linode。
-- 維持 Cloudflare 作為 DNS / CDN / SSL 前端。
-- 先完成「可部署、可驗證、可回滾」，再切正式流量。
+## 適用範圍
+- 舊主機：A2 Hosting（WordPress）
+- 新主機：Linode `usada-prod-01`
+- DNS / CDN：Cloudflare
 
-## 目前架構重點
-- 現站仍是 WordPress 客製化站，不是純靜態或純 API 架構。
-- 核心邏輯位於：
-  - `wp-content/plugins/wp-vtuber-cpts.php`
-  - `wp-content/plugins/vt-maint-runner.php`
-  - `wp-content/mu-plugins/vt-portal-redirects.php`
-  - `wp-content/plugins/vtuber-portal/templates/*.php`
-  - `wp-content/plugins/vtuber-portal/assets/vtuber-portal.css`
-- 多語、canonical、rewrite、taxonomy、SEO head、模板渲染都仍依賴 WordPress 執行環境。
+## 搬移目標
+- 在不先切 DNS 的情況下，先把 Linode 端站點部署完成
+- 透過預覽驗證功能正常
+- 最後才進行 DNS / Nameserver 切換
 
-## 搬移前必要條件
-1. Linode Instance 已建立
-2. Cloudflare Zone 已建立
-3. GitHub 版本已整理成可部署基準
-4. 有現站完整備份
-5. 可登入 Linode 主機 OS 層
-6. 可在切換當天修改網域 Nameserver 或 DNS 導向
+## 搬移順序
 
-## 目前已具備
-- Linode API 可用
-- Cloudflare API 可用
-- Cloudflare Zone / Zone ID 已可讀
-- 現站 FTP / WordPress 維護權限可用
-- GitHub remote 已存在
+### 第 1 階段：準備基準版本
+1. 確認 GitHub 上已有可作為搬移基準的版本
+2. 確認自訂程式碼來源：
+   - `wp-content/plugins/vtuber-portal`
+   - `wp-content/plugins/wp-vtuber-cpts.php`
+   - `wp-content/mu-plugins/vt-portal-redirects.php`
+3. 確認搬移報告與進度文件可讀
 
-## 目前仍阻塞的項目
-1. Linode 主機登入方式尚未補齊
-   - 需要以下任一種：
-   - `root password`
-   - SSH 私鑰登入
-   - 明確授權我重建 Instance 並注入 SSH key
-2. GitHub 尚未完全整理到最新搬移基準
-   - 需先 commit / push 本地最新版本
-3. 多語 clean URL routing 尚未完全收斂
-   - 這不阻止搬移，但會影響搬移後 SEO 驗證與 canonical 正確性
+### 第 2 階段：建立新主機
+1. 重建或建立 Linode 主機
+2. 安裝：
+   - Nginx
+   - PHP-FPM
+   - MariaDB
+   - Redis
+   - UFW
+   - Fail2ban
+3. 建立目錄：
+   - `/var/www/usadanews/public_html`
+   - `/opt/usada-migration`
+   - `/var/backups/usada`
 
-## 推薦切換順序
-1. 整理 GitHub 版本
-2. 在 Linode 佈署新站
-3. 匯入資料庫與 `wp-content`
-4. 驗證新站功能
-5. 先用 hosts 或臨時網域驗證
-6. 設定 Cloudflare DNS / SSL / 快取規則
-7. 切 Nameserver 到 Cloudflare
-8. 觀察 24-48 小時
+### 第 3 階段：還原資料
+1. 從舊站匯出資料庫
+2. 在新主機建立資料庫與使用者
+3. 匯入資料庫
+4. 同步網站檔案：
+   - WordPress core
+   - `wp-content/themes`
+   - `wp-content/plugins`
+   - `wp-content/mu-plugins`
+   - `wp-content/uploads`
 
-## Linode 端預計佈署項目
-- Ubuntu 24.04 LTS
-- Nginx
-- PHP-FPM
-- MariaDB
-- Redis（可選，但建議）
-- Certbot 或 Cloudflare Origin Certificate
-- UFW / Fail2ban
-- cron 取代 WP-Cron
+### 第 4 階段：套用 GitHub 基準版
+1. 用 GitHub 版本覆蓋自訂外掛與自訂模板
+2. 避免新主機只是一份「舊主機檔案快照」，而不是正式基準版
 
-## Cloudflare 端預計設定
-- DNS 記錄
-- SSL 模式：`Full (strict)`
-- 快取規則
-- Brotli / HTTP3 / Auto Minify
-- Page Rules / Rulesets（若需要）
-- 確認 sitemap 與 API 路徑不被錯誤快取
+### 第 5 階段：預覽驗證
+用 hosts / `--resolve` 驗證：
+- 首頁
+- VTuber 列表
+- VTuber 單頁
+- 多語列表
+- `wp-login.php`
+- `wp-admin/`
+- 常用圖片與 CSS / JS
 
-## 主要驗證清單
-- 首頁 `https://usadanews.com/`
-- VTuber 列表 `https://usadanews.com/vtuber/`
-- 多語列表 `/en/vtuber/`, `/ja/vtuber/`, `/ko/vtuber/`
-- 單一條目頁
-- taxonomy 頁
-- 搜尋 API
-- sitemap index 與子 sitemap
-- GA4 / GSC / robots / canonical / hreflang
+### 第 6 階段：切換 DNS
+當新主機驗證通過後：
+1. 將 Nameserver 改到 Cloudflare
+2. 或將 A / CNAME 記錄改到新主機
+3. 等待傳播
 
-## 回滾策略
-- 若切換後有重大錯誤：
-  - 立即將 DNS / NS 指回原站
-  - 保留 A2 Hosting 不立即刪除
-  - 先修正 Linode 端，再重新切換
+### 第 7 階段：切換後驗證
+1. 驗證首頁與條目頁
+2. 驗證登入頁
+3. 驗證 sitemap
+4. 驗證 canonical / hreflang / GA4
+5. 再確認 Search Console 抓取是否正常
 
-## 搬移基準來源
-- 程式碼主基準：
-  - `C:\Users\User\hsieh\maintain\github_private_repo`
-- 搬移快照與文件：
-  - `C:\Users\User\hsieh\repos\ad-procurement-demo\usadanews-code-snapshot`
-  - `C:\Users\User\hsieh\repos\ad-procurement-demo\docs`
+## 目前已知非阻塞問題
+- 多語 clean URL / canonical 邏輯仍需繼續修
+- 少量舊圖片或外部圖片來源已失效
+- 這些不是主機搬移故障，但切站後要持續處理
+
+## 切 DNS 前的最低完成標準
+- 前台可正常開啟
+- 後台登入頁可正常開啟
+- 關鍵圖片、CSS、JS 正常
+- 資料庫與主要外掛已完整
+- 自訂程式碼已覆蓋成 GitHub 基準版
+
