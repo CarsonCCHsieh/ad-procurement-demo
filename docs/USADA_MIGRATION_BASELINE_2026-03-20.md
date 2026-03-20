@@ -31,13 +31,14 @@
 - 既有站點可持續維護
 - 最新主要程式已同步進 snapshot
 - 搬移 runbook / checklist / readiness 文件已補齊
+- 兩個 GitHub repo 已推送到遠端：
+  - `usada-vtuber-maintain-private`：`e66e7d0716f3cef17b0ec229c122accea146c94f`
+  - `ad-procurement-demo`：`2289c093ccd3fcdd3f4126e719fc00d19ac42367`
 
 ## 目前仍未完成
 
 ### A. 正式阻塞
-1. `maintain/github_private_repo` 尚未 commit / push
-2. `ad-procurement-demo` 尚未 commit / push
-3. Linode OS 層登入方式缺失
+1. Linode OS 層登入方式缺失
 
 ### B. 非阻塞但重要
 1. 多語 clean URL routing 尚未完全修正
