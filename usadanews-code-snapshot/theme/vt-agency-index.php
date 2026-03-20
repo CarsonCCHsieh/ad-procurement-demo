@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 /**
  * Template Name: VT Agency Index
  * Template Post Type: page
@@ -58,7 +58,8 @@ function vtportal_url_with_lang( $path, $lang = '' ) {
 		'/platforms/' => 'vt-platform-index.php',
 		'/agencies/'  => 'vt-agency-index.php',
 		'/countries/' => 'vt-country-index.php',
-				'/roles/'       => 'vt-role-index.php',
+		'/debut-years/' => 'vt-debut-year-index.php',
+		'/roles/'       => 'vt-role-index.php',
 		'/contact/'   => 'vt-contact.php',
 	];
 	$path_key = '/' . trim( $path, '/' ) . '/';
@@ -108,20 +109,20 @@ usort(
 	<meta charset="<?php bloginfo( 'charset' ); ?>">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<link rel="canonical" href="<?php echo esc_url( vtportal_url_with_lang( '/agencies/', $current_lang ) ); ?>">
-	<meta name="description" content="<?php echo esc_attr( __( '渚濈祫绻?缍撶磤/绀惧湗鐎忚 VTuber锛屽寘鍚€嬩汉鍕㈠垎椤炶垏姊濈洰鏁搞€?', 'vtuber-portal' ) ); ?>">
+	<meta name="description" content="<?php echo esc_attr( __( '依組織/經紀/社團瀏覽 VTuber，包含個人勢分類與條目數。', 'vtuber-portal' ) ); ?>">
 	<?php wp_head(); ?>
 </head>
 <body <?php body_class( 'vt-landing vt-landing-archive' ); ?>>
 <main class="vt-layout">
 	<div class="vt-top-bar">
 		<div class="vt-pill-nav">
-			<a class="vt-pill" href="<?php echo esc_url( vtportal_url_with_lang( '/', $current_lang ) ); ?>"><?php esc_html_e( '鍥為闋?', 'vtuber-portal' ); ?></a>
-			<a class="vt-pill" href="<?php echo esc_url( vtportal_archive_url_for_lang( 'vtuber', $current_lang ) ); ?>"><?php esc_html_e( 'VTuber 鍒楄〃', 'vtuber-portal' ); ?></a>
+			<a class="vt-pill" href="<?php echo esc_url( vtportal_url_with_lang( '/', $current_lang ) ); ?>"><?php esc_html_e( '回首頁', 'vtuber-portal' ); ?></a>
+			<a class="vt-pill" href="<?php echo esc_url( vtportal_archive_url_for_lang( 'vtuber', $current_lang ) ); ?>"><?php esc_html_e( 'VTuber 列表', 'vtuber-portal' ); ?></a>
 			<a class="vt-pill" href="<?php echo esc_url( vtportal_url_with_lang( '/roles/', $current_lang ) ); ?>"><?php esc_html_e( '依風格', 'vtuber-portal' ); ?></a>
-			<a class="vt-pill" href="<?php echo esc_url( vtportal_url_with_lang( '/platforms/', $current_lang ) ); ?>"><?php esc_html_e( '渚濆钩鍙?', 'vtuber-portal' ); ?></a>
+			<a class="vt-pill" href="<?php echo esc_url( vtportal_url_with_lang( '/platforms/', $current_lang ) ); ?>"><?php esc_html_e( '依平台', 'vtuber-portal' ); ?></a>
 		</div>
 		<div class="vt-lang-wrap vt-lang-float">
-			<span class="vt-lang-label"><?php esc_html_e( '瑾炶█', 'vtuber-portal' ); ?></span>
+			<span class="vt-lang-label"><?php esc_html_e( '語言', 'vtuber-portal' ); ?></span>
 			<?php if ( function_exists( 'vtportal_render_language_dropdown' ) ) : ?>
 				<?php vtportal_render_language_dropdown(); ?>
 			<?php elseif ( function_exists( 'pll_the_languages' ) ) : ?>
@@ -131,11 +132,11 @@ usort(
 	</div>
 
 	<section class="vt-section">
-		<h1><?php esc_html_e( '渚濈祫绻旂€忚', 'vtuber-portal' ); ?></h1>
-		<p class="vt-body-text"><?php esc_html_e( '蹇€熸煡鐪嬪悇绲勭箶姊濈洰鏁革紝榛炴搳鍗冲彲鐎忚瑭茬祫绻旂殑 VTuber銆?', 'vtuber-portal' ); ?></p>
+		<h1><?php esc_html_e( '依組織瀏覽', 'vtuber-portal' ); ?></h1>
+		<p class="vt-body-text"><?php esc_html_e( '快速查看各組織條目數，點擊即可瀏覽該組織的 VTuber。', 'vtuber-portal' ); ?></p>
 
 		<?php if ( empty( $terms ) ) : ?>
-			<p class="vt-body-text"><?php esc_html_e( '灏氱劇绲勭箶璩囨枡銆?', 'vtuber-portal' ); ?></p>
+			<p class="vt-body-text"><?php esc_html_e( '尚無組織資料。', 'vtuber-portal' ); ?></p>
 		<?php else : ?>
 			<div class="vt-card-grid neo">
 				<?php foreach ( $terms as $t ) : ?>
@@ -148,13 +149,13 @@ usort(
 									echo esc_html(
 										sprintf(
 											/* translators: %d: count */
-											__( '%d 鍊嬫鐩?', 'vtuber-portal' ),
+											__( '%d 個條目', 'vtuber-portal' ),
 											intval( $t->count )
 										)
 									);
 									?>
 								</p>
-								<div class="vt-tax-list"><span class="pill"><?php esc_html_e( '绲勭箶', 'vtuber-portal' ); ?></span></div>
+								<div class="vt-tax-list"><span class="pill"><?php esc_html_e( '組織', 'vtuber-portal' ); ?></span></div>
 							</div>
 						</a>
 					</article>
@@ -166,4 +167,3 @@ usort(
 <?php wp_footer(); ?>
 </body>
 </html>
-

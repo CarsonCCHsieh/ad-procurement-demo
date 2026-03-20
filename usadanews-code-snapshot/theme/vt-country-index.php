@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 /**
  * Template Name: VT Country Index
  * Template Post Type: page
@@ -58,7 +58,8 @@ function vtportal_url_with_lang( $path, $lang = '' ) {
 		'/platforms/'   => 'vt-platform-index.php',
 		'/agencies/'    => 'vt-agency-index.php',
 		'/countries/'   => 'vt-country-index.php',
-				'/roles/'       => 'vt-role-index.php',
+		'/debut-years/' => 'vt-debut-year-index.php',
+		'/roles/'       => 'vt-role-index.php',
 		'/contact/'     => 'vt-contact.php',
 	];
 	$path_key = '/' . trim( $path, '/' ) . '/';
@@ -108,22 +109,22 @@ usort(
 	<meta charset="<?php bloginfo( 'charset' ); ?>">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<link rel="canonical" href="<?php echo esc_url( vtportal_url_with_lang( '/countries/', $current_lang ) ); ?>">
-	<meta name="description" content="<?php echo esc_attr( __( '渚濆湅瀹舵垨鍦板崁鐎忚 VTuber锛氬揩閫熸煡鐪嬪悇鍦嬫鐩暩涓﹂€插叆娓呭柈銆?', 'vtuber-portal' ) ); ?>">
+	<meta name="description" content="<?php echo esc_attr( __( '依國家或地區瀏覽 VTuber：快速查看各國條目數並進入清單。', 'vtuber-portal' ) ); ?>">
 	<?php wp_head(); ?>
 </head>
 <body <?php body_class( 'vt-landing vt-landing-archive' ); ?>>
 <main class="vt-layout">
 	<div class="vt-top-bar">
 		<div class="vt-pill-nav">
-			<a class="vt-pill" href="<?php echo esc_url( vtportal_url_with_lang( '/', $current_lang ) ); ?>"><?php esc_html_e( '鍥為闋?', 'vtuber-portal' ); ?></a>
-			<a class="vt-pill" href="<?php echo esc_url( vtportal_archive_url_for_lang( 'vtuber', $current_lang ) ); ?>"><?php esc_html_e( 'VTuber 鍒楄〃', 'vtuber-portal' ); ?></a>
+			<a class="vt-pill" href="<?php echo esc_url( vtportal_url_with_lang( '/', $current_lang ) ); ?>"><?php esc_html_e( '回首頁', 'vtuber-portal' ); ?></a>
+			<a class="vt-pill" href="<?php echo esc_url( vtportal_archive_url_for_lang( 'vtuber', $current_lang ) ); ?>"><?php esc_html_e( 'VTuber 列表', 'vtuber-portal' ); ?></a>
 			<a class="vt-pill" href="<?php echo esc_url( vtportal_url_with_lang( '/roles/', $current_lang ) ); ?>"><?php esc_html_e( '依風格', 'vtuber-portal' ); ?></a>
-			<a class="vt-pill" href="<?php echo esc_url( vtportal_url_with_lang( '/platforms/', $current_lang ) ); ?>"><?php esc_html_e( '渚濆钩鍙?', 'vtuber-portal' ); ?></a>
-			<a class="vt-pill" href="<?php echo esc_url( vtportal_url_with_lang( '/agencies/', $current_lang ) ); ?>"><?php esc_html_e( '渚濈祫绻?', 'vtuber-portal' ); ?></a>
-			<a class="vt-pill" href="<?php echo esc_url( vtportal_url_with_lang( '/debut-years/', $current_lang ) ); ?>"><?php esc_html_e( '渚濆嚭閬撳勾', 'vtuber-portal' ); ?></a>
+			<a class="vt-pill" href="<?php echo esc_url( vtportal_url_with_lang( '/platforms/', $current_lang ) ); ?>"><?php esc_html_e( '依平台', 'vtuber-portal' ); ?></a>
+			<a class="vt-pill" href="<?php echo esc_url( vtportal_url_with_lang( '/agencies/', $current_lang ) ); ?>"><?php esc_html_e( '依組織', 'vtuber-portal' ); ?></a>
+			<a class="vt-pill" href="<?php echo esc_url( vtportal_url_with_lang( '/debut-years/', $current_lang ) ); ?>"><?php esc_html_e( '依出道年', 'vtuber-portal' ); ?></a>
 		</div>
 		<div class="vt-lang-wrap vt-lang-float">
-			<span class="vt-lang-label"><?php esc_html_e( '瑾炶█', 'vtuber-portal' ); ?></span>
+			<span class="vt-lang-label"><?php esc_html_e( '語言', 'vtuber-portal' ); ?></span>
 			<?php if ( function_exists( 'vtportal_render_language_dropdown' ) ) : ?>
 				<?php vtportal_render_language_dropdown(); ?>
 			<?php elseif ( function_exists( 'pll_the_languages' ) ) : ?>
@@ -133,11 +134,11 @@ usort(
 	</div>
 
 	<section class="vt-section">
-		<h1><?php esc_html_e( '渚濆湅瀹?/ 鍦板崁鐎忚', 'vtuber-portal' ); ?></h1>
-		<p class="vt-body-text"><?php esc_html_e( '渚濆湅瀹舵垨鍦板崁褰欐暣 VTuber 姊濈洰锛岄粸鎿婂嵆鍙閬搞€?', 'vtuber-portal' ); ?></p>
+		<h1><?php esc_html_e( '依國家 / 地區瀏覽', 'vtuber-portal' ); ?></h1>
+		<p class="vt-body-text"><?php esc_html_e( '依國家或地區彙整 VTuber 條目，點擊即可篩選。', 'vtuber-portal' ); ?></p>
 
 		<?php if ( empty( $terms ) ) : ?>
-			<p class="vt-body-text"><?php esc_html_e( '灏氱劇鍦嬪璩囨枡銆?', 'vtuber-portal' ); ?></p>
+			<p class="vt-body-text"><?php esc_html_e( '尚無國家資料。', 'vtuber-portal' ); ?></p>
 		<?php else : ?>
 			<div class="vt-card-grid neo">
 				<?php foreach ( $terms as $t ) : ?>
@@ -150,13 +151,13 @@ usort(
 									echo esc_html(
 										sprintf(
 											/* translators: %d: count */
-											__( '%d 鍊嬫鐩?', 'vtuber-portal' ),
+											__( '%d 個條目', 'vtuber-portal' ),
 											intval( $t->count )
 										)
 									);
 									?>
 								</p>
-								<div class="vt-tax-list"><span class="pill"><?php esc_html_e( '鍦嬪 / 鍦板崁', 'vtuber-portal' ); ?></span></div>
+								<div class="vt-tax-list"><span class="pill"><?php esc_html_e( '國家 / 地區', 'vtuber-portal' ); ?></span></div>
 							</div>
 						</a>
 					</article>
@@ -168,4 +169,3 @@ usort(
 <?php wp_footer(); ?>
 </body>
 </html>
-

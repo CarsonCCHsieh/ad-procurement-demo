@@ -10,6 +10,102 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+// Sitemap compatibility guard:
+// disable XML stylesheet processing instructions to keep output strictly minimal XML
+// for Search Console parsers.
+add_filter( 'wpseo_sitemap_stylesheet_url', '__return_false' );
+add_filter( 'wp_sitemaps_stylesheet_url', '__return_false' );
+
+/**
+ * Start sitemap output normalization buffer as early as possible.
+ * Yoast sitemap routes may bypass template_redirect, so we bootstrap here.
+ */
+function vtportal_bootstrap_sitemap_output_normalizer() {
+	$req_uri = isset( $_SERVER['REQUEST_URI'] ) ? (string) $_SERVER['REQUEST_URI'] : '';
+	if ( '' === $req_uri || false === strpos( $req_uri, 'sitemap' ) ) {
+		return;
+	}
+	if ( headers_sent() ) {
+		return;
+	}
+	ob_start(
+		static function ( $body ) {
+			if ( ! is_string( $body ) || '' === $body ) {
+				return $body;
+			}
+			$body = preg_replace( '/^\xEF\xBB\xBF/u', '', $body );
+			$body = preg_replace( '/<\\?xml-stylesheet[^>]*\\?>\\s*/i', '', $body );
+			return $body;
+		}
+	);
+}
+vtportal_bootstrap_sitemap_output_normalizer();
+
+/**
+ * Force-clean sitemap XML output for strict parser compatibility.
+ * - remove UTF-8 BOM
+ * - remove xml-stylesheet processing instruction
+ */
+function vtportal_normalize_sitemap_xml_output() {
+	if ( is_admin() || wp_doing_ajax() || wp_doing_cron() ) {
+		return;
+	}
+	$req_uri = isset( $_SERVER['REQUEST_URI'] ) ? (string) $_SERVER['REQUEST_URI'] : '';
+	$path    = (string) wp_parse_url( $req_uri, PHP_URL_PATH );
+	$path    = '/' . ltrim( $path, '/' );
+	if ( false === strpos( $path, 'sitemap' ) ) {
+		return;
+	}
+	ob_start(
+		static function ( $body ) {
+			if ( ! is_string( $body ) || '' === $body ) {
+				return $body;
+			}
+			$body = preg_replace( '/^\xEF\xBB\xBF/u', '', $body );
+			$body = preg_replace( '/<\\?xml-stylesheet[^>]*\\?>\\s*/i', '', $body );
+			return $body;
+		}
+	);
+}
+add_action( 'template_redirect', 'vtportal_normalize_sitemap_xml_output', 0 );
+
+/**
+ * Prevent canonical redirect self-loops (301 to the same URL).
+ *
+ * @param string|false $redirect_url Canonical redirect target.
+ * @param string       $requested_url Current request URL.
+ * @return string|false
+ */
+function vtportal_prevent_self_canonical_redirect( $redirect_url, $requested_url ) {
+	if ( empty( $redirect_url ) || empty( $requested_url ) ) {
+		return $redirect_url;
+	}
+
+	$redirect_parts  = wp_parse_url( (string) $redirect_url );
+	$requested_parts = wp_parse_url( (string) $requested_url );
+	if ( ! is_array( $redirect_parts ) || ! is_array( $requested_parts ) ) {
+		return $redirect_url;
+	}
+
+	$redirect_host  = isset( $redirect_parts['host'] ) ? strtolower( (string) $redirect_parts['host'] ) : '';
+	$requested_host = isset( $requested_parts['host'] ) ? strtolower( (string) $requested_parts['host'] ) : '';
+	$redirect_path  = rawurldecode( untrailingslashit( (string) ( $redirect_parts['path'] ?? '' ) ) );
+	$requested_path = rawurldecode( untrailingslashit( (string) ( $requested_parts['path'] ?? '' ) ) );
+	$requested_raw  = '/' . ltrim( (string) ( $requested_parts['path'] ?? '' ), '/' );
+
+	// Portal URL space uses custom redirects; disable core canonical to avoid encoded-slug loops.
+	if ( preg_match( '#^/(?:((?:cn|en|ja|ko|es|hi))/)?(?:vtuber|country|countries|agency|agencies|platform|platforms|role|roles|life-status|franchise|debut-year|debut-years)(?:/|$)#i', $requested_raw ) ) {
+		return false;
+	}
+
+	if ( '' !== $redirect_path && '' !== $requested_path && $redirect_host === $requested_host && $redirect_path === $requested_path ) {
+		return false;
+	}
+
+	return $redirect_url;
+}
+add_filter( 'redirect_canonical', 'vtportal_prevent_self_canonical_redirect', 1, 2 );
+
 define( 'VT_PORTAL_DIR', plugin_dir_path( __FILE__ ) . 'vtuber-portal/' );
 define( 'VT_PORTAL_URL', plugins_url( 'vtuber-portal/', __FILE__ ) );
 
@@ -68,6 +164,57 @@ function vtportal_youtube_sort_page_cache_key( $q ) {
 }
 
 /**
+ * Remove legacy Newsmatic CSS/JS tags from final HTML on portal pages.
+ * This is a robust fallback when enqueue-order conflicts prevent dequeue from taking effect.
+ */
+function vtportal_strip_legacy_assets_html( $html ) {
+	if ( ! is_string( $html ) || '' === $html ) {
+		return $html;
+	}
+
+	$style_ids = [
+		'fontawesome-css',
+		'fontawesome-6-css',
+		'slick-css',
+		'newsmatic-typo-fonts-css',
+		'newsmatic-style-css',
+		'newsmatic-builder-css',
+		'newsmatic-main-style-css',
+		'newsmatic-loader-style-css',
+		'newsmatic-responsive-style-css',
+	];
+	$script_ids = [
+		'slick-js',
+		'js-marquee-js',
+		'newsmatic-navigation-js',
+		'jquery-cookie-js',
+		'newsmatic-theme-js',
+		'waypoint-js',
+	];
+
+	foreach ( $style_ids as $id ) {
+		$pattern = '/<link[^>]*\bid=[\'"]' . preg_quote( $id, '/' ) . '[\'"][^>]*>\s*/i';
+		$html = (string) preg_replace( $pattern, '', $html );
+	}
+	foreach ( $script_ids as $id ) {
+		$ids = [ $id, $id . '-extra' ];
+		foreach ( $ids as $script_id ) {
+			$pattern = '/<script[^>]*\bid=[\'"]' . preg_quote( $script_id, '/' ) . '[\'"][^>]*>[\s\S]*?<\/script>\s*/i';
+			$html = (string) preg_replace( $pattern, '', $html );
+		}
+	}
+
+	// Keep the manually installed GA4 tag and strip the duplicate HFCM snippet
+	// that injects a second gtag stream on portal pages.
+	$html = (string) preg_replace(
+		'/<!-- HFCM by 99 Robots - Snippet # 1: gtag -->[\s\S]*?G-X1784WWBL0[\s\S]*?<!-- \/end HFCM by 99 Robots -->\s*/i',
+		'',
+		$html
+	);
+	return $html;
+}
+
+/**
  * Lightweight HTML page cache for anonymous visitors.
  * Targets landing / vtuber archive / vtuber taxonomy / vtuber single.
  */
@@ -85,15 +232,7 @@ function vtportal_start_html_cache() {
 	if ( is_feed() || is_search() || is_404() || is_preview() || is_customize_preview() ) {
 		return;
 	}
-	$is_target = is_front_page()
-		|| is_post_type_archive( 'vtuber' )
-		|| is_singular( 'vtuber' )
-		|| is_tax( 'agency' )
-		|| is_tax( 'platform' )
-		|| is_tax( 'role-tag' )
-		|| is_tax( 'life-status' )
-		|| is_tax( 'country' )
-		|| is_tax( 'debut-year' );
+	$is_target = vtportal_is_perf_target_page();
 	if ( ! $is_target ) {
 		return;
 	}
@@ -114,26 +253,169 @@ function vtportal_start_html_cache() {
 
 	$cached = get_transient( $key );
 	if ( is_string( $cached ) && '' !== $cached ) {
+		$cached = vtportal_strip_legacy_assets_html( $cached );
 		if ( ! headers_sent() ) {
+			header( 'Cache-Control: public, max-age=120, stale-while-revalidate=120, stale-if-error=86400' );
+			header( 'Vary: Accept-Encoding' );
 			header( 'X-VT-HTML-Cache: HIT' );
 		}
 		echo $cached;
 		exit;
 	}
 	if ( ! headers_sent() ) {
+		// Public pages are non-personalized; allow short browser/CDN reuse.
+		header( 'Cache-Control: public, max-age=120, stale-while-revalidate=120, stale-if-error=86400' );
+		header( 'Vary: Accept-Encoding' );
 		header( 'X-VT-HTML-Cache: MISS' );
 	}
 	ob_start(
 		static function ( $html ) use ( $key ) {
+			$html = vtportal_strip_legacy_assets_html( $html );
 			if ( is_string( $html ) && strlen( $html ) > 1200 && 200 === intval( http_response_code() ) ) {
-				// Longer cache window significantly improves mobile TTFB on shared hosting.
-				set_transient( $key, $html, 30 * MINUTE_IN_SECONDS );
+				// Longer TTL to reduce repeated expensive MISS renders on shared hosting.
+				set_transient( $key, $html, 15 * MINUTE_IN_SECONDS );
 			}
 			return $html;
 		}
 	);
 }
 add_action( 'template_redirect', 'vtportal_start_html_cache', 1 );
+
+/**
+ * Detect VT portal pages where theme bundles are unnecessary.
+ */
+function vtportal_is_perf_target_page() {
+	$uri  = isset( $_SERVER['REQUEST_URI'] ) ? (string) wp_unslash( $_SERVER['REQUEST_URI'] ) : '/';
+	$path = (string) wp_parse_url( $uri, PHP_URL_PATH );
+	$path = '/' . ltrim( $path, '/' );
+	$path_targets = [
+		'/',
+		'/vtuber/',
+		'/life-status/',
+		'/agency/',
+		'/platform/',
+		'/country/',
+		'/debut-year/',
+		'/roles/',
+		'/agencies/',
+		'/platforms/',
+		'/countries/',
+		'/debut-years/',
+		'/contact/',
+	];
+	foreach ( $path_targets as $needle ) {
+		if ( '/' === $needle && '/' === $path ) {
+			return true;
+		}
+		if ( '/' !== $needle && 0 === strpos( $path, $needle ) ) {
+			return true;
+		}
+	}
+
+	// Multilingual fallback:
+	// Some translated pages don't keep predictable slugs, so path matching can miss them.
+	// Use page-template IDs (including Polylang translations) as a reliable source of truth.
+	$perf_templates = [
+		'vt-portal-landing.php',
+		'vt-platform-index.php',
+		'vt-agency-index.php',
+		'vt-country-index.php',
+		'vt-debut-year-index.php',
+		'vt-role-index.php',
+		'vt-contact.php',
+	];
+	$perf_page_ids = [];
+	$page_ids = get_posts(
+		[
+			'post_type'      => 'page',
+			'post_status'    => 'publish',
+			'posts_per_page' => -1,
+			'fields'         => 'ids',
+			'no_found_rows'  => true,
+			'orderby'        => 'ID',
+			'order'          => 'ASC',
+		]
+	);
+	if ( is_array( $page_ids ) ) {
+		foreach ( $page_ids as $pid ) {
+			$pid = intval( $pid );
+			if ( $pid <= 0 ) {
+				continue;
+			}
+			$tpl = (string) get_post_meta( $pid, '_wp_page_template', true );
+			if ( ! in_array( $tpl, $perf_templates, true ) ) {
+				continue;
+			}
+			$perf_page_ids[] = $pid;
+			if ( function_exists( 'pll_get_post_translations' ) ) {
+				$trs = pll_get_post_translations( $pid );
+				if ( is_array( $trs ) ) {
+					foreach ( $trs as $tid ) {
+						$tid = intval( $tid );
+						if ( $tid > 0 ) {
+							$perf_page_ids[] = $tid;
+						}
+					}
+				}
+			}
+		}
+	}
+	$perf_page_ids = array_values( array_unique( array_map( 'intval', $perf_page_ids ) ) );
+	if ( ! empty( $perf_page_ids ) && is_page( $perf_page_ids ) ) {
+		return true;
+	}
+
+	// Query-object fallback (most reliable on translated pages with custom templates).
+	$qid = intval( get_queried_object_id() );
+	if ( $qid > 0 && 'page' === get_post_type( $qid ) ) {
+		$tpl = (string) get_page_template_slug( $qid );
+		if ( '' === $tpl ) {
+			$tpl = (string) get_post_meta( $qid, '_wp_page_template', true );
+		}
+		if ( '' !== $tpl && in_array( $tpl, $perf_templates, true ) ) {
+			return true;
+		}
+	}
+
+	return is_front_page()
+		|| is_page_template( 'vt-portal-landing.php' )
+		|| is_page_template( 'vt-platform-index.php' )
+		|| is_page_template( 'vt-agency-index.php' )
+		|| is_page_template( 'vt-country-index.php' )
+		|| is_page_template( 'vt-debut-year-index.php' )
+		|| is_page_template( 'vt-role-index.php' )
+		|| is_page_template( 'vt-contact.php' )
+		|| is_post_type_archive( 'vtuber' )
+		|| is_singular( 'vtuber' )
+		|| is_tax( 'agency' )
+		|| is_tax( 'platform' )
+		|| is_tax( 'role-tag' )
+		|| is_tax( 'life-status' )
+		|| is_tax( 'country' )
+		|| is_tax( 'debut-year' );
+}
+
+/**
+ * Prevent duplicate HFCM tracking snippets on portal pages.
+ * We keep the manually managed GA4 code and remove HFCM injections only inside
+ * the portal IA to reduce JS weight and tracking duplication.
+ */
+function vtportal_disable_hfcm_on_portal_pages() {
+	if ( is_admin() ) {
+		return;
+	}
+	if ( ! vtportal_is_perf_target_page() ) {
+		return;
+	}
+	if ( ! class_exists( 'NNR_HFCM' ) ) {
+		return;
+	}
+
+	remove_action( 'wp_head', [ 'NNR_HFCM', 'hfcm_header_scripts' ] );
+	remove_action( 'wp_footer', [ 'NNR_HFCM', 'hfcm_footer_scripts' ] );
+	remove_action( 'the_content', [ 'NNR_HFCM', 'hfcm_content_scripts' ] );
+}
+add_action( 'template_redirect', 'vtportal_disable_hfcm_on_portal_pages', 2 );
 
 // Optional modules loaded from the same plugin directory.
 $vt_news_module = plugin_dir_path( __FILE__ ) . 'vt-news-aggregator.php';
@@ -644,8 +926,8 @@ class Vtuber_CPTS_Plugin {
 
 		// VTuber archive and its taxonomy archives should show more items per page.
 		if ( $q->is_post_type_archive( 'vtuber' ) || $q->is_tax( 'life-status' ) || $q->is_tax( 'agency' ) || $q->is_tax( 'platform' ) || $q->is_tax( 'role-tag' ) || $q->is_tax( 'country' ) || $q->is_tax( 'debut-year' ) ) {
-			// Dense enough to reduce pagination while still acceptable on mobile.
-			$q->set( 'posts_per_page', 30 );
+			// Balance: enough density for browsing, but lower first-paint/media pressure.
+			$q->set( 'posts_per_page', 24 );
 
 			// Default sort: YouTube subscribers desc (database-style browsing).
 			// Allow override by query param: ?sort=updated
@@ -882,149 +1164,6 @@ add_action(
 			$ver
 		);
 	}
-);
-
-/**
- * Shared detector for Portal pages where we can safely strip heavy theme assets.
- */
-function vtportal_is_portal_context() {
-	if ( is_admin() ) {
-		return false;
-	}
-	return is_front_page()
-		|| is_post_type_archive( 'vtuber' )
-		|| is_singular( 'vtuber' )
-		|| is_tax( 'agency' )
-		|| is_tax( 'platform' )
-		|| is_tax( 'role-tag' )
-		|| is_tax( 'life-status' )
-		|| is_tax( 'country' )
-		|| is_tax( 'debut-year' );
-}
-
-/**
- * Performance hardening on Portal pages:
- * - Dequeue Newsmatic CSS/JS not used by Portal templates.
- * - Remove duplicate/legacy FontAwesome + slick stack.
- * - Trim default block/oEmbed assets.
- */
-add_action(
-	'wp_enqueue_scripts',
-	function () {
-		if ( ! vtportal_is_portal_context() ) {
-			return;
-		}
-
-		$styles = [
-			'newsmatic-style',
-			'newsmatic-builder',
-			'newsmatic-main-style',
-			'newsmatic-loader-style',
-			'newsmatic-responsive-style',
-			'newsmatic-typo-fonts',
-			'fontawesome',
-			'fontawesome-6',
-			'slick',
-			'wp-block-library',
-			'wp-block-library-theme',
-			'wc-block-style',
-			'classic-theme-styles',
-			'global-styles',
-		];
-		foreach ( $styles as $h ) {
-			wp_dequeue_style( $h );
-		}
-
-		$scripts = [
-			'slick',
-			'js-marquee',
-			'newsmatic-navigation',
-			'jquery-cookie',
-			'newsmatic-theme',
-			'waypoint',
-			'wp-embed',
-			'jetpack-stats',
-			'jetpack-stats-js',
-		];
-		foreach ( $scripts as $h ) {
-			wp_dequeue_script( $h );
-		}
-
-		// jQuery is not required by Portal templates; removing it saves critical path time on mobile.
-		wp_dequeue_script( 'jquery-migrate' );
-		wp_deregister_script( 'jquery-migrate' );
-		wp_dequeue_script( 'jquery-core' );
-		wp_deregister_script( 'jquery-core' );
-		wp_dequeue_script( 'jquery' );
-		wp_deregister_script( 'jquery' );
-	},
-	999
-);
-
-/**
- * Remove oEmbed discovery/head JS on Portal pages (not needed and adds extra requests).
- */
-add_action(
-	'wp',
-	function () {
-		if ( ! vtportal_is_portal_context() ) {
-			return;
-		}
-		remove_action( 'wp_head', 'wp_oembed_add_discovery_links' );
-		remove_action( 'wp_head', 'wp_oembed_add_host_js' );
-		// Emoji detection script is not needed for this portal UI and adds inline JS parse cost.
-		// Remove both old and new callback names to cover different WP versions.
-		remove_action( 'wp_head', 'print_emoji_detection_script', 7 );
-		remove_action( 'wp_head', 'wp_print_emoji_detection_script', 7 );
-		remove_action( 'admin_print_scripts', 'print_emoji_detection_script' );
-		remove_action( 'admin_print_scripts', 'wp_print_emoji_detection_script' );
-		remove_action( 'wp_print_styles', 'print_emoji_styles' );
-		remove_action( 'wp_print_styles', 'wp_print_emoji_styles' );
-		remove_action( 'admin_print_styles', 'print_emoji_styles' );
-		remove_action( 'admin_print_styles', 'wp_print_emoji_styles' );
-		remove_filter( 'the_content_feed', 'wp_staticize_emoji' );
-		remove_filter( 'comment_text_rss', 'wp_staticize_emoji' );
-		remove_filter( 'wp_mail', 'wp_staticize_emoji_for_email' );
-		add_filter( 'emoji_svg_url', '__return_false' );
-	},
-	1
-);
-
-/**
- * Strip duplicate GA loader/snippet injected by older snippets on Portal pages.
- * Keep the MU plugin GA ID (G-B65VCT4SG8), remove legacy G-X1784WWBL0 snippet.
- */
-add_action(
-	'template_redirect',
-	function () {
-		if ( ! vtportal_is_portal_context() ) {
-			return;
-		}
-		ob_start(
-			static function ( $html ) {
-				if ( ! is_string( $html ) || '' === $html ) {
-					return $html;
-				}
-				$html = preg_replace(
-					'~<!--\s*HFCM by 99 Robots - Snippet # 1: gtag\s*-->.*?<script[^>]+googletagmanager\.com/gtag/js\?id=G-X1784WWBL0[^>]*></script>\s*<script>.*?gtag\(\s*[\'"]config[\'"]\s*,\s*[\'"]G-X1784WWBL0[\'"]\s*\)\s*;.*?</script>~is',
-					'',
-					$html
-				);
-				$html = preg_replace( '~<script[^>]+googletagmanager\.com/gtag/js\?id=G-X1784WWBL0[^>]*></script>~i', '', $html );
-				// Jetpack stats is not needed on portal profile/list pages and adds third-party payload.
-				$html = preg_replace( '~<script[^>]+stats\.wp\.com/e-[^>]+></script>~i', '', $html );
-				$html = preg_replace( '~<img[^>]+stats\.wp\.com/g\.gif[^>]*>~i', '', $html );
-				// Strip WP emoji detection payload (JSON + inline bootstrap script) on portal pages.
-				$html = preg_replace(
-					'~<script[^>]+id=["\']wp-emoji-settings["\'][^>]*>.*?</script>\s*<script>.*?wpEmojiSettingsSupports.*?</script>~is',
-					'',
-					$html
-				);
-				return $html;
-			}
-		);
-	},
-	0
 );
 
 /**
@@ -1784,6 +1923,108 @@ function vtportal_runtime_translate( $text, $lang = '' ) {
 	if ( '' === $lang || 'zh' === $lang ) {
 		return $text;
 	}
+	// Explicit UTF-8 map for high-visibility labels (avoids legacy mojibake key mismatch).
+	$strict_maps = [
+		'en' => [
+			'Twitch簡介' => 'Twitch Bio',
+			'完整介紹' => 'Full Profile',
+			'常見問答' => 'FAQ',
+			'快速摘要' => 'Quick Summary',
+			'頁面導覽' => 'Page Navigation',
+			'回到頂部' => 'Back to Top',
+			'最新新聞（外部連結）' => 'Latest News (External Links)',
+			'相關新聞（外部連結）' => 'Related News (External Links)',
+			'顯示名' => 'Display Name',
+			'出道' => 'Debut',
+			'生日/設定' => 'Birthday / Lore',
+			'粉絲名' => 'Fan Name',
+			'所屬組織' => 'Affiliation',
+			'組織' => 'Agency',
+			'狀態' => 'Status',
+		],
+		'cn' => [
+			'Twitch簡介' => 'Twitch 简介',
+			'完整介紹' => '完整介绍',
+			'常見問答' => '常见问答',
+			'快速摘要' => '快速摘要',
+			'頁面導覽' => '页面导航',
+			'回到頂部' => '回到顶部',
+			'最新新聞（外部連結）' => '最新新闻（外部链接）',
+			'相關新聞（外部連結）' => '相关新闻（外部链接）',
+			'顯示名' => '显示名',
+			'粉絲名' => '粉丝名',
+			'所屬組織' => '所属组织',
+			'組織' => '组织',
+		],
+		'ja' => [
+			'Twitch簡介' => 'Twitch紹介',
+			'完整介紹' => '詳細紹介',
+			'常見問答' => 'よくある質問',
+			'快速摘要' => 'クイック概要',
+			'頁面導覽' => 'ページナビ',
+			'回到頂部' => '上部へ戻る',
+			'最新新聞（外部連結）' => '最新ニュース（外部リンク）',
+			'相關新聞（外部連結）' => '関連ニュース（外部リンク）',
+			'顯示名' => '表示名',
+			'生日/設定' => '誕生日/設定',
+			'粉絲名' => 'ファンネーム',
+			'所屬組織' => '所属',
+			'組織' => '所属',
+			'狀態' => 'ステータス',
+		],
+		'ko' => [
+			'Twitch簡介' => 'Twitch 소개',
+			'完整介紹' => '상세 소개',
+			'常見問答' => '자주 묻는 질문',
+			'快速摘要' => '요약',
+			'頁面導覽' => '페이지 내비게이션',
+			'回到頂部' => '맨 위로',
+			'最新新聞（外部連結）' => '최신 뉴스(외부 링크)',
+			'相關新聞（外部連結）' => '관련 뉴스(외부 링크)',
+			'顯示名' => '표시 이름',
+			'生日/設定' => '생일/설정',
+			'粉絲名' => '팬 이름',
+			'所屬組織' => '소속',
+			'組織' => '소속',
+			'狀態' => '상태',
+		],
+		'es' => [
+			'Twitch簡介' => 'Bio de Twitch',
+			'完整介紹' => 'Perfil completo',
+			'常見問答' => 'Preguntas frecuentes',
+			'快速摘要' => 'Resumen rápido',
+			'頁面導覽' => 'Navegación de página',
+			'回到頂部' => 'Volver arriba',
+			'最新新聞（外部連結）' => 'Últimas noticias (enlaces externos)',
+			'相關新聞（外部連結）' => 'Noticias relacionadas (enlaces externos)',
+			'顯示名' => 'Nombre mostrado',
+			'生日/設定' => 'Cumpleaños / Lore',
+			'粉絲名' => 'Nombre del fandom',
+			'所屬組織' => 'Afiliación',
+			'組織' => 'Agencia',
+			'狀態' => 'Estado',
+		],
+		'hi' => [
+			'Twitch簡介' => 'Twitch परिचय',
+			'完整介紹' => 'पूर्ण परिचय',
+			'常見問答' => 'सामान्य प्रश्न',
+			'快速摘要' => 'त्वरित सार',
+			'頁面導覽' => 'पेज नेविगेशन',
+			'回到頂部' => 'ऊपर जाएँ',
+			'最新新聞（外部連結）' => 'नवीनतम समाचार (बाहरी लिंक)',
+			'相關新聞（外部連結）' => 'संबंधित समाचार (बाहरी लिंक)',
+			'顯示名' => 'प्रदर्शित नाम',
+			'生日/設定' => 'जन्मदिन/सेटिंग',
+			'粉絲名' => 'फैन नाम',
+			'所屬組織' => 'संबद्धता',
+			'組織' => 'संगठन',
+			'狀態' => 'स्थिति',
+		],
+	];
+	if ( isset( $strict_maps[ $lang ][ $text ] ) ) {
+		return (string) $strict_maps[ $lang ][ $text ];
+	}
+
 	static $cache = [];
 	static $clean_cache = [];
 	if ( ! isset( $clean_cache[ $lang ] ) ) {
@@ -1982,6 +2223,21 @@ function vtportal_runtime_filter_get_terms_name( $terms, $taxonomies = [], $args
 add_filter( 'get_term', 'vtportal_runtime_filter_get_term_name', 20, 2 );
 add_filter( 'get_terms', 'vtportal_runtime_filter_get_terms_name', 20, 4 );
 
+function vtportal_localize_snippet_text_clean( $text, $lang ) {
+	$text = (string) $text;
+	$lang = sanitize_title( (string) $lang );
+	$maps = [
+		'en' => [ '基本資訊' => 'Basic Information', '基本資料' => 'Basic Information', '參考來源' => 'Sources', '出道' => 'Debut', '狀態' => 'Status', '官方網站' => 'Official Website' ],
+		'ja' => [ '基本資訊' => '基本情報', '基本資料' => '基本情報', '參考來源' => '参考ソース', '出道' => 'デビュー', '狀態' => 'ステータス', '官方網站' => '公式サイト' ],
+		'ko' => [ '基本資訊' => '기본 정보', '基本資料' => '기본 정보', '參考來源' => '참고 출처', '出道' => '데뷔', '狀態' => '상태', '官方網站' => '공식 사이트' ],
+		'es' => [ '基本資訊' => 'Información básica', '基本資料' => 'Información básica', '參考來源' => 'Fuentes', '出道' => 'Debut', '狀態' => 'Estado', '官方網站' => 'Sitio oficial' ],
+		'hi' => [ '基本資訊' => 'मूल जानकारी', '基本資料' => 'मूल जानकारी', '參考來源' => 'संदर्भ स्रोत', '出道' => 'डेब्यू', '狀態' => 'स्थिति', '官方網站' => 'आधिकारिक वेबसाइट' ],
+		'cn' => [ '基本資訊' => '基本信息', '基本資料' => '基本资料', '參考來源' => '参考来源', '狀態' => '状态', '官方網站' => '官方网站', '粉絲名' => '粉丝名' ],
+	];
+	$map = $maps[ $lang ] ?? [];
+	return empty( $map ) ? $text : strtr( $text, $map );
+}
+
 /**
  * Lightweight snippet localization for excerpts/summaries shown on non-zh pages.
  * This does not attempt full machine translation, only high-impact VTuber terms.
@@ -1995,6 +2251,7 @@ function vtportal_localize_snippet_text( $text, $lang = '' ) {
 	if ( '' === $lang || 'zh' === $lang ) {
 		return $text;
 	}
+	$text = vtportal_localize_snippet_text_clean( $text, $lang );
 
 	$maps = [
 		'en' => [
@@ -2080,12 +2337,192 @@ function vtportal_runtime_filter_excerpt_localize( $excerpt, $post = null ) {
 
 add_filter( 'get_the_excerpt', 'vtportal_runtime_filter_excerpt_localize', 20, 2 );
 
+/**
+ * Localize common zh-TW full-profile blocks on non-zh singular VTuber pages.
+ *
+ * This specifically fixes section labels that are generated in Chinese by
+ * maintenance jobs (e.g. 基本資料 / 參考來源) but displayed on EN/JA/KO/etc pages.
+ */
+function vtportal_localize_profile_block_text( $content, $lang = '' ) {
+	$content = (string) $content;
+	if ( '' === trim( $content ) ) {
+		return $content;
+	}
+	$lang = '' !== $lang ? sanitize_title( (string) $lang ) : vtportal_current_lang_slug_safe();
+	if ( '' === $lang || 'zh' === $lang ) {
+		return $content;
+	}
+
+	$maps = [
+		'en' => [
+			'基本資料'       => 'Basic Information',
+			'參考來源'       => 'Sources',
+			'補充資訊'       => 'Additional Notes',
+			'所屬'           => 'Affiliation',
+			'狀態'           => 'Status',
+			'官方網站'       => 'Official Website',
+			'活動中'         => 'Active',
+			'休止中'         => 'Hiatus',
+			'畢業 / 引退'    => 'Graduated / Retired',
+			'轉生 / 前世'    => 'Reincarnated / Past Life',
+		],
+		'cn' => [
+			'基本資料'       => '基本资料',
+			'參考來源'       => '参考来源',
+			'補充資訊'       => '补充信息',
+			'所屬'           => '所属',
+			'狀態'           => '状态',
+			'官方網站'       => '官方网站',
+			'活動中'         => '活动中',
+			'休止中'         => '休止中',
+			'畢業 / 引退'    => '毕业 / 引退',
+			'轉生 / 前世'    => '转生 / 前世',
+		],
+		'ja' => [
+			'基本資料'       => '基本情報',
+			'參考來源'       => '参考ソース',
+			'補充資訊'       => '補足情報',
+			'所屬'           => '所属',
+			'狀態'           => 'ステータス',
+			'官方網站'       => '公式サイト',
+			'活動中'         => '活動中',
+			'休止中'         => '活動休止中',
+			'畢業 / 引退'    => '卒業 / 引退',
+			'轉生 / 前世'    => '転生 / 前世',
+		],
+		'ko' => [
+			'基本資料'       => '기본 정보',
+			'參考來源'       => '참고 출처',
+			'補充資訊'       => '추가 정보',
+			'所屬'           => '소속',
+			'狀態'           => '상태',
+			'官方網站'       => '공식 사이트',
+			'活動中'         => '활동 중',
+			'休止中'         => '휴식 중',
+			'畢業 / 引退'    => '졸업 / 은퇴',
+			'轉生 / 前世'    => '전생 / 과거 설정',
+		],
+		'es' => [
+			'基本資料'       => 'Información básica',
+			'參考來源'       => 'Fuentes',
+			'補充資訊'       => 'Información adicional',
+			'所屬'           => 'Afiliación',
+			'狀態'           => 'Estado',
+			'官方網站'       => 'Sitio oficial',
+			'活動中'         => 'Activo',
+			'休止中'         => 'En pausa',
+			'畢業 / 引退'    => 'Graduado / Retirado',
+			'轉生 / 前世'    => 'Reencarnado / Vida pasada',
+		],
+		'hi' => [
+			'基本資料'       => 'मूल जानकारी',
+			'參考來源'       => 'संदर्भ स्रोत',
+			'補充資訊'       => 'अतिरिक्त जानकारी',
+			'所屬'           => 'संबद्धता',
+			'狀態'           => 'स्थिति',
+			'官方網站'       => 'आधिकारिक वेबसाइट',
+			'活動中'         => 'सक्रिय',
+			'休止中'         => 'विराम में',
+			'畢業 / 引退'    => 'स्नातक / सेवानिवृत्त',
+			'轉生 / 前世'    => 'पुनर्जन्म / पूर्व जीवन',
+		],
+	];
+
+	$map = $maps[ $lang ] ?? [];
+	if ( empty( $map ) ) {
+		return $content;
+	}
+
+	// Replace both plain labels and common "label：" patterns used in auto-generated intro HTML.
+	$paired = [];
+	foreach ( $map as $src => $dst ) {
+		$paired[ $src . '：' ] = $dst . ': ';
+		$paired[ $src . ':' ]  = $dst . ': ';
+		$paired[ $src ]        = $dst;
+	}
+
+	return strtr( $content, $paired );
+}
+
+function vtportal_runtime_filter_content_localize( $content ) {
+	if ( is_admin() || ! is_singular( 'vtuber' ) ) {
+		return $content;
+	}
+	$lang = vtportal_current_lang_slug_safe();
+	if ( '' === $lang || 'zh' === $lang ) {
+		return $content;
+	}
+	$content = vtportal_localize_profile_block_text( (string) $content, $lang );
+	$content = vtportal_localize_snippet_text( (string) $content, $lang );
+	return $content;
+}
+
+add_filter( 'the_content', 'vtportal_runtime_filter_content_localize', 20, 1 );
+
 function vtportal_request_path_only() {
 	$uri  = isset( $_SERVER['REQUEST_URI'] ) ? (string) $_SERVER['REQUEST_URI'] : '/';
 	$path = (string) wp_parse_url( $uri, PHP_URL_PATH );
 	$path = '/' . ltrim( $path, '/' );
 	return $path;
 }
+
+function vtportal_path_lang_slug_safe() {
+	$path = vtportal_request_path_only();
+	$lang = '';
+	if ( function_exists( 'vt_portal_detect_lang_from_path' ) ) {
+		$lang = (string) vt_portal_detect_lang_from_path( $path );
+		if ( function_exists( 'vt_portal_canonical_lang_slug' ) ) {
+			$lang = (string) vt_portal_canonical_lang_slug( $lang );
+		}
+	}
+	$lang = sanitize_title( $lang );
+	if ( '' !== $lang ) {
+		return $lang;
+	}
+	return 'zh';
+}
+
+function vtportal_html_lang_from_slug( $slug ) {
+	$slug = sanitize_title( (string) $slug );
+	$map  = [
+		'zh' => 'zh-TW',
+		'cn' => 'zh-CN',
+		'ja' => 'ja',
+		'en' => 'en',
+		'ko' => 'ko-KR',
+		'es' => 'es',
+		'hi' => 'hi',
+	];
+	return $map[ $slug ] ?? 'zh-TW';
+}
+
+function vtportal_language_attributes_markup() {
+	$lang_slug = vtportal_path_lang_slug_safe();
+	$html_lang = vtportal_html_lang_from_slug( $lang_slug );
+	$dir       = is_rtl() ? ' dir="rtl"' : '';
+	return 'lang="' . esc_attr( $html_lang ) . '"' . $dir;
+}
+
+function vtportal_filter_language_attributes_for_portal( $output ) {
+	if ( is_admin() ) {
+		return $output;
+	}
+	if ( ! vtportal_is_perf_target_page() && ! is_singular( 'vtuber' ) ) {
+		return $output;
+	}
+
+	$lang_slug = vtportal_path_lang_slug_safe();
+	$html_lang = vtportal_html_lang_from_slug( $lang_slug );
+
+	if ( preg_match( '/\blang="[^"]*"/i', $output ) ) {
+		$output = preg_replace( '/\blang="[^"]*"/i', 'lang="' . esc_attr( $html_lang ) . '"', $output, 1 );
+	} else {
+		$output = trim( $output . ' lang="' . esc_attr( $html_lang ) . '"' );
+	}
+
+	return $output;
+}
+add_filter( 'language_attributes', 'vtportal_filter_language_attributes_for_portal', 20, 1 );
 
 function vtportal_strip_lang_prefix_from_path( $path, $lang_slug ) {
 	$path = '/' . ltrim( (string) $path, '/' );
@@ -2151,15 +2588,24 @@ function vtportal_should_emit_manual_seo_alternates( $context = 'generic' ) {
 	return (bool) apply_filters( 'vtportal_force_manual_hreflang_with_yoast', $default, $context );
 }
 
-function vtportal_render_polylang_seo_links_for_post( $post_id ) {
+function vtportal_render_polylang_seo_links_for_post( $post_id, $emit_canonical = null ) {
 	$post_id = intval( $post_id );
 	if ( $post_id <= 0 ) {
 		return;
 	}
 
-	$canonical = get_permalink( $post_id );
+	$canonical = '';
+	if ( 'vtuber' === (string) get_post_type( $post_id ) && function_exists( 'vtportal_current_request_single_vtuber_canonical_url' ) ) {
+		$canonical = vtportal_current_request_single_vtuber_canonical_url( get_post( $post_id ) );
+	}
+	if ( ! $canonical ) {
+		$canonical = get_permalink( $post_id );
+	}
+	if ( null === $emit_canonical ) {
+		$emit_canonical = ! defined( 'WPSEO_VERSION' );
+	}
 	// Avoid duplicate canonicals if Yoast (or similar) is present.
-	if ( $canonical && ! defined( 'WPSEO_VERSION' ) ) {
+	if ( $canonical && $emit_canonical ) {
 		echo '<link rel="canonical" href="' . esc_url( $canonical ) . '">' . "\n";
 	}
 	$post_type = (string) get_post_type( $post_id );
@@ -2182,20 +2628,42 @@ function vtportal_render_polylang_seo_links_for_post( $post_id ) {
 	if ( '' === $current_slug && function_exists( 'pll_current_language' ) ) {
 		$current_slug = (string) pll_current_language( 'slug' );
 	}
-	if ( '' !== $current_slug && $canonical ) {
-		$alt_urls[ vtportal_hreflang_from_lang_slug( $current_slug ) ] = $canonical;
-	}
-	foreach ( $langs as $lang_slug ) {
-		$tr_id = pll_get_post( $post_id, $lang_slug );
-		if ( ! $tr_id ) {
-			continue;
+
+	$post_obj = get_post( $post_id );
+	$post_slug = $post_obj instanceof WP_Post ? sanitize_title( (string) $post_obj->post_name ) : '';
+	$request_path = vtportal_request_path_only();
+	$clean_request_lang = vtportal_path_lang_slug_safe();
+	$can_build_clean_vtuber_alts = (
+		'vtuber' === $post_type
+		&& '' !== $post_slug
+		&& preg_match( '#^/(?:((?:cn|en|ja|ko|es|hi))/)?vtuber/([^/]+)/?$#i', $request_path, $m )
+		&& sanitize_title( rawurldecode( (string) ( $m[2] ?? '' ) ) ) === $post_slug
+	);
+
+	if ( $can_build_clean_vtuber_alts ) {
+		foreach ( $langs as $lang_slug ) {
+			$alt_path = ( 'zh' === $lang_slug )
+				? '/vtuber/' . $post_slug . '/'
+				: '/' . $lang_slug . '/vtuber/' . $post_slug . '/';
+			$alt_urls[ vtportal_hreflang_from_lang_slug( $lang_slug ) ] = home_url( $alt_path );
 		}
-		$url = get_permalink( intval( $tr_id ) );
-		if ( ! $url ) {
-			continue;
+		$current_slug = $clean_request_lang;
+	} else {
+		if ( '' !== $current_slug && $canonical ) {
+			$alt_urls[ vtportal_hreflang_from_lang_slug( $current_slug ) ] = $canonical;
 		}
-		$hreflang = vtportal_hreflang_from_lang_slug( $lang_slug );
-		$alt_urls[ $hreflang ] = $url;
+		foreach ( $langs as $lang_slug ) {
+			$tr_id = pll_get_post( $post_id, $lang_slug );
+			if ( ! $tr_id ) {
+				continue;
+			}
+			$url = get_permalink( intval( $tr_id ) );
+			if ( ! $url ) {
+				continue;
+			}
+			$hreflang = vtportal_hreflang_from_lang_slug( $lang_slug );
+			$alt_urls[ $hreflang ] = $url;
+		}
 	}
 	foreach ( $alt_urls as $hreflang => $url ) {
 		echo '<link rel="alternate" hreflang="' . esc_attr( $hreflang ) . '" href="' . esc_url( $url ) . '">' . "\n";
@@ -2756,6 +3224,409 @@ function vtportal_suggestion_column_content( $column, $post_id ) {
 add_action( 'manage_vt-suggestion_posts_custom_column', 'vtportal_suggestion_column_content', 10, 2 );
 
 /**
+ * Build a language-scoped URL path (default zh has no prefix).
+ */
+function vtportal_lang_scoped_path( $path, $lang = '' ) {
+	$path = '/' . ltrim( (string) $path, '/' );
+	$lang = sanitize_title( (string) $lang );
+	if ( '' === $lang || 'zh' === $lang ) {
+		return $path;
+	}
+	return '/' . $lang . $path;
+}
+
+/**
+ * Resolve the best canonical VTuber permalink from a base slug + target language.
+ *
+ * This avoids relying on url_to_postid() for custom language-prefixed rewrites,
+ * which can fail and create redirect chains like foo-3 -> foo -> archive.
+ */
+function vtportal_resolve_vtuber_canonical_permalink_by_base_slug( $base_slug, $lang = '' ) {
+	$base_slug = sanitize_title( (string) $base_slug );
+	$lang      = sanitize_title( (string) $lang );
+	if ( '' === $base_slug ) {
+		return '';
+	}
+
+	$post = get_page_by_path( $base_slug, OBJECT, 'vtuber' );
+	if ( ! ( $post instanceof WP_Post ) ) {
+		$posts = get_posts(
+			[
+				'name'                   => $base_slug,
+				'post_type'              => 'vtuber',
+				'post_status'            => [ 'publish', 'private', 'draft', 'future', 'pending' ],
+				'posts_per_page'         => 1,
+				'no_found_rows'          => true,
+				'ignore_sticky_posts'    => true,
+				'suppress_filters'       => false,
+				'update_post_meta_cache' => false,
+				'update_post_term_cache' => false,
+			]
+		);
+		if ( ! empty( $posts[0] ) && $posts[0] instanceof WP_Post ) {
+			$post = $posts[0];
+		}
+	}
+
+	if ( ! ( $post instanceof WP_Post ) ) {
+		return '';
+	}
+
+	$post_id = intval( $post->ID );
+	if ( $post_id <= 0 ) {
+		return '';
+	}
+	if ( 'publish' !== get_post_status( $post_id ) ) {
+		return '';
+	}
+
+	if ( function_exists( 'pll_get_post_language' ) ) {
+		$current_lang = sanitize_title( (string) pll_get_post_language( $post_id, 'slug' ) );
+		if ( 'zh' === $current_lang ) {
+			$current_lang = '';
+		}
+
+		if ( '' !== $lang && $current_lang !== $lang ) {
+			if ( function_exists( 'pll_get_post' ) ) {
+				$translated_id = intval( pll_get_post( $post_id, $lang ) );
+				if ( $translated_id > 0 && 'publish' === get_post_status( $translated_id ) ) {
+					$post_id = $translated_id;
+				} else {
+					return '';
+				}
+			} else {
+				return '';
+			}
+		}
+	}
+
+	$permalink = get_permalink( $post_id );
+	if ( ! $permalink || ! is_string( $permalink ) ) {
+		return '';
+	}
+
+	return $permalink;
+}
+
+/**
+ * Prefer the current language-prefixed request path as canonical for normal VTuber singles.
+ * This prevents /en/... pages from canonicalizing back to the default-language permalink
+ * when they are served by custom language-prefixed routing instead of true translated posts.
+ */
+function vtportal_current_request_single_vtuber_canonical_url( $post = null ) {
+	if ( ! is_singular( 'vtuber' ) ) {
+		return '';
+	}
+
+	$post = ( $post instanceof WP_Post ) ? $post : get_post();
+	if ( ! ( $post instanceof WP_Post ) || 'vtuber' !== (string) $post->post_type ) {
+		return '';
+	}
+
+	$numeric_target = vtportal_get_numeric_suffix_canonical_target( $post );
+	if ( '' !== $numeric_target ) {
+		return $numeric_target;
+	}
+
+	$path = vtportal_request_path_only();
+	if ( ! preg_match( '#^/(?:((?:cn|en|ja|ko|es|hi))/)?vtuber/([^/]+)/?$#i', $path, $m ) ) {
+		$url = get_permalink( intval( $post->ID ) );
+		return is_string( $url ) ? $url : '';
+	}
+
+	$request_slug = sanitize_title( rawurldecode( (string) ( $m[2] ?? '' ) ) );
+	$post_slug    = sanitize_title( (string) $post->post_name );
+	if ( '' !== $request_slug && '' !== $post_slug && $request_slug === $post_slug ) {
+		return home_url( user_trailingslashit( $path ) );
+	}
+
+	$url = get_permalink( intval( $post->ID ) );
+	return is_string( $url ) ? $url : '';
+}
+
+/**
+ * Legacy URL repair for GSC-reported VTuber 404/duplicate variants.
+ *
+ * Covers:
+ * - /{lang}/vtuber/{slug}-2-6/ style suffix variants
+ * - /vtuber/{slug}-3/ style suffix variants
+ * - old /country/{slug}/ path moved to /countries/{slug}/
+ */
+function vtportal_redirect_gsc_legacy_variants() {
+	if ( is_admin() || wp_doing_ajax() || wp_doing_cron() ) {
+		return;
+	}
+	if ( defined( 'REST_REQUEST' ) && REST_REQUEST ) {
+		return;
+	}
+	if ( is_feed() || is_trackback() || is_preview() ) {
+		return;
+	}
+
+	$request_path = '';
+	if ( isset( $_SERVER['REQUEST_URI'] ) ) {
+		$request_path = (string) wp_parse_url( (string) $_SERVER['REQUEST_URI'], PHP_URL_PATH );
+	}
+	if ( '' === $request_path ) {
+		return;
+	}
+
+	$allowed_langs = [ 'cn', 'en', 'ja', 'ko', 'es', 'hi' ];
+
+	// 1) Old country taxonomy base: /country/{slug}/ -> /countries/{slug}/ (or list fallback).
+	if ( preg_match( '#^/(?:(' . implode( '|', $allowed_langs ) . ')/)?country/([^/]+)/?$#i', $request_path, $m ) ) {
+		$lang = ! empty( $m[1] ) ? sanitize_title( (string) $m[1] ) : '';
+		$slug = sanitize_title( rawurldecode( (string) $m[2] ) );
+		$target = '';
+		$term = get_term_by( 'slug', $slug, 'country' );
+		if ( $term && ! is_wp_error( $term ) ) {
+			$link = get_term_link( $term );
+			if ( ! is_wp_error( $link ) ) {
+				$target = (string) $link;
+			}
+		}
+		if ( '' === $target ) {
+			$target = home_url( vtportal_lang_scoped_path( '/countries/', $lang ) );
+		}
+		$target_path = (string) wp_parse_url( $target, PHP_URL_PATH );
+		if ( untrailingslashit( $target_path ) === untrailingslashit( (string) $request_path ) ) {
+			return;
+		}
+		wp_safe_redirect( $target, 301 );
+		exit;
+	}
+
+	// 1.5) Extra legacy taxonomy path repair (run only on 404 pages).
+	if ( is_404() ) {
+		// Any missing vtuber detail URL should resolve to the vtuber archive instead of hard 404.
+		// This catches stale slugs removed during dedupe/import cleanup.
+		if ( preg_match( '#^/(?:(' . implode( '|', $allowed_langs ) . ')/)?vtuber/([^/]+)/?$#i', $request_path, $m ) ) {
+			$lang = ! empty( $m[1] ) ? sanitize_title( (string) $m[1] ) : '';
+			$slug = sanitize_title( rawurldecode( (string) $m[2] ) );
+			// Keep numeric-suffix handling for canonical redirects below.
+			if ( '' !== $slug && ! preg_match( '#-[0-9]+(?:-[0-9]+)?$#', $slug ) ) {
+				wp_safe_redirect( home_url( vtportal_lang_scoped_path( '/vtuber/', $lang ) ), 301 );
+				exit;
+			}
+		}
+
+		// Old numeric vtuber paths: /vtuber/66/ -> /vtuber/
+		if ( preg_match( '#^/vtuber/[0-9]+/?$#', $request_path ) ) {
+			wp_safe_redirect( home_url( '/vtuber/' ), 301 );
+			exit;
+		}
+
+		// Singular -> plural base migration for debut year.
+		if ( preg_match( '#^/(?:(' . implode( '|', $allowed_langs ) . ')/)?debut-year/([^/]+)/?$#i', $request_path, $m ) ) {
+			$lang = ! empty( $m[1] ) ? sanitize_title( (string) $m[1] ) : '';
+			$slug = sanitize_title( rawurldecode( (string) $m[2] ) );
+			$target = '';
+			$candidate_slugs = [ $slug ];
+			if ( '' !== $lang ) {
+				$candidate_slugs[] = $slug . '-' . $lang;
+			} else {
+				$candidate_slugs[] = $slug . '-zh';
+			}
+			foreach ( $candidate_slugs as $cslug ) {
+				$term = get_term_by( 'slug', $cslug, 'debut-year' );
+				if ( $term && ! is_wp_error( $term ) ) {
+					$link = get_term_link( $term );
+					if ( ! is_wp_error( $link ) && is_string( $link ) && '' !== $link ) {
+						$target = $link;
+						break;
+					}
+				}
+			}
+			if ( '' === $target ) {
+				$target = home_url( vtportal_lang_scoped_path( '/debut-years/', $lang ) );
+			}
+			$target_path = (string) wp_parse_url( $target, PHP_URL_PATH );
+			if ( untrailingslashit( rawurldecode( $target_path ) ) === untrailingslashit( rawurldecode( (string) $request_path ) ) ) {
+				return;
+			}
+			wp_safe_redirect( $target, 301 );
+			exit;
+		}
+
+		// Old role term path fallback: /role/{slug}/ or /role-tag/{slug}/ -> /roles/
+		if ( preg_match( '#^/(?:(' . implode( '|', $allowed_langs ) . ')/)?role(?:-tag)?/([^/]+)/?$#i', $request_path, $m ) ) {
+			$lang = ! empty( $m[1] ) ? sanitize_title( (string) $m[1] ) : '';
+			wp_safe_redirect( home_url( vtportal_lang_scoped_path( '/roles/', $lang ) ), 301 );
+			exit;
+		}
+
+		// Old agency term path fallback: /agency/{slug}/ -> /agencies/
+		if ( preg_match( '#^/(?:(' . implode( '|', $allowed_langs ) . ')/)?agency/([^/]+)/?$#i', $request_path, $m ) ) {
+			$lang = ! empty( $m[1] ) ? sanitize_title( (string) $m[1] ) : '';
+			wp_safe_redirect( home_url( vtportal_lang_scoped_path( '/agencies/', $lang ) ), 301 );
+			exit;
+		}
+
+		// Legacy language-prefixed platform term URLs (e.g. /ja/platform/twitch/) -> unprefixed term URL.
+		if ( preg_match( '#^/(?:(' . implode( '|', $allowed_langs ) . ')/)?platform/([^/]+)/?$#i', $request_path, $m ) ) {
+			$slug = sanitize_title( rawurldecode( (string) $m[2] ) );
+			wp_safe_redirect( home_url( '/platform/' . $slug . '/' ), 301 );
+			exit;
+		}
+
+		// Franchise slugs sometimes carried a language suffix in old links.
+		if ( preg_match( '#^/(?:(' . implode( '|', $allowed_langs ) . ')/)?franchise/([^/]+)/?$#i', $request_path, $m ) ) {
+			$lang = ! empty( $m[1] ) ? sanitize_title( (string) $m[1] ) : '';
+			$slug = sanitize_title( rawurldecode( (string) $m[2] ) );
+			$base = preg_replace( '#-(zh|cn|ja|en|ko|es|hi)$#i', '', $slug );
+			$base = sanitize_title( (string) $base );
+			if ( '' !== $base && $base !== $slug ) {
+				$target = home_url( vtportal_lang_scoped_path( '/franchise/' . $base . '/', $lang ) );
+			} else {
+				$target = home_url( vtportal_lang_scoped_path( '/vtuber/', $lang ) );
+			}
+			wp_safe_redirect( $target, 301 );
+			exit;
+		}
+
+		// Legacy comments feed paths should point back to language home.
+		if ( preg_match( '#^/(?:(' . implode( '|', $allowed_langs ) . ')/)?comments/feed/?$#i', $request_path, $m ) ) {
+			$lang = ! empty( $m[1] ) ? sanitize_title( (string) $m[1] ) : '';
+			wp_safe_redirect( home_url( vtportal_lang_scoped_path( '/', $lang ) ), 301 );
+			exit;
+		}
+
+		// Crawled wildcard-like legacy paths (literal asterisk) should not remain as 404.
+		if ( false !== strpos( $request_path, '*' ) || 0 === strpos( $request_path, '/wp-content/' ) ) {
+			wp_safe_redirect( home_url( '/' ), 301 );
+			exit;
+		}
+	}
+
+	// 2) VTuber numeric suffix variants:
+	//    /vtuber/foo-3/ , /en/vtuber/foo-2-5/ -> canonical slug target.
+	if ( ! preg_match( '#^/(?:(' . implode( '|', $allowed_langs ) . ')/)?vtuber/([^/]+)/?$#i', $request_path, $m ) ) {
+		return;
+	}
+
+	$lang     = ! empty( $m[1] ) ? sanitize_title( (string) $m[1] ) : '';
+	$raw_slug = (string) $m[2];
+	if ( ! preg_match( '#^(.+)-[0-9]+(?:-[0-9]+)?$#', $raw_slug, $sm ) ) {
+		return;
+	}
+
+	$base_slug = trim( (string) $sm[1], '-' );
+	if ( '' === $base_slug ) {
+		return;
+	}
+
+	$target_url = vtportal_resolve_vtuber_canonical_permalink_by_base_slug( $base_slug, $lang );
+
+	if ( '' === $target_url ) {
+		// If the stripped slug does not actually exist, go directly to the archive.
+		// This avoids creating an extra redirect hop to a non-existent canonical path.
+		$target_url = home_url( vtportal_lang_scoped_path( '/vtuber/', $lang ) );
+	}
+
+	$current_path_norm = untrailingslashit( rawurldecode( (string) $request_path ) );
+	$target_path_norm  = untrailingslashit( rawurldecode( (string) wp_parse_url( $target_url, PHP_URL_PATH ) ) );
+	if ( '' !== $target_path_norm && $target_path_norm !== $current_path_norm ) {
+		wp_safe_redirect( $target_url, 301 );
+		exit;
+	}
+}
+add_action( 'template_redirect', 'vtportal_redirect_gsc_legacy_variants', 0 );
+
+/**
+ * Canonical normalization for numeric-suffix VTuber slugs.
+ *
+ * Example: /en/vtuber/foo-3/ -> canonical /en/vtuber/foo/
+ * This helps GSC deduplicate migrated suffix URLs that are still reachable.
+ */
+function vtportal_get_numeric_suffix_canonical_target( $post ) {
+	if ( ! ( $post instanceof WP_Post ) ) {
+		return '';
+	}
+	if ( 'vtuber' !== $post->post_type ) {
+		return '';
+	}
+
+	$slug = sanitize_title( (string) $post->post_name );
+	if ( '' === $slug || ! preg_match( '#^(.+)-[0-9]+(?:-[0-9]+)?$#', $slug, $m ) ) {
+		return '';
+	}
+	$base_slug = sanitize_title( (string) $m[1] );
+	if ( '' === $base_slug ) {
+		return '';
+	}
+
+	$lang = '';
+	if ( function_exists( 'pll_get_post_language' ) ) {
+		$lang = sanitize_title( (string) pll_get_post_language( intval( $post->ID ), 'slug' ) );
+	}
+	if ( 'zh' === $lang ) {
+		$lang = '';
+	}
+
+	$target = vtportal_resolve_vtuber_canonical_permalink_by_base_slug( $base_slug, $lang );
+	if ( '' === $target ) {
+		return '';
+	}
+	$target_path = untrailingslashit( (string) wp_parse_url( (string) $target, PHP_URL_PATH ) );
+	$current_path = untrailingslashit( (string) wp_parse_url( (string) get_permalink( intval( $post->ID ) ), PHP_URL_PATH ) );
+
+	if ( '' !== $target_path && $target_path !== $current_path ) {
+		return $target;
+	}
+	return '';
+}
+
+function vtportal_canonical_numeric_suffix_vtuber( $canonical, $post ) {
+	$target = vtportal_current_request_single_vtuber_canonical_url( $post );
+	if ( '' !== $target ) {
+		return $target;
+	}
+	return $canonical;
+}
+add_filter( 'get_canonical_url', 'vtportal_canonical_numeric_suffix_vtuber', 10, 2 );
+
+// Yoast SEO canonical hook.
+function vtportal_wpseo_canonical_numeric_suffix( $canonical ) {
+	if ( ! is_singular( 'vtuber' ) ) {
+		return $canonical;
+	}
+	// Single VTuber template prints its own canonical to keep language-prefixed clean URLs stable.
+	return false;
+}
+add_filter( 'wpseo_canonical', 'vtportal_wpseo_canonical_numeric_suffix', 10, 1 );
+
+// Mark numeric-suffix duplicate vtuber pages as noindex (keep follow for link equity).
+function vtportal_wpseo_robots_numeric_suffix_vtuber( $robots ) {
+	if ( ! is_singular( 'vtuber' ) ) {
+		return $robots;
+	}
+	$post = get_post();
+	$target = vtportal_get_numeric_suffix_canonical_target( $post );
+	if ( '' !== $target ) {
+		return 'noindex,follow';
+	}
+	return $robots;
+}
+add_filter( 'wpseo_robots', 'vtportal_wpseo_robots_numeric_suffix_vtuber', 10, 1 );
+
+function vtportal_wp_robots_numeric_suffix_vtuber( $robots ) {
+	if ( defined( 'WPSEO_VERSION' ) ) {
+		return $robots;
+	}
+	if ( ! is_singular( 'vtuber' ) ) {
+		return $robots;
+	}
+	$post = get_post();
+	$target = vtportal_get_numeric_suffix_canonical_target( $post );
+	if ( '' !== $target ) {
+		$robots['noindex'] = true;
+		$robots['follow']  = true;
+	}
+	return $robots;
+}
+add_filter( 'wp_robots', 'vtportal_wp_robots_numeric_suffix_vtuber', 10, 1 );
+
+/**
  * Redirect legacy theme archives (category/tag/date/author/blog index) back to portal entry.
  * This prevents users from landing on old theme pages through stale links.
  */
@@ -2871,6 +3742,118 @@ add_filter(
 		$templates['vt-contact.php']        = 'VT Contact';
 		return $templates;
 	}
+);
+
+/**
+ * Reduce payload on portal pages by removing heavy legacy theme assets.
+ *
+ * The portal templates are self-contained and do not rely on Newsmatic JS/CSS
+ * components (slick/marquee/waypoint/theme scripts).
+ */
+function vtportal_dequeue_legacy_theme_assets() {
+	if ( is_admin() || ! vtportal_is_perf_target_page() ) {
+		return;
+	}
+	$style_handles = [
+		'fontawesome-css',
+		'fontawesome-6-css',
+		'slick-css',
+		'newsmatic-typo-fonts-css',
+		'newsmatic-style-css',
+		'newsmatic-builder-css',
+		'newsmatic-main-style-css',
+		'newsmatic-loader-style-css',
+		'newsmatic-responsive-style-css',
+	];
+	foreach ( $style_handles as $h ) {
+		if ( wp_style_is( $h, 'enqueued' ) || wp_style_is( $h, 'registered' ) ) {
+			wp_dequeue_style( $h );
+		}
+	}
+
+	$script_handles = [
+		'jquery',
+		'jquery-core',
+		'jquery-migrate',
+		'slick-js',
+		'js-marquee-js',
+		'newsmatic-navigation-js',
+		'jquery-cookie-js',
+		'newsmatic-theme-js',
+		'waypoint-js',
+	];
+	foreach ( $script_handles as $h ) {
+		if ( wp_script_is( $h, 'enqueued' ) || wp_script_is( $h, 'registered' ) ) {
+			wp_dequeue_script( $h );
+			if ( in_array( $h, [ 'jquery', 'jquery-core', 'jquery-migrate' ], true ) ) {
+				wp_deregister_script( $h );
+			}
+		}
+	}
+}
+add_action( 'wp_enqueue_scripts', 'vtportal_dequeue_legacy_theme_assets', 9999 );
+add_action( 'wp_print_styles', 'vtportal_dequeue_legacy_theme_assets', 1 );
+add_action( 'wp_print_scripts', 'vtportal_dequeue_legacy_theme_assets', 1 );
+
+/**
+ * Last-resort guard: prevent selected handles from being printed on portal pages.
+ */
+function vtportal_blocked_style_handles() {
+	return [
+		'fontawesome-css',
+		'fontawesome-6-css',
+		'slick-css',
+		'newsmatic-typo-fonts-css',
+		'newsmatic-style-css',
+		'newsmatic-builder-css',
+		'newsmatic-main-style-css',
+		'newsmatic-loader-style-css',
+		'newsmatic-responsive-style-css',
+	];
+}
+
+function vtportal_blocked_script_handles() {
+	return [
+		'jquery',
+		'jquery-core',
+		'jquery-migrate',
+		'slick-js',
+		'js-marquee-js',
+		'newsmatic-navigation-js',
+		'jquery-cookie-js',
+		'newsmatic-theme-js',
+		'waypoint-js',
+	];
+}
+
+add_filter(
+	'style_loader_tag',
+	function ( $html, $handle ) {
+		if ( ! vtportal_is_perf_target_page() ) {
+			return $html;
+		}
+		if ( in_array( (string) $handle, vtportal_blocked_style_handles(), true ) ) {
+			return '';
+		}
+		return $html;
+	},
+	9999,
+	2
+);
+
+add_filter(
+	'script_loader_tag',
+	function ( $tag, $handle ) {
+		if ( ! vtportal_is_perf_target_page() ) {
+			return $tag;
+		}
+		if ( in_array( (string) $handle, vtportal_blocked_script_handles(), true ) ) {
+			return '';
+		}
+		return $tag;
+	},
+	9999,
+	2
 );
 
 /**

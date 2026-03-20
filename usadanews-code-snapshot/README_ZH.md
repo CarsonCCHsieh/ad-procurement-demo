@@ -1,6 +1,6 @@
 ﻿# USADA 主站代碼快照（遷移前）
 
-建立時間：2026-03-09（Asia/Taipei）
+建立時間：2026-03-20（Asia/Taipei）
 來源：`C:\Users\User\hsieh` 本機主站維運檔案
 
 ## 目的
@@ -13,6 +13,8 @@
   - `vt-maint.php`（已去敏，改環境變數）
   - `vt-maint-runner.php`
   - `wp-vtuber-cpts.php`
+- `mu-plugins/`
+  - `vt-portal-redirects.php`
 - `theme/`
   - `vt-portal-landing.php`, `archive-vtuber.php`, `single-vtuber.php`
   - `taxonomy-*.php`, `vt-*-index.php`, `vt-status.php`, `vt-contact.php`
@@ -24,6 +26,10 @@
   - `jpen_source_registry.json`, `probe_jpen_sources.py`（日英來源健康檢查與語系優先圖）
   - `execute_jpen_intro_round.py`（日英優先完整介紹補齊實跑）
   - `deploy_maint_plugin.py`（安全部署 vt-maint + runner，先自動備份再上傳）
+  - `generate_dynamic_sitemap_index.py`
+  - `google_sitemap_refresh.py`
+  - `upload_dynamic_sitemap_assets.py`
+  - `build_private_repo.py`
 - `docs/`
   - `MAINTAIN_SYSTEM.md`（原始快照）
   - `JP_EN_TO_MULTILINGUAL_PIPELINE_ZH.md`（日英優先到全語系內容流程）

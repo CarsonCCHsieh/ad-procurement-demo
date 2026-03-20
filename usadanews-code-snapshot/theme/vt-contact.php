@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 /**
  * Template Name: VT Contact
  * Template Post Type: page
@@ -59,7 +59,8 @@ function vtportal_url_with_lang( $path, $lang = '' ) {
 		'/platforms/' => 'vt-platform-index.php',
 		'/agencies/'  => 'vt-agency-index.php',
 		'/countries/' => 'vt-country-index.php',
-				'/roles/'       => 'vt-role-index.php',
+		'/debut-years/' => 'vt-debut-year-index.php',
+		'/roles/'       => 'vt-role-index.php',
 		'/contact/'   => 'vt-contact.php',
 	];
 	$path_key = '/' . trim( $path, '/' ) . '/';
@@ -91,21 +92,21 @@ function vtportal_archive_url_for_lang( $post_type, $lang = '' ) {
 	<meta charset="<?php bloginfo( 'charset' ); ?>">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<link rel="canonical" href="<?php echo esc_url( vtportal_url_with_lang( '/contact/', $current_lang ) ); ?>">
-	<meta name="description" content="<?php echo esc_attr( __( 'USADA 鑱怠鏂瑰紡鑸囧悎浣滄姇鏀捐硣瑷娿€?', 'vtuber-portal' ) ); ?>">
+	<meta name="description" content="<?php echo esc_attr( __( 'USADA 聯絡方式與合作投放資訊。', 'vtuber-portal' ) ); ?>">
 	<?php wp_head(); ?>
 </head>
 <body <?php body_class( 'vt-landing vt-landing-archive' ); ?>>
 <main class="vt-layout">
 	<div class="vt-top-bar">
 		<div class="vt-pill-nav">
-			<a class="vt-pill" href="<?php echo esc_url( vtportal_url_with_lang( '/', $current_lang ) ); ?>"><?php esc_html_e( '鍥為闋?', 'vtuber-portal' ); ?></a>
-			<a class="vt-pill" href="<?php echo esc_url( vtportal_archive_url_for_lang( 'vtuber', $current_lang ) ); ?>"><?php esc_html_e( 'VTuber 鍒楄〃', 'vtuber-portal' ); ?></a>
-			<a class="vt-pill" href="<?php echo esc_url( vtportal_url_with_lang( '/roles/', $current_lang ) ); ?>"><?php esc_html_e( '依風格', 'vtuber-portal' ); ?></a>
-			<a class="vt-pill" href="<?php echo esc_url( vtportal_url_with_lang( '/platforms/', $current_lang ) ); ?>"><?php esc_html_e( '渚濆钩鍙?', 'vtuber-portal' ); ?></a>
-			<a class="vt-pill" href="<?php echo esc_url( vtportal_url_with_lang( '/agencies/', $current_lang ) ); ?>"><?php esc_html_e( '渚濈祫绻?', 'vtuber-portal' ); ?></a>
+			<a class="vt-pill" href="<?php echo esc_url( vtportal_url_with_lang( '/', $current_lang ) ); ?>"><?php esc_html_e( '回首頁', 'vtuber-portal' ); ?></a>
+			<a class="vt-pill" href="<?php echo esc_url( vtportal_archive_url_for_lang( 'vtuber', $current_lang ) ); ?>"><?php esc_html_e( 'VTuber 列表', 'vtuber-portal' ); ?></a>
+			<a class="vt-pill" href="<?php echo esc_url( vtportal_url_with_lang( '/roles/', $current_lang ) ); ?>"><?php esc_html_e( 'Style Tags', 'vtuber-portal' ); ?></a>
+			<a class="vt-pill" href="<?php echo esc_url( vtportal_url_with_lang( '/platforms/', $current_lang ) ); ?>"><?php esc_html_e( '依平台', 'vtuber-portal' ); ?></a>
+			<a class="vt-pill" href="<?php echo esc_url( vtportal_url_with_lang( '/agencies/', $current_lang ) ); ?>"><?php esc_html_e( '依組織', 'vtuber-portal' ); ?></a>
 		</div>
 		<div class="vt-lang-wrap vt-lang-float">
-			<span class="vt-lang-label"><?php esc_html_e( '瑾炶█', 'vtuber-portal' ); ?></span>
+			<span class="vt-lang-label"><?php esc_html_e( '語言', 'vtuber-portal' ); ?></span>
 			<?php if ( function_exists( 'vtportal_render_language_dropdown' ) ) : ?>
 				<?php vtportal_render_language_dropdown(); ?>
 			<?php elseif ( function_exists( 'pll_the_languages' ) ) : ?>
@@ -115,8 +116,8 @@ function vtportal_archive_url_for_lang( $post_type, $lang = '' ) {
 	</div>
 
 	<section class="vt-section">
-		<h1><?php esc_html_e( '鑱怠鎴戝€?/ 鍚堜綔鎶曟斁', 'vtuber-portal' ); ?></h1>
-		<p class="vt-body-text"><?php esc_html_e( '鍚堜綔銆佹姇鏀俱€佽硣鏂欐洿姝ｃ€佹巿娆婃垨鍏朵粬浜嬪嫏锛岃珛浣跨敤浠ヤ笅鏂瑰紡鑱怠銆?', 'vtuber-portal' ); ?></p>
+		<h1><?php esc_html_e( '聯絡我們 / 合作投放', 'vtuber-portal' ); ?></h1>
+		<p class="vt-body-text"><?php esc_html_e( '合作、投放、資料更正、授權或其他事務，請使用以下方式聯絡。', 'vtuber-portal' ); ?></p>
 
 		<div class="vt-card-grid neo">
 			<article class="vt-card">
@@ -127,24 +128,24 @@ function vtportal_archive_url_for_lang( $post_type, $lang = '' ) {
 							<?php echo esc_html( antispambot( $email ) ); ?>
 						</a>
 					</p>
-					<div class="vt-tax-list"><span class="pill"><?php esc_html_e( '鍥炶鏅傞枔', 'vtuber-portal' ); ?></span></div>
-					<p class="vt-card-excerpt"><?php esc_html_e( '閫氬父 1-3 鍊嬪伐浣滃ぉ鍏у洖瑕嗐€?', 'vtuber-portal' ); ?></p>
+					<div class="vt-tax-list"><span class="pill"><?php esc_html_e( '回覆時間', 'vtuber-portal' ); ?></span></div>
+					<p class="vt-card-excerpt"><?php esc_html_e( '通常 1-3 個工作天內回覆。', 'vtuber-portal' ); ?></p>
 				</div>
 			</article>
 
 			<article class="vt-card">
 				<div class="vt-card-body">
-					<h3 class="vt-card-title"><?php esc_html_e( '璩囨枡鏇存', 'vtuber-portal' ); ?></h3>
-					<p class="vt-card-excerpt"><?php esc_html_e( '鑻ユ鐩硣瑷婃垨閫ｇ祼鏈夎锛岃珛鎻愪緵姝ｇ⒑渚嗘簮閫ｇ祼鑸囦慨姝ｅ収瀹广€?', 'vtuber-portal' ); ?></p>
-					<div class="vt-tax-list"><span class="pill"><?php esc_html_e( '缍', 'vtuber-portal' ); ?></span></div>
+					<h3 class="vt-card-title"><?php esc_html_e( '資料更正', 'vtuber-portal' ); ?></h3>
+					<p class="vt-card-excerpt"><?php esc_html_e( '若條目資訊或連結有誤，請提供正確來源連結與修正內容。', 'vtuber-portal' ); ?></p>
+					<div class="vt-tax-list"><span class="pill"><?php esc_html_e( '維護', 'vtuber-portal' ); ?></span></div>
 				</div>
 			</article>
 
 			<article class="vt-card">
 				<div class="vt-card-body">
-					<h3 class="vt-card-title"><?php esc_html_e( '鍚堜綔鎶曟斁', 'vtuber-portal' ); ?></h3>
-					<p class="vt-card-excerpt"><?php esc_html_e( '鍙彁渚涘悎浣滅洰妯欍€佹檪绋嬨€佺礌鏉愯鏍艰垏闋愮畻绡勫湇锛屾垜鍊戞渻鍥炶鍙鏂规銆?', 'vtuber-portal' ); ?></p>
-					<div class="vt-tax-list"><span class="pill"><?php esc_html_e( '鍟嗗嫏', 'vtuber-portal' ); ?></span></div>
+					<h3 class="vt-card-title"><?php esc_html_e( '合作投放', 'vtuber-portal' ); ?></h3>
+					<p class="vt-card-excerpt"><?php esc_html_e( '可提供合作目標、時程、素材規格與預算範圍，我們會回覆可行方案。', 'vtuber-portal' ); ?></p>
+					<div class="vt-tax-list"><span class="pill"><?php esc_html_e( '商務', 'vtuber-portal' ); ?></span></div>
 				</div>
 			</article>
 		</div>
@@ -153,4 +154,3 @@ function vtportal_archive_url_for_lang( $post_type, $lang = '' ) {
 <?php wp_footer(); ?>
 </body>
 </html>
-

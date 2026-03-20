@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 /**
  * Archive: VTuber (standalone)
  */
@@ -116,7 +116,8 @@ function vtportal_url_with_lang( $path, $lang = '' ) {
 		'/platforms/' => 'vt-platform-index.php',
 		'/agencies/'  => 'vt-agency-index.php',
 		'/countries/' => 'vt-country-index.php',
-				'/roles/'       => 'vt-role-index.php',
+		'/debut-years/' => 'vt-debut-year-index.php',
+		'/roles/'       => 'vt-role-index.php',
 		'/contact/'   => 'vt-contact.php',
 	];
 	$path_key = '/' . trim( $path, '/' ) . '/';
@@ -182,7 +183,7 @@ function vtportal_lifecycle_label( $post_id ) {
 $has_anime_content = function_exists( 'vtportal_has_public_content' ) ? vtportal_has_public_content( 'anime-work', $current_lang ) : true;
 ?>
 <!doctype html>
-<html <?php language_attributes(); ?>>
+<html <?php echo function_exists( 'vtportal_language_attributes_markup' ) ? wp_kses_data( vtportal_language_attributes_markup() ) : get_language_attributes(); ?>>
 <head>
 	<meta charset="<?php bloginfo( 'charset' ); ?>">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
@@ -317,4 +318,3 @@ $has_anime_content = function_exists( 'vtportal_has_public_content' ) ? vtportal
 <?php wp_footer(); ?>
 </body>
 </html>
-

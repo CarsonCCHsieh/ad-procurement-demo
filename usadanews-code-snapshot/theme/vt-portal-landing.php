@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 /**
  * Template Name: VTuber Portal Landing
  * Template Post Type: page
@@ -150,7 +150,8 @@ function vtportal_url_with_lang( $path, $lang = '' ) {
 		'/platforms/' => 'vt-platform-index.php',
 		'/agencies/'  => 'vt-agency-index.php',
 		'/countries/' => 'vt-country-index.php',
-				'/roles/'       => 'vt-role-index.php',
+		'/debut-years/' => 'vt-debut-year-index.php',
+		'/roles/'       => 'vt-role-index.php',
 		'/contact/'   => 'vt-contact.php',
 	];
 	$path_key = '/' . trim( $path, '/' ) . '/';
@@ -1089,11 +1090,19 @@ $has_anime_content = function_exists( 'vtportal_has_public_content' ) ? vtportal
 								$thumb = get_post_meta( get_the_ID(), 'vt_thumb_source_url', true );
 							}
 							if ( has_post_thumbnail() ) {
-								the_post_thumbnail( 'medium', [ 'alt' => esc_attr( vtportal_display_name( get_the_ID() ) ) ] );
+								the_post_thumbnail(
+									'thumbnail',
+									[
+										'alt'           => esc_attr( vtportal_display_name( get_the_ID() ) ),
+										'loading'       => 'lazy',
+										'decoding'      => 'async',
+										'fetchpriority' => 'low',
+									]
+								);
 							} elseif ( $thumb ) {
-								echo '<img class="vt-thumb-ph" src="' . esc_url( $thumb ) . '" alt="' . esc_attr( vtportal_display_name( get_the_ID() ) ) . '" />';
+								echo '<img class="vt-thumb-ph" loading="lazy" decoding="async" fetchpriority="low" src="' . esc_url( $thumb ) . '" alt="' . esc_attr( vtportal_display_name( get_the_ID() ) ) . '" />';
 							} else {
-								echo '<img class="vt-thumb-ph" src="' . esc_url( VT_PORTAL_URL . 'assets/vt-placeholder.png' ) . '" alt="' . esc_attr( vtportal_display_name( get_the_ID() ) ) . '" />';
+								echo '<img class="vt-thumb-ph" loading="lazy" decoding="async" fetchpriority="low" src="' . esc_url( VT_PORTAL_URL . 'assets/vt-placeholder.png' ) . '" alt="' . esc_attr( vtportal_display_name( get_the_ID() ) ) . '" />';
 							}
 							?>
 							<div class="vt-mini-main">
@@ -1403,4 +1412,3 @@ $has_anime_content = function_exists( 'vtportal_has_public_content' ) ? vtportal
 <?php wp_footer(); ?>
 </body>
 </html>
-

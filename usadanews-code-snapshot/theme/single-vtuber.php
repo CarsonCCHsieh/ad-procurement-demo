@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 /**
  * Template: Single VTuber (standalone, no theme header/footer)
  */
@@ -58,7 +58,8 @@ function vtportal_url_with_lang( $path, $lang = '' ) {
 		'/platforms/' => 'vt-platform-index.php',
 		'/agencies/'  => 'vt-agency-index.php',
 		'/countries/' => 'vt-country-index.php',
-				'/roles/'       => 'vt-role-index.php',
+		'/debut-years/' => 'vt-debut-year-index.php',
+		'/roles/'       => 'vt-role-index.php',
 		'/contact/'   => 'vt-contact.php',
 	];
 	$path_key = '/' . trim( $path, '/' ) . '/';
@@ -82,37 +83,6 @@ function vtportal_archive_url_for_lang( $post_type, $lang = '' ) {
 	$obj  = get_post_type_object( $post_type );
 	$slug = isset( $obj->rewrite['slug'] ) ? (string) $obj->rewrite['slug'] : $post_type;
 	return vtportal_url_with_lang( '/' . trim( $slug, '/' ) . '/', $lang );
-}
-
-function vtportal_extract_youtube_video_id( $url ) {
-	$url = trim( (string) $url );
-	if ( '' === $url ) {
-		return '';
-	}
-	$parts = wp_parse_url( $url );
-	if ( ! is_array( $parts ) ) {
-		return '';
-	}
-	$host = strtolower( (string) ( $parts['host'] ?? '' ) );
-	$path = (string) ( $parts['path'] ?? '' );
-	$query = [];
-	if ( ! empty( $parts['query'] ) ) {
-		parse_str( (string) $parts['query'], $query );
-	}
-	if ( false !== strpos( $host, 'youtu.be' ) ) {
-		$id = trim( (string) ltrim( $path, '/' ) );
-		return preg_match( '/^[A-Za-z0-9_-]{6,20}$/', $id ) ? $id : '';
-	}
-	if ( false !== strpos( $host, 'youtube.com' ) ) {
-		if ( ! empty( $query['v'] ) ) {
-			$id = trim( (string) $query['v'] );
-			return preg_match( '/^[A-Za-z0-9_-]{6,20}$/', $id ) ? $id : '';
-		}
-		if ( preg_match( '~/(embed|shorts)/([A-Za-z0-9_-]{6,20})~', $path, $m ) ) {
-			return (string) $m[2];
-		}
-	}
-	return '';
 }
 
 $fields = [
@@ -392,11 +362,17 @@ foreach ( $social_order as $key ) {
 }
 ?>
 <!doctype html>
-<html <?php language_attributes(); ?>>
+<html <?php echo function_exists( 'vtportal_language_attributes_markup' ) ? wp_kses_data( vtportal_language_attributes_markup() ) : get_language_attributes(); ?>>
 <head>
 	<meta charset="<?php bloginfo( 'charset' ); ?>">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<?php
+	$manual_canonical = function_exists( 'vtportal_current_request_single_vtuber_canonical_url' )
+		? vtportal_current_request_single_vtuber_canonical_url( get_post( $post_id ) )
+		: get_permalink( $post_id );
+	if ( $manual_canonical ) {
+		echo '<link rel="canonical" href="' . esc_url( $manual_canonical ) . '">' . "\n";
+	}
 	// Avoid duplicating meta description if Yoast (or similar) is present.
 	if ( ! defined( 'WPSEO_VERSION' ) ) {
 		$meta_desc = trim( (string) ( $fields['summary'] ?: get_the_excerpt( $post_id ) ) );
@@ -409,12 +385,9 @@ foreach ( $social_order as $key ) {
 		}
 	}
 	if ( function_exists( 'vtportal_render_polylang_seo_links_for_post' ) ) {
-		vtportal_render_polylang_seo_links_for_post( intval( $post_id ) );
+		vtportal_render_polylang_seo_links_for_post( intval( $post_id ), false );
 	} else {
-		$canonical = get_permalink( $post_id );
-		if ( $canonical ) {
-			echo '<link rel="canonical" href="' . esc_url( $canonical ) . '">' . "\n";
-		}
+		// Canonical already printed above.
 	}
 	?>
 	<?php wp_head(); ?>
@@ -451,15 +424,7 @@ foreach ( $social_order as $key ) {
 				$thumb = get_post_meta( $post_id, 'vt_thumb_source_url', true );
 			}
 			if ( has_post_thumbnail() ) {
-				the_post_thumbnail(
-					'medium_large',
-					[
-						'alt'           => esc_attr( $vtportal_display_name( $post_id ) ),
-						'loading'       => 'eager',
-						'fetchpriority' => 'high',
-						'decoding'      => 'async',
-					]
-				);
+				the_post_thumbnail( 'large', [ 'alt' => esc_attr( $vtportal_display_name( $post_id ) ) ] );
 			} elseif ( $thumb ) {
 				echo '<img loading="lazy" decoding="async" src="' . esc_url( $thumb ) . '" alt="' . esc_attr( $vtportal_display_name( $post_id ) ) . '" />';
 			} else {
@@ -551,53 +516,18 @@ foreach ( $social_order as $key ) {
 				<?php if ( $fields['rep'] ) : ?>
 					<div class="vt-video">
 						<?php
-						$yt_id = vtportal_extract_youtube_video_id( (string) $fields['rep'] );
-						if ( '' !== $yt_id ) :
-							$thumb_webp = 'https://i.ytimg.com/vi_webp/' . rawurlencode( $yt_id ) . '/hqdefault.webp';
-							$embed_url  = 'https://www.youtube-nocookie.com/embed/' . rawurlencode( $yt_id ) . '?autoplay=1&rel=0';
-							?>
-							<button
-								type="button"
-								class="vt-video-lite"
-								data-embed="<?php echo esc_url( $embed_url ); ?>"
-								aria-label="<?php esc_attr_e( '播放代表影片', 'vtuber-portal' ); ?>"
-							>
-								<img
-									src="<?php echo esc_url( $thumb_webp ); ?>"
-									alt="<?php echo esc_attr( $fields['display'] ?: get_the_title() ); ?>"
-									loading="lazy"
-									decoding="async"
-									width="1280"
-									height="720"
-								/>
-								<span class="vt-video-play"><?php esc_html_e( '播放影片', 'vtuber-portal' ); ?></span>
-							</button>
-							<noscript>
-								<a href="<?php echo esc_url( $fields['rep'] ); ?>" target="_blank" rel="noopener"><?php esc_html_e( '觀看代表影片', 'vtuber-portal' ); ?></a>
-							</noscript>
-						<?php else : ?>
-							<a href="<?php echo esc_url( $fields['rep'] ); ?>" target="_blank" rel="noopener"><?php esc_html_e( '觀看代表影片', 'vtuber-portal' ); ?></a>
-						<?php endif; ?>
-						<script>
-						(function () {
-							document.addEventListener('click', function (e) {
-								var btn = e.target.closest('.vt-video-lite');
-								if (!btn) return;
-								var src = btn.getAttribute('data-embed');
-								if (!src) return;
-								var iframe = document.createElement('iframe');
-								iframe.src = src;
-								iframe.width = '640';
-								iframe.height = '360';
-								iframe.setAttribute('allowfullscreen', 'allowfullscreen');
-								iframe.setAttribute('loading', 'lazy');
-								iframe.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
-								iframe.setAttribute('allow', 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share');
-								btn.replaceWith(iframe);
-							}, { passive: true });
-						})();
-						</script>
-						<?php
+						$embed = wp_oembed_get( $fields['rep'] );
+						if ( $embed ) {
+							if ( false !== stripos( $embed, 'youtube.com/embed/' ) ) {
+								$embed = str_replace( 'https://www.youtube.com/embed/', 'https://www.youtube-nocookie.com/embed/', $embed );
+								if ( false === stripos( $embed, ' loading=' ) ) {
+									$embed = preg_replace( '/<iframe\b/i', '<iframe loading="lazy" decoding="async" referrerpolicy="strict-origin-when-cross-origin"', $embed, 1 );
+								}
+							}
+							echo $embed; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+						} else {
+							echo '<a href="' . esc_url( $fields['rep'] ) . '" target="_blank" rel="noopener">' . esc_html__( '觀看代表影片', 'vtuber-portal' ) . '</a>';
+						}
 						?>
 					</div>
 				<?php endif; ?>
@@ -757,4 +687,3 @@ foreach ( $social_order as $key ) {
 <?php wp_footer(); ?>
 </body>
 </html>
-

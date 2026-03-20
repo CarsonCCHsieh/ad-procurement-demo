@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 /**
  * Lightweight VTuber news aggregator (Google News RSS).
  * - Shows only title/source/date and link back to the origin site (no copy-paste of body).
@@ -52,7 +52,7 @@ if ( ! function_exists( 'vt_news_build_query' ) ) {
  * @param bool   $force_refresh Bypass transient cache.
  * @return array
  */
-function vt_news_fetch_items( $keyword, $limit = 5, $force_refresh = false ) {
+function vt_news_fetch_items( $keyword, $limit = 5, $force_refresh = false, $allow_live_fetch = true ) {
 	$keyword = trim( $keyword );
 	if ( ! $keyword ) {
 		return [];
@@ -65,15 +65,8 @@ function vt_news_fetch_items( $keyword, $limit = 5, $force_refresh = false ) {
 	if ( ! $force_refresh && ! empty( $cached ) ) {
 		return $cached;
 	}
-
-	// Frontend requests should never block on remote RSS fetches.
-	// If cache is cold, return immediately and let cron warm the cache.
-	if (
-		! $force_refresh &&
-		empty( $cached ) &&
-		! is_admin() &&
-		( ! function_exists( 'wp_doing_cron' ) || ! wp_doing_cron() )
-	) {
+	// Frontend render path should never block page TTFB on remote RSS latency.
+	if ( ! $force_refresh && ! $allow_live_fetch ) {
 		return [];
 	}
 
@@ -249,7 +242,7 @@ if ( ! function_exists( 'vt_news_schedule_refresh' ) ) {
  * @param string $heading Heading text.
  */
 function vt_news_render_related( $keyword, $limit = 5, $heading = '' ) {
-	$items = vt_news_fetch_items( $keyword, $limit );
+	$items = vt_news_fetch_items( $keyword, $limit, false, false );
 	if ( empty( $items ) ) {
 		return;
 	}
@@ -262,7 +255,7 @@ function vt_news_render_related( $keyword, $limit = 5, $heading = '' ) {
 				<article class="vt-news-card">
 					<a href="<?php echo esc_url( $it['link'] ); ?>" target="_blank" rel="noopener nofollow">
 						<?php if ( $it['thumb'] ) : ?>
-							<span class="vt-news-thumb"><img loading="lazy" decoding="async" src="<?php echo esc_url( $it['thumb'] ); ?>" alt="<?php echo esc_attr( $it['title'] ); ?>"></span>
+							<span class="vt-news-thumb"><img src="<?php echo esc_url( $it['thumb'] ); ?>" alt="<?php echo esc_attr( $it['title'] ); ?>"></span>
 						<?php endif; ?>
 						<div class="vt-news-body">
 							<div class="vt-news-title"><?php echo esc_html( $it['title'] ); ?></div>

@@ -2051,7 +2051,7 @@ function vt_maint_build_full_intro_html( $post_id ) {
 	return trim( $html );
 }
 
-function vt_maint_enrich_full_intro_run( $batch = 40, $force = 0, $min_len = 180, $origin = '' ) {
+function vt_maint_enrich_full_intro_run( $batch = 40, $force = 0, $min_len = 180 ) {
 	$lock_key = 'vt_maint_enrich_full_intro_lock';
 	if ( ! vt_maint_acquire_lock( $lock_key, 900, 3600 ) ) {
 		return [ 'locked' => 1 ];
@@ -2062,10 +2062,6 @@ function vt_maint_enrich_full_intro_run( $batch = 40, $force = 0, $min_len = 180
 		$force   = intval( $force ) ? 1 : 0;
 		$min_len = max( 80, min( 600, intval( $min_len ) ) );
 		$pool    = max( $batch * 8, 120 );
-		$origin  = sanitize_key( (string) $origin );
-		if ( 'all' === $origin ) {
-			$origin = '';
-		}
 		$cursor_key = 'vt_maint_full_intro_cursor';
 		$cursor_from = intval( get_option( $cursor_key, 0 ) );
 		$cursor_to   = $cursor_from;
@@ -2078,33 +2074,33 @@ function vt_maint_enrich_full_intro_run( $batch = 40, $force = 0, $min_len = 180
 		$errors    = 0;
 		$items     = [];
 
-		$fetch_ids = static function ( $from_id, $limit ) use ( $wpdb, $origin ) {
-			$from_id = intval( $from_id );
-			$limit   = max( 1, intval( $limit ) );
-			$sql = "SELECT p.ID FROM {$wpdb->posts} p
-				WHERE p.post_type='vtuber'
-				  AND p.post_status='publish'
-				  AND p.ID > %d";
-			$args = [ $from_id ];
-			if ( '' !== $origin ) {
-				$sql .= " AND EXISTS (
-					SELECT 1 FROM {$wpdb->postmeta} mo
-					WHERE mo.post_id = p.ID
-					  AND mo.meta_key = 'vt_data_origin'
-					  AND mo.meta_value = %s
-				)";
-				$args[] = $origin;
-			}
-			$sql .= ' ORDER BY p.ID ASC LIMIT %d';
-			$args[] = $limit;
-			return $wpdb->get_col( $wpdb->prepare( $sql, ...$args ) );
-		};
-
-		$ids = $fetch_ids( $cursor_from, $pool );
+		$ids = $wpdb->get_col(
+			$wpdb->prepare(
+				"SELECT ID FROM {$wpdb->posts}
+				WHERE post_type='vtuber'
+				  AND post_status='publish'
+				  AND ID > %d
+				ORDER BY ID ASC
+				LIMIT %d",
+				$cursor_from,
+				$pool
+			)
+		);
 		if ( empty( $ids ) && $cursor_from > 0 ) {
 			$wrapped = 1;
 			$cursor_from = 0;
-			$ids = $fetch_ids( 0, $pool );
+			$ids = $wpdb->get_col(
+				$wpdb->prepare(
+					"SELECT ID FROM {$wpdb->posts}
+					WHERE post_type='vtuber'
+					  AND post_status='publish'
+					  AND ID > %d
+					ORDER BY ID ASC
+					LIMIT %d",
+					0,
+					$pool
+				)
+			);
 		}
 
 		if ( ! empty( $ids ) ) {
@@ -2171,7 +2167,6 @@ function vt_maint_enrich_full_intro_run( $batch = 40, $force = 0, $min_len = 180
 			'batch'     => $batch,
 			'force'     => $force,
 			'min_len'   => $min_len,
-			'origin_filter' => ( '' === $origin ? 'all' : $origin ),
 			'checked'   => $checked,
 			'updated'   => $updated,
 			'skipped'   => $skipped,
@@ -2188,8 +2183,7 @@ function vt_maint_enrich_full_intro_run( $batch = 40, $force = 0, $min_len = 180
 			' updated=' . intval( $updated ) .
 			' skipped=' . intval( $skipped ) .
 			' no_source=' . intval( $no_source ) .
-			' errors=' . intval( $errors ) .
-			' origin=' . ( '' === $origin ? 'all' : $origin )
+			' errors=' . intval( $errors )
 		);
 		return $report;
 	} finally {

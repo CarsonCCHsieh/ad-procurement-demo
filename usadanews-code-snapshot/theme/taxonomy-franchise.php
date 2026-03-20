@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 /**
  * Template: Taxonomy Franchise (standalone)
  */
@@ -57,7 +57,8 @@ function vtportal_url_with_lang( $path, $lang = '' ) {
 		'/platforms/' => 'vt-platform-index.php',
 		'/agencies/'  => 'vt-agency-index.php',
 		'/countries/' => 'vt-country-index.php',
-				'/roles/'       => 'vt-role-index.php',
+		'/debut-years/' => 'vt-debut-year-index.php',
+		'/roles/'       => 'vt-role-index.php',
 		'/contact/'   => 'vt-contact.php',
 	];
 	$path_key = '/' . trim( $path, '/' ) . '/';
@@ -112,7 +113,7 @@ $has_anime_content = function_exists( 'vtportal_has_public_content' ) ? vtportal
 	<meta charset="<?php bloginfo( 'charset' ); ?>">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<?php if ( ! defined( 'WPSEO_VERSION' ) ) : ?>
-		<meta name="description" content="<?php echo esc_attr( sprintf( __( '渚濈郴鍒椾綔鍝佸綑鏁存鐩細%s銆?', 'vtuber-portal' ), (string) $term->name ) ); ?>">
+		<meta name="description" content="<?php echo esc_attr( sprintf( __( '依系列作品彙整條目：%s。', 'vtuber-portal' ), (string) $term->name ) ); ?>">
 	<?php endif; ?>
 	<?php if ( function_exists( 'vtportal_render_polylang_seo_links_for_term' ) ) : ?>
 		<?php vtportal_render_polylang_seo_links_for_term( $term ); ?>
@@ -126,14 +127,14 @@ $has_anime_content = function_exists( 'vtportal_has_public_content' ) ? vtportal
 <main class="vt-layout">
 	<div class="vt-top-bar">
 		<div class="vt-pill-nav">
-			<a class="vt-pill" href="<?php echo esc_url( vtportal_url_with_lang( '/', $current_lang ) ); ?>"><?php esc_html_e( '鍥為闋?', 'vtuber-portal' ); ?></a>
+			<a class="vt-pill" href="<?php echo esc_url( vtportal_url_with_lang( '/', $current_lang ) ); ?>"><?php esc_html_e( '回首頁', 'vtuber-portal' ); ?></a>
 			<?php if ( $has_anime_content ) : ?>
-			<a class="vt-pill" href="<?php echo esc_url( vtportal_archive_url_for_lang( 'anime-work', $current_lang ) ); ?>"><?php esc_html_e( '浣滃搧璩囨枡搴?', 'vtuber-portal' ); ?></a>
+			<a class="vt-pill" href="<?php echo esc_url( vtportal_archive_url_for_lang( 'anime-work', $current_lang ) ); ?>"><?php esc_html_e( '作品資料庫', 'vtuber-portal' ); ?></a>
 			<?php endif; ?>
-			<a class="vt-pill" href="<?php echo esc_url( vtportal_archive_url_for_lang( 'character', $current_lang ) ); ?>"><?php esc_html_e( '瑙掕壊璩囨枡搴?', 'vtuber-portal' ); ?></a>
+			<a class="vt-pill" href="<?php echo esc_url( vtportal_archive_url_for_lang( 'character', $current_lang ) ); ?>"><?php esc_html_e( '角色資料庫', 'vtuber-portal' ); ?></a>
 		</div>
 		<div class="vt-lang-wrap vt-lang-float">
-			<span class="vt-lang-label"><?php esc_html_e( '瑾炶█', 'vtuber-portal' ); ?></span>
+			<span class="vt-lang-label"><?php esc_html_e( '語言', 'vtuber-portal' ); ?></span>
 			<?php if ( function_exists( 'vtportal_render_language_dropdown' ) ) : ?>
 				<?php vtportal_render_language_dropdown(); ?>
 			<?php elseif ( function_exists( 'pll_the_languages' ) ) : ?>
@@ -144,7 +145,7 @@ $has_anime_content = function_exists( 'vtportal_has_public_content' ) ? vtportal
 
 	<section class="vt-section">
 		<h1><?php echo esc_html( $term->name ); ?></h1>
-		<p class="vt-body-text"><?php esc_html_e( '渚濈郴鍒椾綔鍝佸綑鏁寸殑姊濈洰娓呭柈銆?', 'vtuber-portal' ); ?></p>
+		<p class="vt-body-text"><?php esc_html_e( '依系列作品彙整的條目清單。', 'vtuber-portal' ); ?></p>
 
 		<?php if ( have_posts() ) : ?>
 			<div class="vt-card-grid neo">
@@ -166,11 +167,10 @@ $has_anime_content = function_exists( 'vtportal_has_public_content' ) ? vtportal
 			</div>
 			<div class="vt-pagination"><?php the_posts_pagination(); ?></div>
 		<?php else : ?>
-			<p class="vt-body-text"><?php esc_html_e( '灏氱劇鍏у銆?', 'vtuber-portal' ); ?></p>
+			<p class="vt-body-text"><?php esc_html_e( '尚無內容。', 'vtuber-portal' ); ?></p>
 		<?php endif; ?>
 	</section>
 </main>
 <?php wp_footer(); ?>
 </body>
 </html>
-

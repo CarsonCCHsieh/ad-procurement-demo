@@ -1,10 +1,81 @@
 ﻿# USADA 基礎設施升級採購與開通清單（Linode + Cloudflare）v3
 
-最後更新：2026-03-09（Asia/Taipei）
+最後更新：2026-03-20（Asia/Taipei）
 
 用途：
 - 讓你一次完成「服務開通 + 權限準備」，我拿到必要資訊後可直接執行遷移與切換。
 - 以「先可用、可回滾、可擴充」為原則，不要求你一次買齊所有進階服務。
+
+---
+
+## A. 目前實際狀態總覽（2026-03-20）
+
+### A.1 已確認具備
+
+- Linode API 可正常使用
+  - Instance：`usada-prod-01`
+  - Instance ID：`93660067`
+  - 狀態：`running`
+  - Region：`ap-northeast`（Tokyo）
+  - Plan：`g6-nanode-1`
+  - IPv4：`172.105.219.46`
+- Cloudflare API 可正常使用
+  - Zone：`usadanews.com`
+  - Zone ID：已具備
+  - Cloudflare 指定 Nameserver：
+    - `leia.ns.cloudflare.com`
+    - `rory.ns.cloudflare.com`
+- 既有站點可透過既有 FTP / WordPress 維護流程持續操作
+- GitHub remote 已存在
+  - 維護主 repo：`git@github.com:CarsonCCHsieh/usada-vtuber-maintain-private.git`
+  - 本地工作 repo：`git@github.com:CarsonCCHsieh/ad-procurement-demo.git`
+
+### A.2 目前尚未完成，不能直接視為「已完全可搬移」
+
+1. **GitHub 仍不是最新完整狀態**
+   - 維護主 repo 目前仍有未提交變更：
+     - `wp-content/plugins/wp-vtuber-cpts.php`
+     - `wp-content/mu-plugins/vt-portal-redirects.php`
+     - `wp-content/plugins/vtuber-portal/assets/vtuber-portal.css`
+     - 多個 `vtuber-portal/templates/*.php`
+     - 多個 `tools/*.py`
+     - 新檔：`wp-content/plugins/vtuber-portal/templates/vt-role-index.php`
+   - `ad-procurement-demo` 內的 `usadanews-code-snapshot` 也仍有未提交變更
+   - 結論：**目前版本尚未完整推到 GitHub，搬移前應先整理、提交、推送**
+
+2. **Cloudflare Zone 狀態仍為 `pending`**
+   - 代表網域 `usadanews.com` 的 Nameserver 目前尚未切到 Cloudflare
+   - 在此之前，我可以先完成 Linode 端部署與驗證
+   - 但最終正式切流量，仍需要把網域註冊商上的 NS 改到 Cloudflare
+
+3. **Linode 主機 OS 層登入方式仍是實際阻塞點**
+   - 目前 API 能看到主機存在、運行中
+   - 但若要正式部署 Nginx / PHP / MariaDB / SSL / 還原站點，我還需要至少一種 OS 層登入方式：
+     - root password，或
+     - 已允許的 SSH key，或
+     - 允許我重建這台機器並注入新的 SSH key / cloud-init
+
+4. **Linode Backups 尚未啟用**
+   - 目前狀態：`enabled=false`
+   - 不是立即阻塞，但正式搬移前建議先打開
+
+### A.3 以目前狀況來看，真正還缺的資訊 / 權限
+
+以下是我判定的「最小必要剩餘項目」：
+
+1. **Linode 主機登入方式**
+   - 三選一即可：
+     - `root password`
+     - 我可登入的 SSH private key 對應授權
+     - 明確允許我重建 `usada-prod-01`，用我自己的 SSH public key 重新建置
+
+2. **最終切換 Nameserver 的操作位置**
+   - 你現在已取回 domain DNS 修改控制權，接下來只需要在真正切站當下，能改到：
+     - `leia.ns.cloudflare.com`
+     - `rory.ns.cloudflare.com`
+   - 若你已可操作註冊商後台，則此項視為已具備，只待實際切換
+
+除此之外，**Linode PAT、Cloudflare token、Cloudflare zone、既有站點存取權限都已足夠先展開部署準備**。
 
 ---
 

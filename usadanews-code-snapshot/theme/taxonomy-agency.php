@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 /**
  * Template: Taxonomy Agency (standalone)
  */
@@ -57,7 +57,8 @@ function vtportal_url_with_lang( $path, $lang = '' ) {
 		'/platforms/' => 'vt-platform-index.php',
 		'/agencies/'  => 'vt-agency-index.php',
 		'/countries/' => 'vt-country-index.php',
-				'/roles/'       => 'vt-role-index.php',
+		'/debut-years/' => 'vt-debut-year-index.php',
+		'/roles/'       => 'vt-role-index.php',
 		'/contact/'   => 'vt-contact.php',
 	];
 	$path_key = '/' . trim( $path, '/' ) . '/';
@@ -135,7 +136,7 @@ if ( is_wp_error( $canonical ) ) {
 	<meta charset="<?php bloginfo( 'charset' ); ?>">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<?php if ( ! defined( 'WPSEO_VERSION' ) ) : ?>
-		<meta name="description" content="<?php echo esc_attr( sprintf( __( '渚濈祫绻旀暣鐞?VTuber 鑸囩浉闂滀汉鐗╋細%s銆?', 'vtuber-portal' ), (string) $term->name ) ); ?>">
+		<meta name="description" content="<?php echo esc_attr( sprintf( __( '依組織整理 VTuber 與相關人物：%s。', 'vtuber-portal' ), (string) $term->name ) ); ?>">
 	<?php endif; ?>
 	<?php if ( function_exists( 'vtportal_render_polylang_seo_links_for_term' ) ) : ?>
 		<?php vtportal_render_polylang_seo_links_for_term( $term ); ?>
@@ -149,14 +150,14 @@ if ( is_wp_error( $canonical ) ) {
 <main class="vt-layout">
 	<div class="vt-top-bar">
 		<div class="vt-pill-nav">
-			<a class="vt-pill" href="<?php echo esc_url( vtportal_url_with_lang( '/', $current_lang ) ); ?>"><?php esc_html_e( '鍥為闋?', 'vtuber-portal' ); ?></a>
-			<a class="vt-pill" href="<?php echo esc_url( vtportal_archive_url_for_lang( 'vtuber', $current_lang ) ); ?>"><?php esc_html_e( 'VTuber 鍒楄〃', 'vtuber-portal' ); ?></a>
-			<a class="vt-pill" href="<?php echo esc_url( vtportal_url_with_lang( '/roles/', $current_lang ) ); ?>"><?php esc_html_e( '依風格', 'vtuber-portal' ); ?></a>
-			<a class="vt-pill" href="<?php echo esc_url( vtportal_url_with_lang( '/agencies/', $current_lang ) ); ?>"><?php esc_html_e( '渚濈祫绻?', 'vtuber-portal' ); ?></a>
-			<a class="vt-pill" href="<?php echo esc_url( vtportal_url_with_lang( '/platforms/', $current_lang ) ); ?>"><?php esc_html_e( '渚濆钩鍙?', 'vtuber-portal' ); ?></a>
+			<a class="vt-pill" href="<?php echo esc_url( vtportal_url_with_lang( '/', $current_lang ) ); ?>"><?php esc_html_e( '回首頁', 'vtuber-portal' ); ?></a>
+			<a class="vt-pill" href="<?php echo esc_url( vtportal_archive_url_for_lang( 'vtuber', $current_lang ) ); ?>"><?php esc_html_e( 'VTuber 列表', 'vtuber-portal' ); ?></a>
+			<a class="vt-pill" href="<?php echo esc_url( vtportal_url_with_lang( '/roles/', $current_lang ) ); ?>"><?php esc_html_e( 'Style Tags', 'vtuber-portal' ); ?></a>
+			<a class="vt-pill" href="<?php echo esc_url( vtportal_url_with_lang( '/agencies/', $current_lang ) ); ?>"><?php esc_html_e( '依組織', 'vtuber-portal' ); ?></a>
+			<a class="vt-pill" href="<?php echo esc_url( vtportal_url_with_lang( '/platforms/', $current_lang ) ); ?>"><?php esc_html_e( '依平台', 'vtuber-portal' ); ?></a>
 		</div>
 		<div class="vt-lang-wrap vt-lang-float">
-			<span class="vt-lang-label"><?php esc_html_e( '瑾炶█', 'vtuber-portal' ); ?></span>
+			<span class="vt-lang-label"><?php esc_html_e( '語言', 'vtuber-portal' ); ?></span>
 			<?php if ( function_exists( 'vtportal_render_language_dropdown' ) ) : ?>
 				<?php vtportal_render_language_dropdown(); ?>
 			<?php elseif ( function_exists( 'pll_the_languages' ) ) : ?>
@@ -170,15 +171,16 @@ if ( is_wp_error( $canonical ) ) {
 		<?php if ( ! empty( $term->description ) ) : ?>
 			<p class="vt-body-text"><?php echo esc_html( $term->description ); ?></p>
 		<?php else : ?>
-			<p class="vt-body-text"><?php esc_html_e( '渚濈祫绻斿綑鏁寸殑姊濈洰娓呭柈銆?', 'vtuber-portal' ); ?></p>
+			<p class="vt-body-text"><?php esc_html_e( '依組織彙整的條目清單。', 'vtuber-portal' ); ?></p>
 		<?php endif; ?>
+
 		<div class="vt-body-text" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:10px 0 16px;">
-			<span style="opacity:.85;"><?php esc_html_e( '探索更多集合頁：', 'vtuber-portal' ); ?></span>
-			<a class="vt-pill" href="<?php echo esc_url( vtportal_url_with_lang( '/agencies/', $current_lang ) ); ?>"><?php esc_html_e( '全部組織', 'vtuber-portal' ); ?></a>
-			<a class="vt-pill" href="<?php echo esc_url( vtportal_url_with_lang( '/roles/', $current_lang ) ); ?>"><?php esc_html_e( '依風格', 'vtuber-portal' ); ?></a>
-			<a class="vt-pill" href="<?php echo esc_url( vtportal_url_with_lang( '/platforms/', $current_lang ) ); ?>"><?php esc_html_e( '依平台', 'vtuber-portal' ); ?></a>
-			<a class="vt-pill" href="<?php echo esc_url( vtportal_url_with_lang( '/countries/', $current_lang ) ); ?>"><?php esc_html_e( '依國家', 'vtuber-portal' ); ?></a>
-			<a class="vt-pill" href="<?php echo esc_url( vtportal_url_with_lang( '/debut-years/', $current_lang ) ); ?>"><?php esc_html_e( '依出道年', 'vtuber-portal' ); ?></a>
+			<span style="opacity:.85;"><?php esc_html_e( 'Related collections:', 'vtuber-portal' ); ?></span>
+			<a class="vt-pill" href="<?php echo esc_url( vtportal_url_with_lang( '/roles/', $current_lang ) ); ?>"><?php esc_html_e( 'All Style Tags', 'vtuber-portal' ); ?></a>
+			<a class="vt-pill" href="<?php echo esc_url( vtportal_url_with_lang( '/agencies/', $current_lang ) ); ?>"><?php esc_html_e( 'By Agency', 'vtuber-portal' ); ?></a>
+			<a class="vt-pill" href="<?php echo esc_url( vtportal_url_with_lang( '/platforms/', $current_lang ) ); ?>"><?php esc_html_e( 'By Platform', 'vtuber-portal' ); ?></a>
+			<a class="vt-pill" href="<?php echo esc_url( vtportal_url_with_lang( '/countries/', $current_lang ) ); ?>"><?php esc_html_e( 'By Country', 'vtuber-portal' ); ?></a>
+			<a class="vt-pill" href="<?php echo esc_url( vtportal_url_with_lang( '/debut-years/', $current_lang ) ); ?>"><?php esc_html_e( 'By Debut Year', 'vtuber-portal' ); ?></a>
 		</div>
 
 		<?php if ( have_posts() ) : ?>
@@ -231,11 +233,10 @@ if ( is_wp_error( $canonical ) ) {
 			</div>
 			<div class="vt-pagination"><?php the_posts_pagination(); ?></div>
 		<?php else : ?>
-			<p class="vt-body-text"><?php esc_html_e( '灏氱劇鍏у銆?', 'vtuber-portal' ); ?></p>
+			<p class="vt-body-text"><?php esc_html_e( '尚無內容。', 'vtuber-portal' ); ?></p>
 		<?php endif; ?>
 	</section>
 </main>
 <?php wp_footer(); ?>
 </body>
 </html>
-
