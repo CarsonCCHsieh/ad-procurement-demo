@@ -741,14 +741,10 @@ textarea:focus {
 }
 
 .dense-table.performance-table {
-  grid-template-columns: 120px minmax(220px, 1.35fr) 90px 110px 90px 110px 120px minmax(200px, 1.2fr) 90px;
+  grid-template-columns: 110px minmax(220px, 1.35fr) 90px 100px 90px 100px 140px minmax(220px, 1.2fr);
   overflow: auto;
   -ms-overflow-style: none;
   scrollbar-width: none;
-}
-
-.dense-table.performance-table--managed {
-  grid-template-columns: 120px minmax(220px, 1.35fr) 90px 110px 90px 110px 120px minmax(200px, 1.2fr) 90px 88px;
 }
 
 .dense-table.pricing-table {

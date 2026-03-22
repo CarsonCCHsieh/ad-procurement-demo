@@ -103,6 +103,15 @@ function summarizeVendorRemains(batch: { splits: VendorSplitExec[] }): string {
   return values.reduce((sum, value) => sum + value, 0).toLocaleString("zh-TW");
 }
 
+function summarizeVendorRemainsValue(batch: { splits: VendorSplitExec[] }): number | null {
+  if (batch.splits.length === 0) return null;
+  const values = batch.splits
+    .map((split) => (typeof split.remains === "number" && Number.isFinite(split.remains) ? split.remains : null))
+    .filter((value): value is number => value != null);
+  if (values.length === 0) return null;
+  return values.reduce((sum, value) => sum + value, 0);
+}
+
 function summarizeBatchProgress(batch: DemoOrderBatch): string {
   if (batch.status === "scheduled") {
     return batch.plannedDate ? `預計 ${batch.plannedDate} 送出` : "待送出";
@@ -131,6 +140,7 @@ type VendorRow = {
   kind: string;
   amount: number;
   quantity: number;
+  remainsValue: number | null;
   remainsText: string;
   progressText: string;
   placementText: string;
@@ -149,6 +159,7 @@ type VendorMetricState = {
   value?: number;
   updatedAt?: string;
   error?: string;
+  source?: "meta" | "estimated";
 };
 
 const VENDOR_METRIC_BY_PLACEMENT: Partial<Record<string, { key: MetaKpiMetricKey; label: string }>> = {
@@ -199,6 +210,7 @@ function buildVendorRows(source: DemoOrder[]): VendorRow[] {
           kind: order.kind === "new" ? "新案" : "加購",
           amount: batch.amount,
           quantity: batch.quantity,
+          remainsValue: summarizeVendorRemainsValue(batch),
           remainsText: summarizeBatchRemains(batch),
           progressText: summarizeBatchProgress(batch),
           placementText: getPlacementLabel(line.placement) ?? line.placement,
@@ -380,12 +392,18 @@ export function AdPerformancePage() {
     try {
       const result = await fetchMetaPostMetrics({ cfg: metaCfg, postId: row.link });
       if (!result.ok) {
+        const estimatedValue =
+          typeof row.remainsValue === "number" && Number.isFinite(row.remainsValue)
+            ? Math.max(0, row.quantity - row.remainsValue)
+            : null;
         setVendorMetrics((current) => ({
           ...current,
           [row.id]: {
             loading: false,
             updatedAt: new Date().toISOString(),
-            error: result.detail || "讀取失敗",
+            value: estimatedValue != null ? estimatedValue : undefined,
+            source: estimatedValue != null ? "estimated" : undefined,
+            error: estimatedValue != null ? "" : result.detail || "讀取失敗",
           },
         }));
         return;
@@ -398,6 +416,7 @@ export function AdPerformancePage() {
           loading: false,
           updatedAt: new Date().toISOString(),
           value,
+          source: "meta",
           error: "",
         },
       }));
@@ -907,7 +926,7 @@ export function AdPerformancePage() {
           {visibleVendorRows.length === 0 ? (
             <div className="hint">目前沒有廠商互動案件。</div>
           ) : (
-            <div className={`dense-table performance-table${canManage ? " performance-table--managed" : ""}`}>
+            <div className="dense-table performance-table">
               <div className="dense-th">申請人</div>
               <div className="dense-th">案件名</div>
               <div className="dense-th">案件種類</div>
@@ -915,9 +934,7 @@ export function AdPerformancePage() {
               <div className="dense-th">數量</div>
               <div className="dense-th">剩餘數量</div>
               <div className="dense-th">成效</div>
-              <div className="dense-th">執行進度</div>
-              <div className="dense-th">連結</div>
-              {canManage ? <div className="dense-th">操作</div> : null}
+              <div className="dense-th">執行進度 / 操作</div>
 
               {visibleVendorRows.map((row) => (
                 <div className="dense-tr" key={row.id}>
@@ -927,6 +944,24 @@ export function AdPerformancePage() {
                   <div className="dense-td dense-main">
                     <div className="dense-title">{row.caseName}</div>
                     <div className="dense-meta">{row.orderNo} / {row.placementText}</div>
+                    <div className="actions inline" style={{ marginTop: 6 }}>
+                      <button
+                        className="btn sm"
+                        type="button"
+                        disabled={!row.link}
+                        onClick={() => {
+                          if (!row.link) return;
+                          window.open(row.link, "_blank", "noopener,noreferrer");
+                        }}
+                      >
+                        連結
+                      </button>
+                      {canManage ? (
+                        <button className="btn danger sm" type="button" onClick={() => void deleteVendorRow(row.orderId, row.lineIndex, row.batchId)}>
+                          刪除
+                        </button>
+                      ) : null}
+                    </div>
                   </div>
                   <div className="dense-td">
                     <div className="dense-title">{row.kind}</div>
@@ -951,6 +986,9 @@ export function AdPerformancePage() {
                             ? vendorMetrics[row.id]!.value!.toLocaleString("zh-TW")
                             : "-"}
                     </div>
+                    {vendorMetrics[row.id]?.source === "estimated" ? (
+                      <div className="dense-meta">估算值（API 讀取失敗時以執行進度換算）</div>
+                    ) : null}
                   </div>
                   <div className="dense-td dense-main">
                     <div className="dense-title" style={row.hasWarning ? { color: "rgba(220, 38, 38, 0.95)" } : undefined}>
@@ -980,26 +1018,6 @@ export function AdPerformancePage() {
                       更新時間：{row.lastSyncAt ? new Date(row.lastSyncAt).toLocaleString("zh-TW") : "-"}
                     </div>
                   </div>
-                  <div className="dense-td">
-                    <button
-                      className="btn"
-                      type="button"
-                      disabled={!row.link}
-                      onClick={() => {
-                        if (!row.link) return;
-                        window.open(row.link, "_blank", "noopener,noreferrer");
-                      }}
-                    >
-                      連結
-                    </button>
-                  </div>
-                  {canManage ? (
-                    <div className="dense-td">
-                      <button className="btn danger" type="button" onClick={() => void deleteVendorRow(row.orderId, row.lineIndex, row.batchId)}>
-                        刪除
-                      </button>
-                    </div>
-                  ) : null}
                 </div>
               ))}
             </div>
