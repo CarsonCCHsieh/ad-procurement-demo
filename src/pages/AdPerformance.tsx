@@ -135,6 +135,8 @@ type VendorRow = {
   lastSyncAt?: string;
   hasWarning: boolean;
   canRetry: boolean;
+  appendStatusText?: string;
+  appendWarning?: boolean;
 };
 
 type VendorMetricState = {
@@ -166,15 +168,28 @@ function buildVendorRows(source: DemoOrder[]): VendorRow[] {
           ? order.links.find((value) => typeof value === "string" && value.trim()) ?? ""
           : "";
 
+        const appendEnabled = line.appendOnComplete?.enabled && line.appendOnComplete.quantity > 0;
+        const isFinalBatch = Number(batch.stageIndex) === Number(batch.stageCount);
+        const appendExec = line.appendExec;
+        const appendStatusText = (() => {
+          if (!appendEnabled) return "";
+          if (!isFinalBatch) return "追加：等待最終批次完成";
+          if (!appendExec || appendExec.status === "pending") return "追加：待觸發";
+          if (appendExec.status === "failed") return `追加失敗：${appendExec.error || "請通知管理員"}`;
+          if (appendExec.status === "completed") return "追加：已完成";
+          if (appendExec.status === "submitted") return "追加：執行中";
+          return "";
+        })();
+
         return {
           id: `${order.id}-${lineIndex}-${batch.id}`,
           orderId: order.id,
           lineIndex,
           batchId: batch.id,
           applicant: order.applicant,
-          caseName: batch.stageCount > 1 ? `${order.caseName}?${batch.stageIndex}/${batch.stageCount} ??` : order.caseName,
+          caseName: batch.stageCount > 1 ? `${order.caseName}（${batch.stageIndex}/${batch.stageCount} 日）` : order.caseName,
           orderNo: order.orderNo,
-          kind: order.kind === "new" ? "??" : "??",
+          kind: order.kind === "new" ? "新案" : "加購",
           amount: batch.amount,
           quantity: batch.quantity,
           remainsText: summarizeBatchRemains(batch),
@@ -182,7 +197,7 @@ function buildVendorRows(source: DemoOrder[]): VendorRow[] {
           placementText: getPlacementLabel(line.placement) ?? line.placement,
           link: firstLink,
           metricKey: metric?.key,
-          metricLabel: metric?.label ?? "????",
+          metricLabel: metric?.label ?? "目前指標",
           lastSyncAt:
             batch.lastSyncAt ??
             batch.submittedAt ??
@@ -194,6 +209,8 @@ function buildVendorRows(source: DemoOrder[]): VendorRow[] {
             order.createdAt,
           hasWarning: batch.warnings.length > 0 || batch.splits.some((split) => !!split.error),
           canRetry: isBatchRetryable(batch),
+          appendStatusText,
+          appendWarning: appendExec?.status === "failed",
         };
       }),
     ),
@@ -884,16 +901,16 @@ export function AdPerformancePage() {
             <div className="hint">目前沒有廠商互動案件。</div>
           ) : (
             <div className={`dense-table performance-table${canManage ? " performance-table--managed" : ""}`}>
-              <div className="dense-th">???</div>
-              <div className="dense-th">???</div>
-              <div className="dense-th">????</div>
-              <div className="dense-th">??</div>
-              <div className="dense-th">??</div>
-              <div className="dense-th">????</div>
-              <div className="dense-th">??</div>
-              <div className="dense-th">????</div>
-              <div className="dense-th">??</div>
-              {canManage ? <div className="dense-th">??</div> : null}
+              <div className="dense-th">申請人</div>
+              <div className="dense-th">案件名</div>
+              <div className="dense-th">案件種類</div>
+              <div className="dense-th">金額</div>
+              <div className="dense-th">數量</div>
+              <div className="dense-th">剩餘數量</div>
+              <div className="dense-th">成效</div>
+              <div className="dense-th">執行進度</div>
+              <div className="dense-th">連結</div>
+              {canManage ? <div className="dense-th">操作</div> : null}
 
               {visibleVendorRows.map((row) => (
                 <div className="dense-tr" key={row.id}>
@@ -920,7 +937,7 @@ export function AdPerformancePage() {
                     <div className="dense-title">{row.metricLabel}</div>
                     <div className="dense-meta">
                       {vendorMetrics[row.id]?.loading
-                        ? "???..."
+                        ? "讀取中..."
                         : vendorMetrics[row.id]?.error
                           ? "--"
                           : typeof vendorMetrics[row.id]?.value === "number"
@@ -940,12 +957,20 @@ export function AdPerformancePage() {
                           onClick={() => void retryVendorBatch(row)}
                           disabled={!!retryingVendorRows[row.id]}
                         >
-                          {retryingVendorRows[row.id] ? "?????..." : "????"}
+                          {retryingVendorRows[row.id] ? "重送中..." : "重送"}
                         </button>
                       </div>
                     ) : null}
+                    {row.appendStatusText ? (
+                      <div
+                        className="dense-meta"
+                        style={row.appendWarning ? { color: "rgba(220, 38, 38, 0.95)", marginTop: 4 } : { marginTop: 4 }}
+                      >
+                        {row.appendStatusText}
+                      </div>
+                    ) : null}
                     <div className="dense-meta">
-                      ?????{row.lastSyncAt ? new Date(row.lastSyncAt).toLocaleString("zh-TW") : "-"}
+                      更新時間：{row.lastSyncAt ? new Date(row.lastSyncAt).toLocaleString("zh-TW") : "-"}
                     </div>
                   </div>
                   <div className="dense-td">
@@ -958,13 +983,13 @@ export function AdPerformancePage() {
                         window.open(row.link, "_blank", "noopener,noreferrer");
                       }}
                     >
-                      ??
+                      連結
                     </button>
                   </div>
                   {canManage ? (
                     <div className="dense-td">
                       <button className="btn danger" type="button" onClick={() => void deleteVendorRow(row.orderId, row.lineIndex, row.batchId)}>
-                        ??
+                        刪除
                       </button>
                     </div>
                   ) : null}

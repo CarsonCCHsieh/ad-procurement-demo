@@ -36,8 +36,8 @@ jobs:
           JAP_KEY: ${{ secrets.JAP_KEY }}
         run: node scripts/fetchServices.mjs
 
-      - name: Build
-        run: npm run build
+      - name: Encoding & build
+        run: npm run check:encoding && npm run build
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

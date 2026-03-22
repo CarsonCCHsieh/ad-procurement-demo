@@ -11,6 +11,7 @@ import {
   resetConfig,
   saveConfig,
   type AppConfigV1,
+  type CompletionAppendConfig,
   type PlacementConfig,
   type SupplierConfig,
   type VendorKey,
@@ -41,6 +42,9 @@ function cloneConfig(cfg: AppConfigV1): AppConfigV1 {
     placements: cfg.placements.map((placement) => ({
       ...placement,
       suppliers: placement.suppliers.map((supplier) => ({ ...supplier })),
+      appendOnComplete: placement.appendOnComplete
+        ? { ...placement.appendOnComplete }
+        : { enabled: false, vendor: "justanotherpanel", serviceId: 0, quantity: 0 },
     })),
   };
 }
@@ -63,6 +67,18 @@ function readCurrentMinUnit(pricingCfg: PricingConfigV1, placement: AdPlacement)
 
 function sanitizePlacementKey(raw: string) {
   return raw.trim().toLowerCase().replace(/[^a-z0-9_]+/g, "_").replace(/^_+|_+$/g, "");
+}
+
+function ensureAppendConfig(raw?: CompletionAppendConfig): CompletionAppendConfig {
+  if (!raw) {
+    return { enabled: false, vendor: "justanotherpanel", serviceId: 0, quantity: 0 };
+  }
+  return {
+    enabled: raw.enabled === true,
+    vendor: raw.vendor,
+    serviceId: Number.isFinite(raw.serviceId) && raw.serviceId > 0 ? Math.floor(raw.serviceId) : 0,
+    quantity: Number.isFinite(raw.quantity) && raw.quantity > 0 ? Math.floor(raw.quantity) : 0,
+  };
 }
 
 export function SettingsPage() {
@@ -177,6 +193,27 @@ export function SettingsPage() {
     setPlacementField(placement, "splitStrategy", splitStrategy);
   };
 
+  const setPlacementAppendField = <K extends keyof CompletionAppendConfig>(
+    placement: AdPlacement,
+    field: K,
+    value: CompletionAppendConfig[K],
+  ) => {
+    setCfg((current) => ({
+      ...current,
+      placements: current.placements.map((item) =>
+        item.placement !== placement
+          ? item
+          : {
+              ...item,
+              appendOnComplete: {
+                ...ensureAppendConfig(item.appendOnComplete),
+                [field]: value,
+              },
+            },
+      ),
+    }));
+  };
+
   const setSupplierField = <K extends keyof SupplierConfig>(
     placement: AdPlacement,
     index: number,
@@ -262,6 +299,7 @@ export function SettingsPage() {
       label,
       enabled: true,
       splitStrategy: "random" as const,
+      appendOnComplete: { enabled: false, vendor: "justanotherpanel", serviceId: 0, quantity: 0 },
       suppliers: [],
     };
     const nextCfg = {
@@ -749,6 +787,88 @@ export function SettingsPage() {
                     <input value={placementCfg.placement} readOnly />
                   </div>
                 </div>
+
+                {(() => {
+                  const appendCfg = ensureAppendConfig(placementCfg.appendOnComplete);
+                  return (
+                    <div className="dense-details" style={{ marginBottom: 10 }}>
+                      <div className="dense-panel">
+                        <div className="dense-title" style={{ marginBottom: 8 }}>追加設定</div>
+                        <div className="hint" style={{ marginBottom: 8 }}>
+                          當此品項完成時（預設單次下單完成，平均模式為最後一批完成）可固定追加一筆供應商訂單。
+                        </div>
+                        <div className="row cols4">
+                          <div className="field">
+                            <div className="label">狀態</div>
+                            <select
+                              value={appendCfg.enabled ? "on" : "off"}
+                              onChange={(event) =>
+                                setPlacementAppendField(placementCfg.placement, "enabled", event.target.value === "on")
+                              }
+                            >
+                              <option value="off">停用</option>
+                              <option value="on">啟用</option>
+                            </select>
+                          </div>
+                          <div className="field">
+                            <div className="label">供應商</div>
+                            <select
+                              value={appendCfg.vendor}
+                              onChange={(event) =>
+                                setPlacementAppendField(placementCfg.placement, "vendor", event.target.value as VendorKey)
+                              }
+                            >
+                              {VENDORS.map((vendor) => (
+                                <option key={`${placementCfg.placement}-append-${vendor}`} value={vendor}>
+                                  {vendorLabel(vendor)}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="field">
+                            <div className="label">serviceId</div>
+                            <input
+                              value={String(appendCfg.serviceId)}
+                              inputMode="numeric"
+                              onChange={(event) =>
+                                setPlacementAppendField(
+                                  placementCfg.placement,
+                                  "serviceId",
+                                  Number(event.target.value) || 0,
+                                )
+                              }
+                            />
+                            <ServicePicker
+                              vendor={appendCfg.vendor}
+                              currentServiceId={appendCfg.serviceId}
+                              onPick={(service) =>
+                                setPlacementAppendField(placementCfg.placement, "serviceId", service.id)
+                              }
+                              compact
+                              buttonLabel="從清單選擇"
+                              buttonClassName="btn ghost sm"
+                            />
+                          </div>
+                          <div className="field">
+                            <div className="label">追加數量</div>
+                            <input
+                              value={String(appendCfg.quantity)}
+                              inputMode="numeric"
+                              onChange={(event) =>
+                                setPlacementAppendField(
+                                  placementCfg.placement,
+                                  "quantity",
+                                  Number(event.target.value) || 0,
+                                )
+                              }
+                              placeholder="例如 150"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 <div className="dense-table suppliers-table">
                   <div className="dense-th">狀態</div>

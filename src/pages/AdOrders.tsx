@@ -217,6 +217,8 @@ export function AdOrdersPage() {
       const qty = Number(item.target);
       const amount = Number.isFinite(qty) && qty > 0 ? calcInternalLineAmount(item.placement, qty) : 0;
       const plan = computed.linePlans[index] ?? { splits: [], warnings: [] as string[] };
+      const placementCfg = getPlacementConfig(item.placement);
+      const appendCfg = placementCfg.appendOnComplete;
       const batches =
         state.submitMode === "average" && state.scheduleStartDate && state.scheduleEndDate
           ? buildAverageBatches({
@@ -240,6 +242,15 @@ export function AdOrdersPage() {
         amount,
         splits: plan.splits,
         warnings: plan.warnings,
+        appendOnComplete:
+          appendCfg && appendCfg.enabled && appendCfg.serviceId > 0 && appendCfg.quantity > 0
+            ? {
+                enabled: true,
+                vendor: appendCfg.vendor,
+                serviceId: appendCfg.serviceId,
+                quantity: appendCfg.quantity,
+              }
+            : undefined,
         mode: state.submitMode,
         startDate: state.submitMode === "average" ? state.scheduleStartDate : undefined,
         endDate: state.submitMode === "average" ? state.scheduleEndDate : undefined,

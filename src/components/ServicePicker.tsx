@@ -1,4 +1,4 @@
-﻿import { useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import type { VendorKey } from "../config/appConfig";
 import { getVendorServices, type VendorService } from "../config/serviceCatalog";
 

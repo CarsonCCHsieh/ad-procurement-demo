@@ -1,4 +1,4 @@
-﻿import http from "node:http";
+import http from "node:http";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, extname, resolve } from "node:path";
 import { networkInterfaces } from "node:os";
@@ -77,6 +77,10 @@ const VENDOR_TERMINAL_STATUS = [
   "failed",
   "error",
 ];
+
+function isVendorKey(value) {
+  return value === "smmraja" || value === "urpanel" || value === "justanotherpanel";
+}
 
 function json(res, status, payload) {
   res.writeHead(status, {
@@ -575,6 +579,62 @@ function cloneSplitForSchedule(split, quantity) {
   };
 }
 
+function normalizeAppendConfig(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  if (raw.enabled !== true) return null;
+  const vendor = isVendorKey(raw.vendor) ? raw.vendor : null;
+  const serviceId = Number(raw.serviceId);
+  const quantity = Number(raw.quantity);
+  if (!vendor) return null;
+  if (!Number.isFinite(serviceId) || serviceId <= 0) return null;
+  if (!Number.isFinite(quantity) || quantity <= 0) return null;
+  return {
+    enabled: true,
+    vendor,
+    serviceId: Math.floor(serviceId),
+    quantity: Math.floor(quantity),
+  };
+}
+
+function normalizeAppendExec(raw, fallbackConfig = null) {
+  if (!raw || typeof raw !== "object") {
+    if (!fallbackConfig) return undefined;
+    return {
+      status: "pending",
+      vendor: fallbackConfig.vendor,
+      serviceId: fallbackConfig.serviceId,
+      quantity: fallbackConfig.quantity,
+    };
+  }
+
+  const vendor = isVendorKey(raw.vendor)
+    ? raw.vendor
+    : fallbackConfig?.vendor && isVendorKey(fallbackConfig.vendor)
+      ? fallbackConfig.vendor
+      : null;
+  if (!vendor) return undefined;
+
+  const serviceId = Number(raw.serviceId ?? fallbackConfig?.serviceId ?? 0);
+  const quantity = Number(raw.quantity ?? fallbackConfig?.quantity ?? 0);
+  if (!Number.isFinite(serviceId) || serviceId <= 0) return undefined;
+  if (!Number.isFinite(quantity) || quantity <= 0) return undefined;
+
+  const status = raw.status === "submitted" || raw.status === "failed" || raw.status === "completed" ? raw.status : "pending";
+
+  return {
+    status,
+    vendor,
+    serviceId: Math.floor(serviceId),
+    quantity: Math.floor(quantity),
+    vendorOrderId: Number.isFinite(Number(raw.vendorOrderId)) ? Number(raw.vendorOrderId) : undefined,
+    vendorStatus: typeof raw.vendorStatus === "string" ? raw.vendorStatus : undefined,
+    remains: Number.isFinite(Number(raw.remains)) ? Number(raw.remains) : undefined,
+    error: typeof raw.error === "string" ? raw.error : "",
+    submittedAt: typeof raw.submittedAt === "string" ? raw.submittedAt : undefined,
+    lastSyncAt: typeof raw.lastSyncAt === "string" ? raw.lastSyncAt : undefined,
+  };
+}
+
 function normalizeBatchStatus(batch) {
   const splits = Array.isArray(batch?.splits) ? batch.splits : [];
   if (!splits.length) return "scheduled";
@@ -635,11 +695,15 @@ function flattenBatchSplits(batches) {
 }
 
 function buildLineFromBatches(line, batches) {
+  const appendOnComplete = normalizeAppendConfig(line?.appendOnComplete);
+  const appendExec = normalizeAppendExec(line?.appendExec, appendOnComplete);
   return {
     ...line,
     quantity: batches.reduce((sum, batch) => sum + Number(batch?.quantity ?? 0), 0),
     amount: batches.reduce((sum, batch) => sum + Number(batch?.amount ?? 0), 0),
     warnings: Array.isArray(line?.warnings) ? [...line.warnings] : [],
+    appendOnComplete: appendOnComplete ?? undefined,
+    appendExec,
     batches,
     splits: flattenBatchSplits(batches),
   };
@@ -653,6 +717,150 @@ function deriveOrderStatus(lines) {
   if (statuses.every((status) => status === "failed")) return "failed";
   if (statuses.some((status) => status === "failed" || status === "partial")) return "partial";
   return "submitted";
+}
+
+function getFinalBatch(batches) {
+  const list = Array.isArray(batches) ? batches.slice() : [];
+  if (!list.length) return null;
+  list.sort((a, b) => Number(a?.stageIndex ?? 0) - Number(b?.stageIndex ?? 0));
+  return list[list.length - 1];
+}
+
+function isFailureStatus(status) {
+  const s = String(status ?? "").trim().toLowerCase();
+  if (!s) return false;
+  return s.includes("fail") || s.includes("error") || s.includes("cancel") || s.includes("refund");
+}
+
+function isAppendCompleted(exec) {
+  if (!exec) return false;
+  if (exec.status === "completed") return true;
+  return isVendorSplitDone(exec);
+}
+
+async function refreshAppendExecStatus(appendExec) {
+  if (!appendExec?.vendor || !appendExec?.vendorOrderId || isAppendCompleted(appendExec)) {
+    return appendExec;
+  }
+  const status = await fetchVendorStatus(appendExec.vendor, appendExec.vendorOrderId);
+  const next = {
+    ...appendExec,
+    status: "submitted",
+    vendorStatus: status.status ?? appendExec.vendorStatus,
+    remains: status.remains ?? appendExec.remains,
+    error: status.error ?? "",
+    lastSyncAt: new Date().toISOString(),
+  };
+  if (isFailureStatus(next.vendorStatus) || next.error) next.status = "failed";
+  else if (isAppendCompleted(next)) next.status = "completed";
+  return next;
+}
+
+async function maybeHandleLineAppend(line, links) {
+  const appendOnComplete = normalizeAppendConfig(line?.appendOnComplete);
+  if (!appendOnComplete) return { line, syncedCount: 0 };
+
+  let appendExec = normalizeAppendExec(line?.appendExec, appendOnComplete);
+  let syncedCount = 0;
+
+  if (appendExec) {
+    const refreshed = await refreshAppendExecStatus(appendExec);
+    if (refreshed !== appendExec) {
+      appendExec = refreshed;
+      syncedCount += 1;
+    }
+  }
+
+  if (appendExec?.status === "submitted" || appendExec?.status === "completed" || appendExec?.status === "failed") {
+    return { line: { ...line, appendOnComplete, appendExec }, syncedCount };
+  }
+
+  const finalBatch = getFinalBatch(normalizeLineBatches(line));
+  if (!finalBatch || finalBatch.status !== "completed") {
+    return {
+      line: {
+        ...line,
+        appendOnComplete,
+        appendExec: appendExec ?? {
+          status: "pending",
+          vendor: appendOnComplete.vendor,
+          serviceId: appendOnComplete.serviceId,
+          quantity: appendOnComplete.quantity,
+        },
+      },
+      syncedCount,
+    };
+  }
+
+  const firstLink = Array.isArray(links) ? links.find((value) => typeof value === "string" && value.trim()) : "";
+  if (!firstLink) {
+    return {
+      line: {
+        ...line,
+        appendOnComplete,
+        appendExec: {
+          status: "failed",
+          vendor: appendOnComplete.vendor,
+          serviceId: appendOnComplete.serviceId,
+          quantity: appendOnComplete.quantity,
+          error: "缺少可送單的連結",
+          lastSyncAt: new Date().toISOString(),
+        },
+      },
+      syncedCount,
+    };
+  }
+
+  const result = await submitVendorSplit({
+    vendor: appendOnComplete.vendor,
+    serviceId: appendOnComplete.serviceId,
+    quantity: appendOnComplete.quantity,
+    link: firstLink,
+  });
+
+  syncedCount += 1;
+  const now = new Date().toISOString();
+  if (!result.ok) {
+    return {
+      line: {
+        ...line,
+        appendOnComplete,
+        appendExec: {
+          status: "failed",
+          vendor: appendOnComplete.vendor,
+          serviceId: appendOnComplete.serviceId,
+          quantity: appendOnComplete.quantity,
+          error: result.error ?? "追加送單失敗",
+          lastSyncAt: now,
+        },
+      },
+      syncedCount,
+    };
+  }
+
+  const nextExec = {
+    status: "submitted",
+    vendor: appendOnComplete.vendor,
+    serviceId: appendOnComplete.serviceId,
+    quantity: appendOnComplete.quantity,
+    vendorOrderId: result.vendorOrderId,
+    vendorStatus: result.status?.status ?? "submitted",
+    remains: result.status?.remains ?? appendOnComplete.quantity,
+    error: result.status?.error ?? "",
+    submittedAt: now,
+    lastSyncAt: now,
+  };
+  if (isFailureStatus(nextExec.vendorStatus) || nextExec.error) nextExec.status = "failed";
+  else if (isAppendCompleted(nextExec)) nextExec.status = "completed";
+
+  return {
+    line: {
+      ...line,
+      appendOnComplete,
+      appendExec: nextExec,
+    },
+    syncedCount,
+  };
 }
 
 async function submitVendorSplit({ vendor, serviceId, quantity, link }) {
@@ -858,8 +1066,9 @@ async function retrySharedOrderBatch(orderId, lineIndex, batchId) {
   const result = await submitBatch(resetBatch, order?.links);
   batches[batchIndex] = result.batch;
 
-  const nextLine = buildLineFromBatches(targetLine, batches);
-  lines[lineIndex] = nextLine;
+  const nextLineBase = buildLineFromBatches(targetLine, batches);
+  const appendResult = await maybeHandleLineAppend(nextLineBase, order?.links);
+  lines[lineIndex] = appendResult.line;
   const nextOrder = {
     ...order,
     lines,
@@ -938,7 +1147,10 @@ async function syncSharedOrders() {
         };
         nextBatches.push(nextBatch);
       }
-      nextLines.push(buildLineFromBatches(line, nextBatches));
+      const nextLineBase = buildLineFromBatches(line, nextBatches);
+      const appendResult = await maybeHandleLineAppend(nextLineBase, order?.links);
+      syncedCount += appendResult.syncedCount;
+      nextLines.push(appendResult.line);
     }
 
     nextOrders.push({
@@ -1042,11 +1254,21 @@ const server = http.createServer(async (req, res) => {
       let failureCount = 0;
 
       for (const line of lines) {
+        const appendOnComplete = normalizeAppendConfig(line?.appendOnComplete);
         const nextLine = {
           placement: line?.placement,
           quantity: Number(line?.quantity ?? 0),
           amount: Number(line?.amount ?? 0),
           warnings: Array.isArray(line?.warnings) ? [...line.warnings] : [],
+          appendOnComplete: appendOnComplete ?? undefined,
+          appendExec: appendOnComplete
+            ? {
+                status: "pending",
+                vendor: appendOnComplete.vendor,
+                serviceId: appendOnComplete.serviceId,
+                quantity: appendOnComplete.quantity,
+              }
+            : undefined,
           splits: [],
           mode: line?.mode === "average" ? "average" : "instant",
           startDate: typeof line?.startDate === "string" ? line.startDate : undefined,
@@ -1077,7 +1299,9 @@ const server = http.createServer(async (req, res) => {
           nextBatches.push(result.batch);
         }
 
-        submittedLines.push(buildLineFromBatches(nextLine, nextBatches));
+        const nextLineBase = buildLineFromBatches(nextLine, nextBatches);
+        const appendResult = await maybeHandleLineAppend(nextLineBase, links);
+        submittedLines.push(appendResult.line);
       }
 
       const order = {

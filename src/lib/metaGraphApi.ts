@@ -1,4 +1,4 @@
-﻿import type { MetaConfigV1 } from "../config/metaConfig";
+import type { MetaConfigV1 } from "../config/metaConfig";
 import { META_AD_GOALS, type MetaAdGoalKey, type MetaKpiMetricKey } from "./metaGoals";
 import type { MetaOrderInput, MetaPerformanceSnapshot, MetaSubmitResult } from "./metaOrdersStore";
 import { apiUrl } from "./apiBase";

@@ -2,6 +2,8 @@ import type { AdPlacement } from "./pricing";
 import type { PlannedSplit } from "./split";
 import { queueSharedWrite } from "./sharedSync";
 
+export type VendorKey = "smmraja" | "urpanel" | "justanotherpanel";
+
 export type VendorSplitExec = PlannedSplit & {
   vendorOrderId?: number; // order id returned by vendor after "add"
   vendorStatus?: string;
@@ -14,6 +16,26 @@ export type VendorSplitExec = PlannedSplit & {
 };
 
 export type OrderSubmitMode = "instant" | "average";
+
+export type CompletionAppendConfig = {
+  enabled: boolean;
+  vendor: VendorKey;
+  serviceId: number;
+  quantity: number;
+};
+
+export type CompletionAppendExec = {
+  status: "pending" | "submitted" | "failed" | "completed";
+  vendor: VendorKey;
+  serviceId: number;
+  quantity: number;
+  vendorOrderId?: number;
+  vendorStatus?: string;
+  remains?: number;
+  error?: string;
+  submittedAt?: string;
+  lastSyncAt?: string;
+};
 
 export type DemoOrderBatchStatus = "scheduled" | "submitted" | "partial" | "failed" | "completed";
 
@@ -37,6 +59,8 @@ export type DemoOrderLine = {
   amount: number;
   splits: VendorSplitExec[];
   warnings: string[];
+  appendOnComplete?: CompletionAppendConfig;
+  appendExec?: CompletionAppendExec;
   mode?: OrderSubmitMode;
   startDate?: string;
   endDate?: string;

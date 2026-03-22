@@ -18,12 +18,20 @@ export type SupplierConfig = {
   enabled: boolean;
 };
 
+export type CompletionAppendConfig = {
+  enabled: boolean;
+  vendor: VendorKey;
+  serviceId: number;
+  quantity: number;
+};
+
 export type PlacementConfig = {
   placement: AdPlacement;
   label: string;
   enabled: boolean;
   splitStrategy?: "random" | "weighted";
   suppliers: SupplierConfig[];
+  appendOnComplete?: CompletionAppendConfig;
 };
 
 export type AppConfigV1 = {
@@ -40,12 +48,20 @@ function isoNow() {
 }
 
 function defaultPlacements(): PlacementConfig[] {
+  const appendDefaults = (): CompletionAppendConfig => ({
+    enabled: false,
+    vendor: "justanotherpanel",
+    serviceId: 0,
+    quantity: 0,
+  });
+
   return [
     {
       placement: "fb_like",
       label: DEFAULT_PRICING_RULES.fb_like.label,
       enabled: true,
       splitStrategy: "random",
+      appendOnComplete: appendDefaults(),
       suppliers: [
         { vendor: "smmraja", serviceId: 0, weight: 1, maxPerOrder: 1000, enabled: true },
         { vendor: "urpanel", serviceId: 0, weight: 1, maxPerOrder: 1000, enabled: true },
@@ -57,6 +73,7 @@ function defaultPlacements(): PlacementConfig[] {
       label: DEFAULT_PRICING_RULES.fb_reach.label,
       enabled: true,
       splitStrategy: "random",
+      appendOnComplete: appendDefaults(),
       suppliers: [
         { vendor: "smmraja", serviceId: 0, weight: 1, enabled: true },
         { vendor: "urpanel", serviceId: 0, weight: 1, enabled: true },
@@ -67,6 +84,7 @@ function defaultPlacements(): PlacementConfig[] {
       label: DEFAULT_PRICING_RULES.fb_video_views.label,
       enabled: true,
       splitStrategy: "random",
+      appendOnComplete: appendDefaults(),
       suppliers: [
         { vendor: "smmraja", serviceId: 0, weight: 1, enabled: true },
         { vendor: "urpanel", serviceId: 0, weight: 1, enabled: true },
@@ -77,6 +95,7 @@ function defaultPlacements(): PlacementConfig[] {
       label: DEFAULT_PRICING_RULES.ig_like.label,
       enabled: true,
       splitStrategy: "random",
+      appendOnComplete: appendDefaults(),
       suppliers: [
         { vendor: "smmraja", serviceId: 0, weight: 1, enabled: true },
         { vendor: "urpanel", serviceId: 1, weight: 1, enabled: false },
@@ -87,6 +106,7 @@ function defaultPlacements(): PlacementConfig[] {
       label: DEFAULT_PRICING_RULES.ig_reels_views.label,
       enabled: true,
       splitStrategy: "random",
+      appendOnComplete: appendDefaults(),
       suppliers: [
         { vendor: "smmraja", serviceId: 0, weight: 1, enabled: true },
         { vendor: "justanotherpanel", serviceId: 0, weight: 1, enabled: true },
@@ -131,6 +151,29 @@ function normalizePlacementLabel(placement: string, label: unknown) {
   const trimmed = label.trim();
   if (!trimmed || looksCorruptedLabel(trimmed)) return fallback;
   return trimmed;
+}
+
+function normalizeAppendOnComplete(raw: unknown): CompletionAppendConfig {
+  if (!raw || typeof raw !== "object") {
+    return {
+      enabled: false,
+      vendor: "justanotherpanel",
+      serviceId: 0,
+      quantity: 0,
+    };
+  }
+
+  const data = raw as Partial<CompletionAppendConfig>;
+  const vendor = isVendorKey(data.vendor) ? data.vendor : "justanotherpanel";
+  const serviceId = Number(data.serviceId);
+  const quantity = Number(data.quantity);
+
+  return {
+    enabled: data.enabled === true,
+    vendor,
+    serviceId: Number.isFinite(serviceId) && serviceId > 0 ? serviceId : 0,
+    quantity: Number.isFinite(quantity) && quantity > 0 ? Math.floor(quantity) : 0,
+  };
 }
 
 function normalizeConfig(raw: unknown): AppConfigV1 | null {
@@ -189,6 +232,7 @@ function normalizeConfig(raw: unknown): AppConfigV1 | null {
       enabled: item.enabled !== false,
       splitStrategy,
       suppliers,
+      appendOnComplete: normalizeAppendOnComplete(item.appendOnComplete),
     });
   }
 
@@ -260,6 +304,7 @@ export function getPlacementConfig(placement: AdPlacement): PlacementConfig {
     enabled: fallback != null,
     splitStrategy: "random",
     suppliers: [],
+    appendOnComplete: normalizeAppendOnComplete(undefined),
   };
 }
 

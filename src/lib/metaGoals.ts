@@ -1,4 +1,4 @@
-﻿export type MetaAdGoalKey =
+export type MetaAdGoalKey =
   | "fb_post_likes"
   | "fb_post_engagement"
   | "fb_reach"
