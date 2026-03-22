@@ -126,7 +126,7 @@ function readInsightValue(data: unknown, name: string): number {
   return toNumber(asRecord(values[0])?.value);
 }
 
-async function fetchLocalPostMetricsProxy(postId: string): Promise<{
+async function fetchLocalPostMetricsProxy(postRef: string): Promise<{
   ok: boolean;
   detail?: string;
   values?: Partial<Record<MetaKpiMetricKey, number>>;
@@ -136,7 +136,7 @@ async function fetchLocalPostMetricsProxy(postId: string): Promise<{
   if (!window.location.origin.startsWith("http")) return null;
 
   try {
-    const url = apiUrl(`/api/meta/post-metrics?postId=${encodeURIComponent(postId)}`);
+    const url = apiUrl(`/api/meta/post-metrics?postId=${encodeURIComponent(postRef)}`);
     const res = await fetch(url, {
       method: "GET",
       headers: { "Cache-Control": "no-store" },
@@ -326,8 +326,9 @@ export async function fetchMetaPostMetrics(params: {
 }> {
   const { cfg } = params;
   const token = cfg.accessToken.trim();
-  const postId = params.postId.trim().replace(/^https?:\/\/[^/]+\//i, "");
-  const proxied = await fetchLocalPostMetricsProxy(postId);
+  const postRef = params.postId.trim();
+  const postId = postRef.replace(/^https?:\/\/[^/]+\//i, "");
+  const proxied = await fetchLocalPostMetricsProxy(postRef);
   if (proxied?.ok) {
     return proxied;
   }

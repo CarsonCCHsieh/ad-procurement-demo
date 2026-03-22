@@ -741,11 +741,14 @@ textarea:focus {
 }
 
 .dense-table.performance-table {
-  grid-template-columns: 130px minmax(260px, 1.5fr) 100px 110px 110px minmax(240px, 1.3fr);
+  grid-template-columns: 120px minmax(220px, 1.35fr) 90px 110px 90px 110px 120px minmax(200px, 1.2fr) 90px;
+  overflow: auto;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
 .dense-table.performance-table--managed {
-  grid-template-columns: 120px minmax(240px, 1.35fr) 100px 110px 110px minmax(220px, 1.2fr) 88px;
+  grid-template-columns: 120px minmax(220px, 1.35fr) 90px 110px 90px 110px 120px minmax(200px, 1.2fr) 90px 88px;
 }
 
 .dense-table.pricing-table {
@@ -757,6 +760,10 @@ textarea:focus {
 }
 
 .dense-table.suppliers-table::-webkit-scrollbar {
+  display: none;
+}
+
+.dense-table.performance-table::-webkit-scrollbar {
   display: none;
 }
 
@@ -1211,14 +1218,26 @@ textarea:focus {
   }
 
   .dense-table.performance-table .dense-td:nth-child(5)::before {
-    content: "\5269\9918\6578\91CF";
+    content: "\6578\91CF";
   }
 
   .dense-table.performance-table .dense-td:nth-child(6)::before {
+    content: "\5269\9918\6578\91CF";
+  }
+
+  .dense-table.performance-table .dense-td:nth-child(7)::before {
+    content: "\6210\6548";
+  }
+
+  .dense-table.performance-table .dense-td:nth-child(8)::before {
     content: "\57F7\884C\9032\5EA6";
   }
 
-  .dense-table.performance-table--managed .dense-td:nth-child(7)::before {
+  .dense-table.performance-table .dense-td:nth-child(9)::before {
+    content: "\9023\7D50";
+  }
+
+  .dense-table.performance-table--managed .dense-td:nth-child(10)::before {
     content: "\522A\9664";
   }
 

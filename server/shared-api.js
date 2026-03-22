@@ -207,6 +207,89 @@ function derivePageIdFromPostId(postId) {
   return m ? m[1] : "";
 }
 
+function parseFacebookPostUrl(rawUrl) {
+  let parsed;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return null;
+  }
+
+  const host = parsed.hostname.toLowerCase();
+  if (!host.endsWith("facebook.com") && !host.endsWith("fb.com")) return null;
+
+  const segments = parsed.pathname.split("/").filter(Boolean);
+  if (segments.length < 2) return null;
+
+  const username = segments[0];
+  const token = segments.find((value) => /^pfbid/i.test(value)) || "";
+  const postIdToken = segments.find((value) => /^\d{6,}$/.test(value)) || "";
+  return { username, token, postIdToken };
+}
+
+async function resolveFacebookPostIdFromUrl(metaSecrets, rawUrl) {
+  const info = parseFacebookPostUrl(rawUrl);
+  if (!info?.username) return null;
+
+  let pageId = "";
+  try {
+    const page = await graphApiGet(metaSecrets.apiVersion, metaSecrets.userAccessToken, `/${encodeURIComponent(info.username)}`, {
+      fields: "id",
+    });
+    pageId = typeof page?.id === "string" ? page.id.trim() : "";
+  } catch {
+    pageId = "";
+  }
+  if (!pageId) return null;
+
+  const pages = await listAvailablePages(metaSecrets);
+  const page = pages.find((item) => String(item?.id || "") === pageId);
+  const feedToken = typeof page?.access_token === "string" && page.access_token.trim()
+    ? page.access_token.trim()
+    : metaSecrets.userAccessToken;
+
+  const matchToken = info.token || info.postIdToken;
+  if (!matchToken) return null;
+
+  let after = "";
+  for (let pageIndex = 0; pageIndex < 4; pageIndex += 1) {
+    const feed = await graphApiGet(metaSecrets.apiVersion, feedToken, `/${encodeURIComponent(pageId)}/posts`, {
+      fields: "id,permalink_url",
+      limit: 100,
+      after: after || undefined,
+    });
+    const rows = Array.isArray(feed?.data) ? feed.data : [];
+    for (const row of rows) {
+      const permalink = typeof row?.permalink_url === "string" ? row.permalink_url : "";
+      if (permalink && permalink.includes(matchToken)) {
+        const id = typeof row?.id === "string" ? row.id.trim() : "";
+        if (id) return id;
+      }
+    }
+
+    const nextAfter = typeof feed?.paging?.cursors?.after === "string" ? feed.paging.cursors.after : "";
+    if (!nextAfter || nextAfter === after) break;
+    after = nextAfter;
+  }
+
+  return null;
+}
+
+async function resolvePostIdFromUrl(metaSecrets, url) {
+  try {
+    const resolved = await graphApiGet(metaSecrets.apiVersion, metaSecrets.userAccessToken, "/", {
+      id: url,
+      fields: "id",
+    });
+    const id = typeof resolved?.id === "string" ? resolved.id.trim() : "";
+    if (id && id !== url && id.includes("_")) return id;
+  } catch {
+    // fallback below
+  }
+
+  return await resolveFacebookPostIdFromUrl(metaSecrets, url);
+}
+
 function readFirstInsightValue(raw) {
   const row = Array.isArray(raw?.data) ? raw.data[0] : null;
   const valueRow = row && Array.isArray(row.values) ? row.values[0] : null;
@@ -225,7 +308,13 @@ async function fetchMetaPostMetricsSecure({ postId, pageId, pageName }) {
     return { ok: false, detail: "Meta 本機權限尚未設定" };
   }
 
-  const normalizedPostId = String(postId || "").trim().replace(/^https?:\/\/[^/]+\//i, "");
+  const postRef = String(postId || "").trim();
+  const resolvedByUrl = /^https?:\/\//i.test(postRef) ? await resolvePostIdFromUrl(metaSecrets, postRef) : null;
+  const normalizedPostId = (resolvedByUrl || postRef)
+    .replace(/^https?:\/\/[^/]+\//i, "")
+    .split("?")[0]
+    .split("#")[0]
+    .trim();
   if (!normalizedPostId) {
     return { ok: false, detail: "缺少貼文 ID" };
   }
@@ -237,18 +326,33 @@ async function fetchMetaPostMetricsSecure({ postId, pageId, pageName }) {
     (targetPageId && String(item?.id || "") === targetPageId) ||
     (targetPageName && String(item?.name || "") === targetPageName),
   );
-  if (!page?.access_token) {
-    return { ok: false, detail: "找不到對應粉專的存取權限" };
+
+  const tokenCandidates = [];
+  if (page?.access_token) tokenCandidates.push(String(page.access_token));
+  tokenCandidates.push(metaSecrets.userAccessToken);
+
+  let base = null;
+  let baseToken = "";
+  let lastBaseError = "";
+  for (const token of tokenCandidates) {
+    try {
+      base = await graphApiGet(
+        metaSecrets.apiVersion,
+        token,
+        `/${encodeURIComponent(normalizedPostId)}`,
+        { fields: "id,created_time,permalink_url,shares,comments.summary(true),reactions.summary(true),attachments{media_type}" },
+      );
+      baseToken = token;
+      break;
+    } catch (error) {
+      lastBaseError = error instanceof Error ? error.message : "讀取貼文失敗";
+    }
+  }
+  if (!base || !baseToken) {
+    return { ok: false, detail: lastBaseError || "找不到對應貼文資料" };
   }
 
-  const pageToken = String(page.access_token);
-  const pageLabel = String(page.name || targetPageName || targetPageId || "");
-  const base = await graphApiGet(
-    metaSecrets.apiVersion,
-    pageToken,
-    `/${encodeURIComponent(normalizedPostId)}`,
-    { fields: "id,created_time,permalink_url,shares,comments.summary(true),reactions.summary(true),attachments{media_type}" },
-  );
+  const pageLabel = String(page?.name || targetPageName || targetPageId || "");
 
   const metricMap = {
     impressions: "post_impressions",
@@ -277,7 +381,7 @@ async function fetchMetaPostMetricsSecure({ postId, pageId, pageName }) {
     try {
       const insight = await graphApiGet(
         metaSecrets.apiVersion,
-        pageToken,
+        baseToken,
         `/${encodeURIComponent(normalizedPostId)}/insights`,
         { metric },
       );

@@ -125,12 +125,31 @@ type VendorRow = {
   orderNo: string;
   kind: string;
   amount: number;
+  quantity: number;
   remainsText: string;
   progressText: string;
   placementText: string;
+  link: string;
+  metricKey?: MetaKpiMetricKey;
+  metricLabel: string;
   lastSyncAt?: string;
   hasWarning: boolean;
   canRetry: boolean;
+};
+
+type VendorMetricState = {
+  loading?: boolean;
+  value?: number;
+  updatedAt?: string;
+  error?: string;
+};
+
+const VENDOR_METRIC_BY_PLACEMENT: Partial<Record<string, { key: MetaKpiMetricKey; label: string }>> = {
+  fb_like: { key: "likes", label: "目前按讚" },
+  ig_like: { key: "likes", label: "目前按讚" },
+  fb_reach: { key: "reach", label: "目前觸及" },
+  fb_video_views: { key: "video_3s_views", label: "目前播放" },
+  ig_reels_views: { key: "video_3s_views", label: "目前播放" },
 };
 
 function isBatchRetryable(batch: DemoOrderBatch): boolean {
@@ -141,31 +160,42 @@ function isBatchRetryable(batch: DemoOrderBatch): boolean {
 function buildVendorRows(source: DemoOrder[]): VendorRow[] {
   return source.flatMap((order) =>
     order.lines.flatMap((line, lineIndex) =>
-      getLineBatches(line).map((batch) => ({
-        id: `${order.id}-${lineIndex}-${batch.id}`,
-        orderId: order.id,
-        lineIndex,
-        batchId: batch.id,
-        applicant: order.applicant,
-        caseName: batch.stageCount > 1 ? `${order.caseName}（${batch.stageIndex}/${batch.stageCount} 日）` : order.caseName,
-        orderNo: order.orderNo,
-        kind: order.kind === "new" ? "新案" : "加購",
-        amount: batch.amount,
-        remainsText: summarizeBatchRemains(batch),
-        progressText: summarizeBatchProgress(batch),
-        placementText: `${getPlacementLabel(line.placement) ?? line.placement} / 數量 ${batch.quantity.toLocaleString("zh-TW")}`,
-        lastSyncAt:
-          batch.lastSyncAt ??
-          batch.submittedAt ??
-          batch.splits
-            .map((split) => split.lastSyncAt)
-            .filter((value): value is string => !!value)
-            .sort()
-            .at(-1) ??
-          order.createdAt,
-        hasWarning: batch.warnings.length > 0 || batch.splits.some((split) => !!split.error),
-        canRetry: isBatchRetryable(batch),
-      })),
+      getLineBatches(line).map((batch) => {
+        const metric = VENDOR_METRIC_BY_PLACEMENT[line.placement];
+        const firstLink = Array.isArray(order.links)
+          ? order.links.find((value) => typeof value === "string" && value.trim()) ?? ""
+          : "";
+
+        return {
+          id: `${order.id}-${lineIndex}-${batch.id}`,
+          orderId: order.id,
+          lineIndex,
+          batchId: batch.id,
+          applicant: order.applicant,
+          caseName: batch.stageCount > 1 ? `${order.caseName}?${batch.stageIndex}/${batch.stageCount} ??` : order.caseName,
+          orderNo: order.orderNo,
+          kind: order.kind === "new" ? "??" : "??",
+          amount: batch.amount,
+          quantity: batch.quantity,
+          remainsText: summarizeBatchRemains(batch),
+          progressText: summarizeBatchProgress(batch),
+          placementText: getPlacementLabel(line.placement) ?? line.placement,
+          link: firstLink,
+          metricKey: metric?.key,
+          metricLabel: metric?.label ?? "????",
+          lastSyncAt:
+            batch.lastSyncAt ??
+            batch.submittedAt ??
+            batch.splits
+              .map((split) => split.lastSyncAt)
+              .filter((value): value is string => !!value)
+              .sort()
+              .at(-1) ??
+            order.createdAt,
+          hasWarning: batch.warnings.length > 0 || batch.splits.some((split) => !!split.error),
+          canRetry: isBatchRetryable(batch),
+        };
+      }),
     ),
   );
 }
@@ -178,6 +208,7 @@ export function AdPerformancePage() {
   const [syncing, setSyncing] = useState<Record<string, boolean>>({});
   const [vendorRefreshing, setVendorRefreshing] = useState(false);
   const [retryingVendorRows, setRetryingVendorRows] = useState<Record<string, boolean>>({});
+  const [vendorMetrics, setVendorMetrics] = useState<Record<string, VendorMetricState>>({});
   const [metaAutoEnabled, setMetaAutoEnabled] = useState(true);
   const [metaAutoRunning, setMetaAutoRunning] = useState(false);
   const [hourlyAutoRunning, setHourlyAutoRunning] = useState(false);
@@ -311,6 +342,50 @@ export function AdPerformancePage() {
       setTimeout(() => setMsg(null), 3500);
     } finally {
       setRetryingVendorRows((current) => ({ ...current, [row.id]: false }));
+    }
+  };
+
+  const syncVendorMetric = async (row: VendorRow) => {
+    if (!row.metricKey || !row.link) return;
+
+    setVendorMetrics((current) => ({
+      ...current,
+      [row.id]: { ...current[row.id], loading: true, error: "" },
+    }));
+
+    try {
+      const result = await fetchMetaPostMetrics({ cfg: metaCfg, postId: row.link });
+      if (!result.ok) {
+        setVendorMetrics((current) => ({
+          ...current,
+          [row.id]: {
+            loading: false,
+            updatedAt: new Date().toISOString(),
+            error: result.detail || "讀取失敗",
+          },
+        }));
+        return;
+      }
+
+      const value = typeof result.values?.[row.metricKey] === "number" ? (result.values?.[row.metricKey] as number) : 0;
+      setVendorMetrics((current) => ({
+        ...current,
+        [row.id]: {
+          loading: false,
+          updatedAt: new Date().toISOString(),
+          value,
+          error: "",
+        },
+      }));
+    } catch (error) {
+      setVendorMetrics((current) => ({
+        ...current,
+        [row.id]: {
+          loading: false,
+          updatedAt: new Date().toISOString(),
+          error: error instanceof Error ? error.message : "讀取失敗",
+        },
+      }));
     }
   };
 
@@ -644,6 +719,34 @@ export function AdPerformancePage() {
   };
 
   useEffect(() => {
+    const targets = visibleVendorRows.filter((row) => !!row.metricKey && !!row.link);
+    const now = Date.now();
+    const missing = targets.filter((row) => {
+      const state = vendorMetrics[row.id];
+      if (!state) return true;
+      if (state.loading) return false;
+      if (!state.updatedAt) return true;
+      const ts = Date.parse(state.updatedAt);
+      if (!Number.isFinite(ts)) return true;
+      return now - ts >= 5 * 60 * 1000;
+    });
+    if (missing.length === 0) return;
+
+    let canceled = false;
+    const run = async () => {
+      for (const row of missing) {
+        if (canceled) break;
+        await syncVendorMetric(row);
+      }
+    };
+
+    void run();
+    return () => {
+      canceled = true;
+    };
+  }, [visibleVendorRows, vendorMetrics]);
+
+  useEffect(() => {
     const tick = async () => {
       if (hourlyAutoRunning) return;
       setHourlyAutoRunning(true);
@@ -781,13 +884,16 @@ export function AdPerformancePage() {
             <div className="hint">目前沒有廠商互動案件。</div>
           ) : (
             <div className={`dense-table performance-table${canManage ? " performance-table--managed" : ""}`}>
-              <div className="dense-th">申請人</div>
-              <div className="dense-th">案件名</div>
-              <div className="dense-th">案件種類</div>
-              <div className="dense-th">金額</div>
-              <div className="dense-th">剩餘數量</div>
-              <div className="dense-th">執行進度</div>
-              {canManage ? <div className="dense-th">刪除</div> : null}
+              <div className="dense-th">???</div>
+              <div className="dense-th">???</div>
+              <div className="dense-th">????</div>
+              <div className="dense-th">??</div>
+              <div className="dense-th">??</div>
+              <div className="dense-th">????</div>
+              <div className="dense-th">??</div>
+              <div className="dense-th">????</div>
+              <div className="dense-th">??</div>
+              {canManage ? <div className="dense-th">??</div> : null}
 
               {visibleVendorRows.map((row) => (
                 <div className="dense-tr" key={row.id}>
@@ -805,7 +911,22 @@ export function AdPerformancePage() {
                     <div className="dense-title">NT$ {row.amount.toLocaleString("zh-TW")}</div>
                   </div>
                   <div className="dense-td">
+                    <div className="dense-title">{row.quantity.toLocaleString("zh-TW")}</div>
+                  </div>
+                  <div className="dense-td">
                     <div className="dense-title">{row.remainsText}</div>
+                  </div>
+                  <div className="dense-td dense-main">
+                    <div className="dense-title">{row.metricLabel}</div>
+                    <div className="dense-meta">
+                      {vendorMetrics[row.id]?.loading
+                        ? "???..."
+                        : vendorMetrics[row.id]?.error
+                          ? "--"
+                          : typeof vendorMetrics[row.id]?.value === "number"
+                            ? vendorMetrics[row.id]!.value!.toLocaleString("zh-TW")
+                            : "-"}
+                    </div>
                   </div>
                   <div className="dense-td dense-main">
                     <div className="dense-title" style={row.hasWarning ? { color: "rgba(220, 38, 38, 0.95)" } : undefined}>
@@ -819,18 +940,31 @@ export function AdPerformancePage() {
                           onClick={() => void retryVendorBatch(row)}
                           disabled={!!retryingVendorRows[row.id]}
                         >
-                          {retryingVendorRows[row.id] ? "重新送單中..." : "重新送單"}
+                          {retryingVendorRows[row.id] ? "?????..." : "????"}
                         </button>
                       </div>
                     ) : null}
                     <div className="dense-meta">
-                      更新時間：{row.lastSyncAt ? new Date(row.lastSyncAt).toLocaleString("zh-TW") : "-"}
+                      ?????{row.lastSyncAt ? new Date(row.lastSyncAt).toLocaleString("zh-TW") : "-"}
                     </div>
+                  </div>
+                  <div className="dense-td">
+                    <button
+                      className="btn"
+                      type="button"
+                      disabled={!row.link}
+                      onClick={() => {
+                        if (!row.link) return;
+                        window.open(row.link, "_blank", "noopener,noreferrer");
+                      }}
+                    >
+                      ??
+                    </button>
                   </div>
                   {canManage ? (
                     <div className="dense-td">
                       <button className="btn danger" type="button" onClick={() => void deleteVendorRow(row.orderId, row.lineIndex, row.batchId)}>
-                        刪除
+                        ??
                       </button>
                     </div>
                   ) : null}
