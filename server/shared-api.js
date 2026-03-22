@@ -51,6 +51,8 @@ const bumpRevisionStmt = db.prepare(`
 `);
 
 let metaPagesCache = null;
+let instagramAccountsCache = null;
+const instagramMediaCache = new Map();
 let backgroundSyncRunning = false;
 
 const APP_CONFIG_KEY = "ad_demo_config_v1";
@@ -211,29 +213,206 @@ function derivePageIdFromPostId(postId) {
   return m ? m[1] : "";
 }
 
-function parseFacebookPostUrl(rawUrl) {
-  let parsed;
+function tryParseUrl(rawUrl) {
   try {
-    parsed = new URL(rawUrl);
+    return new URL(rawUrl);
   } catch {
     return null;
   }
+}
 
-  const host = parsed.hostname.toLowerCase();
-  if (!host.endsWith("facebook.com") && !host.endsWith("fb.com")) return null;
+function isInstagramHost(hostname) {
+  const host = String(hostname || "").toLowerCase();
+  return host.endsWith("instagram.com") || host.endsWith("instagr.am");
+}
 
+function isFacebookHost(hostname) {
+  const host = String(hostname || "").toLowerCase();
+  return host.endsWith("facebook.com") || host.endsWith("fb.com");
+}
+
+function normalizeComparableUrl(rawUrl) {
+  const parsed = tryParseUrl(rawUrl);
+  if (!parsed) return String(rawUrl || "").trim();
+  parsed.hash = "";
+  for (const key of ["locale", "igsh", "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"]) {
+    parsed.searchParams.delete(key);
+  }
+  let out = parsed.toString();
+  if (out.endsWith("/")) out = out.slice(0, -1);
+  return out;
+}
+
+async function followRedirectUrl(rawUrl) {
+  const src = String(rawUrl || "").trim();
+  if (!src) return src;
+  const parsed = tryParseUrl(src);
+  if (!parsed) return src;
+
+  try {
+    const res = await fetch(src, {
+      method: "GET",
+      redirect: "follow",
+      headers: {
+        "User-Agent": "Mozilla/5.0",
+      },
+    });
+    return res?.url ? String(res.url) : src;
+  } catch {
+    return src;
+  }
+}
+
+function parseFacebookPostUrl(rawUrl) {
+  const parsed = tryParseUrl(rawUrl);
+  if (!parsed) return null;
+  if (!isFacebookHost(parsed.hostname)) return null;
   const segments = parsed.pathname.split("/").filter(Boolean);
-  if (segments.length < 2) return null;
-
-  const username = segments[0];
+  const username = segments.length > 0 ? segments[0] : "";
   const token = segments.find((value) => /^pfbid/i.test(value)) || "";
   const postIdToken = segments.find((value) => /^\d{6,}$/.test(value)) || "";
-  return { username, token, postIdToken };
+  const storyFbid = String(parsed.searchParams.get("story_fbid") || parsed.searchParams.get("fbid") || "").trim();
+  const pageIdFromQuery = String(parsed.searchParams.get("id") || "").trim();
+  const reelId = segments[0] === "reel" && /^\d{6,}$/.test(segments[1] || "") ? segments[1] : "";
+  const videoId = segments.includes("videos")
+    ? segments[segments.indexOf("videos") + 1] || ""
+    : "";
+  return {
+    username,
+    token,
+    postIdToken: postIdToken || reelId || (String(videoId).match(/^\d{6,}$/) ? videoId : ""),
+    storyFbid,
+    pageIdFromQuery,
+    rawUrl: parsed.toString(),
+  };
+}
+
+function parseInstagramMediaUrl(rawUrl) {
+  const parsed = tryParseUrl(rawUrl);
+  if (!parsed) return null;
+  if (!isInstagramHost(parsed.hostname)) return null;
+  const segments = parsed.pathname.split("/").filter(Boolean);
+  if (segments.length < 2) return null;
+  const type = segments[0];
+  if (!["p", "reel", "reels", "tv"].includes(type)) return null;
+  const shortcode = String(segments[1] || "").trim();
+  if (!shortcode) return null;
+  return {
+    shortcode,
+    rawUrl: parsed.toString(),
+  };
+}
+
+async function listInstagramAccounts(metaSecrets) {
+  const now = Date.now();
+  if (instagramAccountsCache && now - instagramAccountsCache.fetchedAt < 5 * 60 * 1000) {
+    return instagramAccountsCache.accounts;
+  }
+
+  const pages = await listAvailablePages(metaSecrets);
+  const accounts = [];
+
+  for (const page of pages) {
+    const pageId = String(page?.id || "").trim();
+    const pageToken = String(page?.access_token || "").trim();
+    if (!pageId || !pageToken) continue;
+    try {
+      const detail = await graphApiGet(
+        metaSecrets.apiVersion,
+        pageToken,
+        `/${encodeURIComponent(pageId)}`,
+        { fields: "id,name,instagram_business_account{id,username}" },
+      );
+      const ig = detail?.instagram_business_account;
+      const igId = String(ig?.id || "").trim();
+      if (!igId) continue;
+      accounts.push({
+        pageId,
+        pageName: String(detail?.name || page?.name || "").trim(),
+        pageToken,
+        igId,
+        igUsername: String(ig?.username || "").trim(),
+      });
+    } catch {
+      // ignore pages without IG account or unavailable permission
+    }
+  }
+
+  instagramAccountsCache = {
+    fetchedAt: now,
+    accounts,
+  };
+  return accounts;
+}
+
+async function resolveInstagramMediaIdFromUrl(metaSecrets, rawUrl, preloadedAccounts = null) {
+  const expandedUrl = await followRedirectUrl(rawUrl);
+  const parsed = parseInstagramMediaUrl(expandedUrl) || parseInstagramMediaUrl(rawUrl);
+  if (!parsed?.shortcode) return null;
+
+  const cacheKey = parsed.shortcode.toLowerCase();
+  const cached = instagramMediaCache.get(cacheKey);
+  if (cached && Date.now() - cached.at < 10 * 60 * 1000) {
+    return cached.value;
+  }
+
+  const accounts = Array.isArray(preloadedAccounts) ? preloadedAccounts : await listInstagramAccounts(metaSecrets);
+  const shortcodeNeedle = `/${parsed.shortcode.toLowerCase()}`;
+
+  for (const account of accounts) {
+    let after = "";
+    for (let pageIndex = 0; pageIndex < 8; pageIndex += 1) {
+      let media;
+      try {
+        media = await graphApiGet(
+          metaSecrets.apiVersion,
+          account.pageToken,
+          `/${encodeURIComponent(account.igId)}/media`,
+          {
+            fields: "id,permalink,media_type,like_count,comments_count,timestamp",
+            limit: 100,
+            after: after || undefined,
+          },
+        );
+      } catch {
+        break;
+      }
+
+      const rows = Array.isArray(media?.data) ? media.data : [];
+      for (const row of rows) {
+        const permalink = String(row?.permalink || "").trim().toLowerCase();
+        if (!permalink) continue;
+        if (permalink.includes(shortcodeNeedle)) {
+          const mediaId = String(row?.id || "").trim();
+          if (!mediaId) continue;
+          const value = {
+            mediaId,
+            account,
+            sourceUrl: String(row?.permalink || "").trim(),
+          };
+          instagramMediaCache.set(cacheKey, { at: Date.now(), value });
+          return value;
+        }
+      }
+
+      const nextAfter = String(media?.paging?.cursors?.after || "").trim();
+      if (!nextAfter || nextAfter === after) break;
+      after = nextAfter;
+    }
+  }
+
+  instagramMediaCache.set(cacheKey, { at: Date.now(), value: null });
+  return null;
 }
 
 async function resolveFacebookPostIdFromUrl(metaSecrets, rawUrl) {
-  const info = parseFacebookPostUrl(rawUrl);
+  const expandedUrl = await followRedirectUrl(rawUrl);
+  const info = parseFacebookPostUrl(expandedUrl) || parseFacebookPostUrl(rawUrl);
   if (!info?.username) return null;
+
+  if (info.storyFbid && info.pageIdFromQuery && /^\d+$/.test(info.storyFbid) && /^\d+$/.test(info.pageIdFromQuery)) {
+    return `${info.pageIdFromQuery}_${info.storyFbid}`;
+  }
 
   let pageId = "";
   try {
@@ -243,6 +422,9 @@ async function resolveFacebookPostIdFromUrl(metaSecrets, rawUrl) {
     pageId = typeof page?.id === "string" ? page.id.trim() : "";
   } catch {
     pageId = "";
+  }
+  if (!pageId && info.pageIdFromQuery && /^\d+$/.test(info.pageIdFromQuery)) {
+    pageId = info.pageIdFromQuery;
   }
   if (!pageId) return null;
 
@@ -257,15 +439,27 @@ async function resolveFacebookPostIdFromUrl(metaSecrets, rawUrl) {
 
   let after = "";
   for (let pageIndex = 0; pageIndex < 4; pageIndex += 1) {
-    const feed = await graphApiGet(metaSecrets.apiVersion, feedToken, `/${encodeURIComponent(pageId)}/posts`, {
-      fields: "id,permalink_url",
-      limit: 100,
-      after: after || undefined,
-    });
+    let feed = null;
+    try {
+      feed = await graphApiGet(metaSecrets.apiVersion, feedToken, `/${encodeURIComponent(pageId)}/posts`, {
+        fields: "id,permalink_url",
+        limit: 100,
+        after: after || undefined,
+      });
+    } catch {
+      break;
+    }
     const rows = Array.isArray(feed?.data) ? feed.data : [];
+    const normalizedSource = normalizeComparableUrl(info.rawUrl || expandedUrl || rawUrl);
     for (const row of rows) {
       const permalink = typeof row?.permalink_url === "string" ? row.permalink_url : "";
-      if (permalink && permalink.includes(matchToken)) {
+      const normalizedPermalink = normalizeComparableUrl(permalink);
+      if (
+        permalink &&
+        (permalink.includes(matchToken) ||
+          normalizedPermalink.includes(matchToken) ||
+          normalizedPermalink === normalizedSource)
+      ) {
         const id = typeof row?.id === "string" ? row.id.trim() : "";
         if (id) return id;
       }
@@ -276,22 +470,129 @@ async function resolveFacebookPostIdFromUrl(metaSecrets, rawUrl) {
     after = nextAfter;
   }
 
+  if (info.postIdToken && /^\d+$/.test(info.postIdToken) && /^\d+$/.test(pageId)) {
+    return `${pageId}_${info.postIdToken}`;
+  }
+
   return null;
 }
 
 async function resolvePostIdFromUrl(metaSecrets, url) {
-  try {
-    const resolved = await graphApiGet(metaSecrets.apiVersion, metaSecrets.userAccessToken, "/", {
-      id: url,
-      fields: "id",
-    });
-    const id = typeof resolved?.id === "string" ? resolved.id.trim() : "";
-    if (id && id !== url && id.includes("_")) return id;
-  } catch {
-    // fallback below
+  const expandedUrl = await followRedirectUrl(url);
+  const urlCandidates = [expandedUrl, url]
+    .map((item) => String(item || "").trim())
+    .filter(Boolean)
+    .filter((item, idx, arr) => arr.indexOf(item) === idx);
+
+  for (const candidate of urlCandidates) {
+    const parsed = tryParseUrl(candidate);
+    if (parsed && isInstagramHost(parsed.hostname)) continue;
+    try {
+      const resolved = await graphApiGet(metaSecrets.apiVersion, metaSecrets.userAccessToken, "/", {
+        id: candidate,
+        fields: "id",
+      });
+      const id = typeof resolved?.id === "string" ? resolved.id.trim() : "";
+      if (id && id !== candidate && id.includes("_")) return id;
+    } catch {
+      // fallback below
+    }
   }
 
-  return await resolveFacebookPostIdFromUrl(metaSecrets, url);
+  for (const candidate of urlCandidates) {
+    const parsed = tryParseUrl(candidate);
+    if (!parsed || !isFacebookHost(parsed.hostname)) continue;
+    const resolved = await resolveFacebookPostIdFromUrl(metaSecrets, candidate);
+    if (resolved) return resolved;
+  }
+
+  return null;
+}
+
+async function fetchInstagramMediaMetricsSecure(metaSecrets, rawUrl) {
+  const accounts = await listInstagramAccounts(metaSecrets);
+  if (accounts.length === 0) {
+    return { ok: false, detail: "目前 token 下沒有已綁定的 Instagram 商業帳號，無法抓取 Instagram 貼文成效。" };
+  }
+
+  const resolved = await resolveInstagramMediaIdFromUrl(metaSecrets, rawUrl, accounts);
+  if (!resolved?.mediaId || !resolved?.account?.pageToken) {
+    return { ok: false, detail: "Instagram 連結無法對應到可讀取的媒體 ID" };
+  }
+
+  let base = null;
+  try {
+    base = await graphApiGet(
+      metaSecrets.apiVersion,
+      resolved.account.pageToken,
+      `/${encodeURIComponent(resolved.mediaId)}`,
+      { fields: "id,media_type,permalink,like_count,comments_count,timestamp" },
+    );
+  } catch {
+    base = null;
+  }
+
+  if (!base) {
+    return { ok: false, detail: "Instagram 媒體讀取失敗" };
+  }
+
+  const values = {
+    likes: Number(base?.like_count || 0),
+    comments: Number(base?.comments_count || 0),
+    shares: 0,
+    all_clicks: 0,
+    interactions_total: 0,
+    impressions: 0,
+    reach: 0,
+    video_3s_views: 0,
+    thruplays: 0,
+  };
+
+  const metricMap = {
+    impressions: "impressions",
+    reach: "reach",
+    video_3s_views: "video_views",
+    thruplays: "video_views",
+  };
+  const validMetrics = [];
+  const invalidMetrics = [];
+
+  for (const [key, metric] of Object.entries(metricMap)) {
+    try {
+      const insight = await graphApiGet(
+        metaSecrets.apiVersion,
+        resolved.account.pageToken,
+        `/${encodeURIComponent(resolved.mediaId)}/insights`,
+        { metric },
+      );
+      const metricValue = readFirstInsightValue(insight);
+      values[key] = metricValue;
+      validMetrics.push(metric);
+    } catch (error) {
+      invalidMetrics.push({
+        metric,
+        detail: error instanceof Error ? error.message : "unknown error",
+      });
+    }
+  }
+
+  values.interactions_total = values.likes + values.comments + values.shares + values.all_clicks;
+
+  return {
+    ok: true,
+    page: {
+      id: String(resolved.account.igId || ""),
+      name: resolved.account.igUsername || resolved.account.pageName || "Instagram",
+    },
+    values,
+    raw: {
+      base,
+      mediaId: resolved.mediaId,
+      sourceUrl: resolved.sourceUrl || rawUrl,
+      validMetrics,
+      invalidMetrics,
+    },
+  };
 }
 
 function readFirstInsightValue(raw) {
@@ -313,7 +614,20 @@ async function fetchMetaPostMetricsSecure({ postId, pageId, pageName }) {
   }
 
   const postRef = String(postId || "").trim();
-  const resolvedByUrl = /^https?:\/\//i.test(postRef) ? await resolvePostIdFromUrl(metaSecrets, postRef) : null;
+  const parsedPostUrl = tryParseUrl(postRef);
+  if (parsedPostUrl && isInstagramHost(parsedPostUrl.hostname)) {
+    return await fetchInstagramMediaMetricsSecure(metaSecrets, postRef);
+  }
+
+  const isHttpUrl = /^https?:\/\//i.test(postRef);
+  const resolvedByUrl = isHttpUrl ? await resolvePostIdFromUrl(metaSecrets, postRef) : null;
+  if (isHttpUrl && !resolvedByUrl) {
+    return {
+      ok: false,
+      detail: "連結無法轉成可查詢的貼文 ID。Facebook 請改用含 story_fbid/id 的永久連結或直接貼 pageId_postId；Instagram 請使用已綁定商業帳號可解析的貼文。",
+    };
+  }
+
   const normalizedPostId = (resolvedByUrl || postRef)
     .replace(/^https?:\/\/[^/]+\//i, "")
     .split("?")[0]
@@ -406,7 +720,7 @@ async function fetchMetaPostMetricsSecure({ postId, pageId, pageName }) {
   return {
     ok: true,
     page: {
-      id: String(page.id || ""),
+      id: String(page?.id || targetPageId || ""),
       name: pageLabel,
     },
     values,

@@ -858,7 +858,7 @@ export function AdPerformancePage() {
   }, []);
 
   return (
-    <div className="container">
+    <div className="container container--wide">
       <div className="topbar">
         <div className="brand">
           <div className="brand-title">投放成效</div>
@@ -934,7 +934,8 @@ export function AdPerformancePage() {
               <div className="dense-th">數量</div>
               <div className="dense-th">剩餘數量</div>
               <div className="dense-th">成效</div>
-              <div className="dense-th">執行進度 / 操作</div>
+              <div className="dense-th">執行進度</div>
+              <div className="dense-th">操作</div>
 
               {visibleVendorRows.map((row) => (
                 <div className="dense-tr" key={row.id}>
@@ -944,24 +945,6 @@ export function AdPerformancePage() {
                   <div className="dense-td dense-main">
                     <div className="dense-title">{row.caseName}</div>
                     <div className="dense-meta">{row.orderNo} / {row.placementText}</div>
-                    <div className="actions inline" style={{ marginTop: 6 }}>
-                      <button
-                        className="btn sm"
-                        type="button"
-                        disabled={!row.link}
-                        onClick={() => {
-                          if (!row.link) return;
-                          window.open(row.link, "_blank", "noopener,noreferrer");
-                        }}
-                      >
-                        連結
-                      </button>
-                      {canManage ? (
-                        <button className="btn danger sm" type="button" onClick={() => void deleteVendorRow(row.orderId, row.lineIndex, row.batchId)}>
-                          刪除
-                        </button>
-                      ) : null}
-                    </div>
                   </div>
                   <div className="dense-td">
                     <div className="dense-title">{row.kind}</div>
@@ -1016,6 +999,26 @@ export function AdPerformancePage() {
                     ) : null}
                     <div className="dense-meta">
                       更新時間：{row.lastSyncAt ? new Date(row.lastSyncAt).toLocaleString("zh-TW") : "-"}
+                    </div>
+                  </div>
+                  <div className="dense-td">
+                    <div className="actions inline">
+                      <button
+                        className="btn sm"
+                        type="button"
+                        disabled={!row.link}
+                        onClick={() => {
+                          if (!row.link) return;
+                          window.open(row.link, "_blank", "noopener,noreferrer");
+                        }}
+                      >
+                        連結
+                      </button>
+                      {canManage ? (
+                        <button className="btn danger sm" type="button" onClick={() => void deleteVendorRow(row.orderId, row.lineIndex, row.batchId)}>
+                          刪除
+                        </button>
+                      ) : null}
                     </div>
                   </div>
                 </div>

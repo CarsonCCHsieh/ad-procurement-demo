@@ -67,6 +67,10 @@ body {
   padding: 20px 16px calc(88px + env(safe-area-inset-bottom));
 }
 
+.container.container--wide {
+  width: min(96vw, 1420px);
+}
+
 .settings-page .card-hd {
   padding: 10px 12px;
 }
@@ -741,7 +745,17 @@ textarea:focus {
 }
 
 .dense-table.performance-table {
-  grid-template-columns: 110px minmax(220px, 1.35fr) 90px 100px 90px 100px 140px minmax(220px, 1.2fr);
+  grid-template-columns:
+    minmax(100px, 0.8fr)
+    minmax(250px, 1.8fr)
+    minmax(90px, 0.8fr)
+    minmax(100px, 0.8fr)
+    minmax(90px, 0.75fr)
+    minmax(100px, 0.8fr)
+    minmax(140px, 1fr)
+    minmax(220px, 1.4fr)
+    minmax(140px, 1fr);
+  min-width: 1270px;
   overflow: auto;
   -ms-overflow-style: none;
   scrollbar-width: none;
@@ -828,6 +842,10 @@ textarea:focus {
     padding-top: calc(12px + env(safe-area-inset-top));
     padding-left: 10px;
     padding-right: 10px;
+  }
+
+  .container.container--wide {
+    width: min(96vw, 1100px);
   }
 
   .topbar,
@@ -1230,11 +1248,7 @@ textarea:focus {
   }
 
   .dense-table.performance-table .dense-td:nth-child(9)::before {
-    content: "\9023\7D50";
-  }
-
-  .dense-table.performance-table--managed .dense-td:nth-child(10)::before {
-    content: "\522A\9664";
+    content: "\64CD\4F5C";
   }
 
   .dense-table.metrics-table {
