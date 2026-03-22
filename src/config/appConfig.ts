@@ -132,6 +132,7 @@ function isVendorKey(value: unknown): value is VendorKey {
 
 function looksCorruptedLabel(value: string) {
   return (
+    value.includes("\uFFFD") ||
     value.includes("?") ||
     value.includes("锛") ||
     value.includes("瑷") ||

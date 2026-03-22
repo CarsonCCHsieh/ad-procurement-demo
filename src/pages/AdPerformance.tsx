@@ -115,6 +115,11 @@ function summarizeBatchRemains(batch: DemoOrderBatch): string {
   return summarizeVendorRemains(batch);
 }
 
+function sanitizeDisplayText(value: unknown, fallback = ""): string {
+  const text = String(value ?? "").replace(/\uFFFD+/g, "").trim();
+  return text || fallback;
+}
+
 type VendorRow = {
   id: string;
   orderId: string;
@@ -181,14 +186,16 @@ function buildVendorRows(source: DemoOrder[]): VendorRow[] {
           return "";
         })();
 
+        const safeCaseName = sanitizeDisplayText(order.caseName, "未命名案件");
+
         return {
           id: `${order.id}-${lineIndex}-${batch.id}`,
           orderId: order.id,
           lineIndex,
           batchId: batch.id,
-          applicant: order.applicant,
-          caseName: batch.stageCount > 1 ? `${order.caseName}（${batch.stageIndex}/${batch.stageCount} 日）` : order.caseName,
-          orderNo: order.orderNo,
+          applicant: sanitizeDisplayText(order.applicant, "-"),
+          caseName: batch.stageCount > 1 ? `${safeCaseName}（${batch.stageIndex}/${batch.stageCount} 日）` : safeCaseName,
+          orderNo: sanitizeDisplayText(order.orderNo, "-"),
           kind: order.kind === "new" ? "新案" : "加購",
           amount: batch.amount,
           quantity: batch.quantity,
