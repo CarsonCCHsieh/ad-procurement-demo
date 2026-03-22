@@ -220,6 +220,7 @@ export function AdOrdersPage() {
         <div className="brand"><div className="brand-title">{step === "edit" ? "廠商互動下單" : step === "confirm" ? "確認送出" : "已送出"}</div><div className="brand-sub">填寫需求、確認資料、送出後追蹤進度。</div></div>
         <div className="pill">
           <span className="tag">{user?.displayName ?? user?.username}</span>
+          <button className="btn primary" onClick={() => nav("/ad-orders")}>廠商互動下單</button>
           {canManage ? <button className="btn" onClick={() => nav("/meta-ads-orders")}>Meta官方投廣</button> : null}
           <button className="btn" onClick={() => nav("/ad-performance")}>投放成效</button>
           {canManage ? <button className="btn" onClick={() => nav("/settings")}>控制設定</button> : null}
@@ -268,4 +269,3 @@ export function AdOrdersPage() {
     </div>
   );
 }
-

@@ -480,6 +480,7 @@ export function SettingsPage() {
           <button className="btn" onClick={() => nav("/ad-orders")}>廠商互動下單</button>
           <button className="btn" onClick={() => nav("/ad-performance")}>投放成效</button>
           <button className="btn" onClick={() => nav("/meta-ads-orders")}>Meta官方投廣</button>
+          <button className="btn primary" onClick={() => nav("/settings")}>控制設定</button>
           <button className="btn" type="button" onClick={resetAll}>重設預設值</button>
           <button className="btn primary" type="button" onClick={saveAll}>儲存</button>
           <button
@@ -788,90 +789,6 @@ export function SettingsPage() {
                   </div>
                 </div>
 
-                {(() => {
-                  const appendCfg = ensureAppendConfig(placementCfg.appendOnComplete);
-                  return (
-                    <div className="dense-details" style={{ marginBottom: 10 }}>
-                      <div className="dense-panel">
-                        <div className="dense-title" style={{ marginBottom: 8 }}>追加設定</div>
-                        <div className="hint" style={{ marginBottom: 8 }}>
-                          當此品項完成時（預設單次下單完成，平均模式為最後一批完成）可固定追加一筆供應商訂單。
-                        </div>
-                        <div className="row cols4">
-                          <div className="field">
-                            <div className="label">狀態</div>
-                            <select
-                              value={appendCfg.enabled ? "on" : "off"}
-                              onChange={(event) =>
-                                setPlacementAppendField(placementCfg.placement, "enabled", event.target.value === "on")
-                              }
-                            >
-                              <option value="off">停用</option>
-                              <option value="on">啟用</option>
-                            </select>
-                          </div>
-                          <div className="field">
-                            <div className="label">供應商</div>
-                            <select
-                              value={appendCfg.vendor}
-                              onChange={(event) =>
-                                setPlacementAppendField(placementCfg.placement, "vendor", event.target.value as VendorKey)
-                              }
-                            >
-                              {VENDORS.map((vendor) => (
-                                <option key={`${placementCfg.placement}-append-${vendor}`} value={vendor}>
-                                  {vendorLabel(vendor)}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                          <div className="field">
-                            <div className="label">serviceId</div>
-                            <div className="inline-fields service-inline">
-                              <input
-                                value={String(appendCfg.serviceId)}
-                                inputMode="numeric"
-                                onChange={(event) =>
-                                  setPlacementAppendField(
-                                    placementCfg.placement,
-                                    "serviceId",
-                                    Number(event.target.value) || 0,
-                                  )
-                                }
-                              />
-                              <ServicePicker
-                                vendor={appendCfg.vendor}
-                                currentServiceId={appendCfg.serviceId}
-                                onPick={(service) =>
-                                  setPlacementAppendField(placementCfg.placement, "serviceId", service.id)
-                                }
-                                compact
-                                buttonLabel="從清單選擇"
-                                buttonClassName="btn ghost sm"
-                              />
-                            </div>
-                          </div>
-                          <div className="field">
-                            <div className="label">追加數量</div>
-                            <input
-                              value={String(appendCfg.quantity)}
-                              inputMode="numeric"
-                              onChange={(event) =>
-                                setPlacementAppendField(
-                                  placementCfg.placement,
-                                  "quantity",
-                                  Number(event.target.value) || 0,
-                                )
-                              }
-                              placeholder="例如 150"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })()}
-
                 <div className="dense-table suppliers-table">
                   <div className="dense-th">狀態</div>
                   <div className="dense-th">供應商</div>
@@ -966,6 +883,90 @@ export function SettingsPage() {
                 {placementCfg.suppliers.length === 0 ? (
                   <div className="hint" style={{ marginTop: 8 }}>這個品項尚未綁定供應商服務。若保持啟用，前台會提示請通知管理員。</div>
                 ) : null}
+
+                {(() => {
+                  const appendCfg = ensureAppendConfig(placementCfg.appendOnComplete);
+                  return (
+                    <div className="dense-details" style={{ marginTop: 10 }}>
+                      <div className="dense-panel">
+                        <div className="dense-title" style={{ marginBottom: 8 }}>追加設定</div>
+                        <div className="hint" style={{ marginBottom: 8 }}>
+                          當此品項完成時（預設單次下單完成，平均模式為最後一批完成）可固定追加一筆供應商訂單。
+                        </div>
+                        <div className="row cols4">
+                          <div className="field">
+                            <div className="label">狀態</div>
+                            <select
+                              value={appendCfg.enabled ? "on" : "off"}
+                              onChange={(event) =>
+                                setPlacementAppendField(placementCfg.placement, "enabled", event.target.value === "on")
+                              }
+                            >
+                              <option value="off">停用</option>
+                              <option value="on">啟用</option>
+                            </select>
+                          </div>
+                          <div className="field">
+                            <div className="label">供應商</div>
+                            <select
+                              value={appendCfg.vendor}
+                              onChange={(event) =>
+                                setPlacementAppendField(placementCfg.placement, "vendor", event.target.value as VendorKey)
+                              }
+                            >
+                              {VENDORS.map((vendor) => (
+                                <option key={`${placementCfg.placement}-append-${vendor}`} value={vendor}>
+                                  {vendorLabel(vendor)}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="field">
+                            <div className="label">serviceId</div>
+                            <div className="inline-fields service-inline">
+                              <input
+                                value={String(appendCfg.serviceId)}
+                                inputMode="numeric"
+                                onChange={(event) =>
+                                  setPlacementAppendField(
+                                    placementCfg.placement,
+                                    "serviceId",
+                                    Number(event.target.value) || 0,
+                                  )
+                                }
+                              />
+                              <ServicePicker
+                                vendor={appendCfg.vendor}
+                                currentServiceId={appendCfg.serviceId}
+                                onPick={(service) =>
+                                  setPlacementAppendField(placementCfg.placement, "serviceId", service.id)
+                                }
+                                compact
+                                buttonLabel="從清單選擇"
+                                buttonClassName="btn ghost sm"
+                              />
+                            </div>
+                          </div>
+                          <div className="field">
+                            <div className="label">追加數量</div>
+                            <input
+                              value={String(appendCfg.quantity)}
+                              inputMode="numeric"
+                              onChange={(event) =>
+                                setPlacementAppendField(
+                                  placementCfg.placement,
+                                  "quantity",
+                                  Number(event.target.value) || 0,
+                                )
+                              }
+                              placeholder="例如 150"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             ))}
           </div>

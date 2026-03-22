@@ -869,6 +869,7 @@ export function AdPerformancePage() {
         <div className="pill">
           <span className="tag">{user?.displayName ?? user?.username}</span>
           <button className="btn" onClick={() => nav("/ad-orders")}>廠商互動下單</button>
+          <button className="btn primary" onClick={() => nav("/ad-performance")}>投放成效</button>
           {canManage ? <button className="btn" onClick={() => nav("/meta-ads-orders")}>Meta官方投廣</button> : null}
           {canManage ? <button className="btn" onClick={() => nav("/settings")}>控制設定</button> : null}
           <button
@@ -891,12 +892,8 @@ export function AdPerformancePage() {
 
       <div className="card">
         <div className="card-bd">
-          <div className="hint">其他同事新增或更新案件後，這頁會自動帶入最新狀態。</div>
-          <div className="hint" style={{ marginTop: 6 }}>
-            頁面開啟期間，系統每小時會自動更新一次進行中案件；你也可以手動同步。
-          </div>
-          <div className="hint" style={{ marginTop: 6 }}>
-            最近一次每小時自動更新：
+          <div className="hint">
+            最近一次更新時間：
             {hourlyAutoLastRunAt ? new Date(hourlyAutoLastRunAt).toLocaleString("zh-TW") : "尚未執行"}
             {hourlyAutoRunning ? "（同步中）" : ""}
           </div>
@@ -935,7 +932,6 @@ export function AdPerformancePage() {
               <div className="dense-th">金額</div>
               <div className="dense-th">數量</div>
               <div className="dense-th">剩餘數量</div>
-              <div className="dense-th">成效</div>
               <div className="dense-th">執行進度</div>
               <div className="dense-th">操作</div>
 
@@ -959,23 +955,6 @@ export function AdPerformancePage() {
                   </div>
                   <div className="dense-td">
                     <div className="dense-title">{row.remainsText}</div>
-                  </div>
-                  <div className="dense-td dense-main">
-                    <div className="dense-title">{row.metricLabel}</div>
-                    <div className="dense-meta">
-                      {!VENDOR_POST_METRIC_ENABLED
-                        ? "功能保留，暫不啟用"
-                        : vendorMetrics[row.id]?.loading
-                        ? "讀取中..."
-                        : vendorMetrics[row.id]?.error
-                          ? "--"
-                          : typeof vendorMetrics[row.id]?.value === "number"
-                            ? vendorMetrics[row.id]!.value!.toLocaleString("zh-TW")
-                            : "-"}
-                    </div>
-                    {VENDOR_POST_METRIC_ENABLED && vendorMetrics[row.id]?.source === "estimated" ? (
-                      <div className="dense-meta">估算值（API 讀取失敗時以執行進度換算）</div>
-                    ) : null}
                   </div>
                   <div className="dense-td dense-main">
                     <div className="dense-title" style={row.hasWarning ? { color: "rgba(220, 38, 38, 0.95)" } : undefined}>
@@ -1054,10 +1033,8 @@ export function AdPerformancePage() {
 
             <div className="sep" />
             <div className="hint">
-              本頁開啟期間，系統每小時會自動同步進行中案件；若有設定目標停投，另外每 5 分鐘檢查一次。
-            </div>
-            <div className="hint" style={{ marginTop: 6 }}>
-              目標停投檢查：{metaAutoRunning ? "檢查中" : "待命中"}
+              最近一次更新時間：{hourlyAutoLastRunAt ? new Date(hourlyAutoLastRunAt).toLocaleString("zh-TW") : "尚未執行"}
+              {metaAutoRunning ? "（檢查中）" : ""}
             </div>
 
             {metaRows.length === 0 ? (

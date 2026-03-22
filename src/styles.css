@@ -758,11 +758,10 @@ textarea:focus {
     minmax(90px, 0.8fr)
     minmax(100px, 0.8fr)
     minmax(90px, 0.75fr)
-    minmax(100px, 0.8fr)
-    minmax(140px, 1fr)
-    minmax(220px, 1.4fr)
+    minmax(110px, 0.85fr)
+    minmax(260px, 1.5fr)
     minmax(140px, 1fr);
-  min-width: 1270px;
+  min-width: 1120px;
   overflow: auto;
   -ms-overflow-style: none;
   scrollbar-width: none;

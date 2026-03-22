@@ -447,6 +447,9 @@ export function MetaAdsOrdersPage() {
           <button className="btn" onClick={() => nav("/ad-performance")}>
             投放成效
           </button>
+          <button className="btn primary" onClick={() => nav("/meta-ads-orders")}>
+            Meta官方投廣
+          </button>
           {canManage ? (
             <button className="btn" onClick={() => nav("/settings")}>
               控制設定
