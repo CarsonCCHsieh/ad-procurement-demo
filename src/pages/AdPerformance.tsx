@@ -67,6 +67,7 @@ function formatVendorUserMessage(error?: string): string {
 
 const META_AUTO_CHECK_INTERVAL_MS = 5 * 60 * 1000;
 const HOURLY_AUTO_REFRESH_INTERVAL_MS = 60 * 60 * 1000;
+const VENDOR_POST_METRIC_ENABLED = false;
 
 function metricValueFromPerformance(row: MetaOrder, key: MetaKpiMetricKey): number | null {
   const hit = row.performance?.metrics?.find((metric) => metric.key === key);
@@ -762,6 +763,7 @@ export function AdPerformancePage() {
   };
 
   useEffect(() => {
+    if (!VENDOR_POST_METRIC_ENABLED) return;
     const targets = visibleVendorRows.filter((row) => !!row.metricKey && !!row.link);
     const now = Date.now();
     const missing = targets.filter((row) => {
@@ -961,7 +963,9 @@ export function AdPerformancePage() {
                   <div className="dense-td dense-main">
                     <div className="dense-title">{row.metricLabel}</div>
                     <div className="dense-meta">
-                      {vendorMetrics[row.id]?.loading
+                      {!VENDOR_POST_METRIC_ENABLED
+                        ? "功能保留，暫不啟用"
+                        : vendorMetrics[row.id]?.loading
                         ? "讀取中..."
                         : vendorMetrics[row.id]?.error
                           ? "--"
@@ -969,7 +973,7 @@ export function AdPerformancePage() {
                             ? vendorMetrics[row.id]!.value!.toLocaleString("zh-TW")
                             : "-"}
                     </div>
-                    {vendorMetrics[row.id]?.source === "estimated" ? (
+                    {VENDOR_POST_METRIC_ENABLED && vendorMetrics[row.id]?.source === "estimated" ? (
                       <div className="dense-meta">估算值（API 讀取失敗時以執行進度換算）</div>
                     ) : null}
                   </div>

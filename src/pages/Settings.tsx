@@ -468,7 +468,7 @@ export function SettingsPage() {
   const sampleQuantity = Number(sampleQty);
 
   return (
-    <div className="container settings-page">
+    <div className="container container--wide settings-page">
       <div className="topbar">
         <div className="brand">
           <div className="brand-title">控制設定</div>
@@ -827,27 +827,29 @@ export function SettingsPage() {
                           </div>
                           <div className="field">
                             <div className="label">serviceId</div>
-                            <input
-                              value={String(appendCfg.serviceId)}
-                              inputMode="numeric"
-                              onChange={(event) =>
-                                setPlacementAppendField(
-                                  placementCfg.placement,
-                                  "serviceId",
-                                  Number(event.target.value) || 0,
-                                )
-                              }
-                            />
-                            <ServicePicker
-                              vendor={appendCfg.vendor}
-                              currentServiceId={appendCfg.serviceId}
-                              onPick={(service) =>
-                                setPlacementAppendField(placementCfg.placement, "serviceId", service.id)
-                              }
-                              compact
-                              buttonLabel="從清單選擇"
-                              buttonClassName="btn ghost sm"
-                            />
+                            <div className="inline-fields service-inline">
+                              <input
+                                value={String(appendCfg.serviceId)}
+                                inputMode="numeric"
+                                onChange={(event) =>
+                                  setPlacementAppendField(
+                                    placementCfg.placement,
+                                    "serviceId",
+                                    Number(event.target.value) || 0,
+                                  )
+                                }
+                              />
+                              <ServicePicker
+                                vendor={appendCfg.vendor}
+                                currentServiceId={appendCfg.serviceId}
+                                onPick={(service) =>
+                                  setPlacementAppendField(placementCfg.placement, "serviceId", service.id)
+                                }
+                                compact
+                                buttonLabel="從清單選擇"
+                                buttonClassName="btn ghost sm"
+                              />
+                            </div>
                           </div>
                           <div className="field">
                             <div className="label">追加數量</div>
@@ -903,23 +905,25 @@ export function SettingsPage() {
                         </select>
                       </div>
 
-                      <div className="dense-td">
-                        <input
-                          className="dense-input"
-                          value={String(supplier.serviceId)}
-                          inputMode="numeric"
-                          onChange={(event) =>
-                            setSupplierField(placementCfg.placement, index, "serviceId", Number(event.target.value) || 0)
-                          }
-                        />
-                        <ServicePicker
-                          vendor={supplier.vendor}
-                          currentServiceId={supplier.serviceId}
-                          onPick={(service) => setSupplierField(placementCfg.placement, index, "serviceId", service.id)}
-                          compact
-                          buttonLabel="從清單選擇"
-                          buttonClassName="btn ghost sm"
-                        />
+                      <div className="dense-td service-cell">
+                        <div className="inline-fields service-inline">
+                          <input
+                            className="dense-input"
+                            value={String(supplier.serviceId)}
+                            inputMode="numeric"
+                            onChange={(event) =>
+                              setSupplierField(placementCfg.placement, index, "serviceId", Number(event.target.value) || 0)
+                            }
+                          />
+                          <ServicePicker
+                            vendor={supplier.vendor}
+                            currentServiceId={supplier.serviceId}
+                            onPick={(service) => setSupplierField(placementCfg.placement, index, "serviceId", service.id)}
+                            compact
+                            buttonLabel="從清單選擇"
+                            buttonClassName="btn ghost sm"
+                          />
+                        </div>
                       </div>
 
                       <div className="dense-td">

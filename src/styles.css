@@ -737,7 +737,14 @@ textarea:focus {
 
 /* Dense supplier mapping table in Settings */
 .dense-table.suppliers-table {
-  grid-template-columns: minmax(84px, 0.75fr) minmax(170px, 1.25fr) minmax(260px, 2fr) minmax(110px, 0.85fr) minmax(110px, 0.85fr) minmax(96px, 0.75fr);
+  grid-template-columns:
+    minmax(78px, 0.7fr)
+    minmax(150px, 1fr)
+    minmax(320px, 2.2fr)
+    minmax(100px, 0.8fr)
+    minmax(120px, 0.9fr)
+    minmax(88px, 0.6fr);
+  min-width: 1050px;
   overflow: auto;
   -ms-overflow-style: none;
   scrollbar-width: none;
@@ -805,6 +812,10 @@ textarea:focus {
   overflow: hidden;
 }
 
+.settings-page .dense-table.suppliers-table .service-cell {
+  overflow: visible;
+}
+
 .settings-page .dense-table.suppliers-table .dense-td input,
 .settings-page .dense-table.suppliers-table .dense-td select,
 .settings-page .dense-table.suppliers-table .dense-input,
@@ -822,6 +833,24 @@ textarea:focus {
 
 .settings-page .dense-table.suppliers-table .dense-td:last-child .btn {
   width: 100%;
+}
+
+.settings-page .service-inline {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.settings-page .service-inline > * {
+  min-width: 0;
+}
+
+.settings-page .service-inline .btn {
+  min-height: 36px;
+  justify-self: end;
+  white-space: nowrap;
 }
 
 .settings-page .dense-table.suppliers-table .dense-td .hint,
@@ -1087,6 +1116,11 @@ textarea:focus {
   .settings-page .dense-table.suppliers-table .inline-fields {
     width: 100%;
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+  }
+
+  .settings-page .service-inline {
     grid-template-columns: minmax(0, 1fr);
     gap: 6px;
   }
