@@ -1,4 +1,4 @@
-const FALLBACK_PUBLIC_API_BASE = "https://bare-frog-dust-occupations.trycloudflare.com";
+const FALLBACK_PUBLIC_API_BASE = "https://dependent-interact-postposted-carter.trycloudflare.com";
 
 export function resolveApiBase() {
   const envBase = (import.meta.env.VITE_SHARED_API_BASE ?? "").trim().replace(/\/$/, "");
