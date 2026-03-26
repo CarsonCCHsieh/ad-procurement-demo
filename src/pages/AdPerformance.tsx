@@ -562,24 +562,32 @@ export function AdPerformancePage() {
     setVendorRefreshing(true);
     try {
       if (API_BASE) {
-        const response = await fetch(apiUrl("/api/vendor/sync-shared-orders"), { method: "POST" });
-        const data = (await response.json()) as { ok?: boolean; syncedCount?: number; error?: string };
-        if (!response.ok || !data.ok) {
-          throw new Error(data.error || `HTTP ${response.status}`);
-        }
+        try {
+          const response = await fetch(apiUrl("/api/vendor/sync-shared-orders"), { method: "POST" });
+          const data = (await response.json()) as { ok?: boolean; syncedCount?: number; error?: string };
+          if (!response.ok || !data.ok) {
+            throw new Error(data.error || `HTTP ${response.status}`);
+          }
 
-        await pullLatestOrders();
-        if (options?.silent) return;
+          await pullLatestOrders();
+          if (options?.silent) return;
 
-        if ((data.syncedCount ?? 0) === 0) {
-          setMsg("目前沒有需要追蹤的進行中案件。");
+          if ((data.syncedCount ?? 0) === 0) {
+            setMsg("目前沒有需要追蹤的進行中案件。");
+            setTimeout(() => setMsg(null), 2500);
+            return;
+          }
+
+          setMsg(`已更新 ${Number(data.syncedCount ?? 0).toLocaleString("zh-TW")} 筆進行中案件。`);
           setTimeout(() => setMsg(null), 2500);
           return;
+        } catch (error) {
+          if (!options?.silent) {
+            const detail = error instanceof Error ? error.message : "未知錯誤";
+            setMsg(`遠端同步失敗，改用本機直連：${detail}`);
+            setTimeout(() => setMsg(null), 3200);
+          }
         }
-
-        setMsg(`已更新 ${Number(data.syncedCount ?? 0).toLocaleString("zh-TW")} 筆進行中案件。`);
-        setTimeout(() => setMsg(null), 2500);
-        return;
       }
 
       const vendors: VendorKey[] = ["smmraja", "urpanel", "justanotherpanel"];
