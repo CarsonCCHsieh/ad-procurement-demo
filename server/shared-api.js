@@ -886,6 +886,16 @@ function isVendorSplitDone(split) {
   return false;
 }
 
+function normalizeSplitStatusByRemains(split) {
+  if (!split || typeof split !== "object") return split;
+  const nextStatus = normalizeVendorStatusByRemains(split.vendorStatus, split.remains);
+  if (!nextStatus || nextStatus === split.vendorStatus) return split;
+  return {
+    ...split,
+    vendorStatus: nextStatus,
+  };
+}
+
 function taipeiDateString(input = new Date()) {
   const date = input instanceof Date ? input : new Date(input);
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -1451,14 +1461,15 @@ async function syncSharedOrders() {
         const refreshedSplits = [];
         for (const split of nextBatch.splits) {
           if (!split?.vendor || !split?.vendorOrderId || isVendorSplitDone(split)) {
-            refreshedSplits.push(split);
+            refreshedSplits.push(normalizeSplitStatusByRemains(split));
             continue;
           }
           const status = await fetchVendorStatus(split.vendor, split.vendorOrderId);
           syncedCount += 1;
+          const vendorStatus = normalizeVendorStatusByRemains(status.status, status.remains ?? split.remains);
           refreshedSplits.push({
             ...split,
-            vendorStatus: status.status ?? split.vendorStatus,
+            vendorStatus: vendorStatus ?? split.vendorStatus,
             remains: status.remains ?? split.remains,
             startCount: status.start_count ?? split.startCount,
             charge: status.charge ?? split.charge,
