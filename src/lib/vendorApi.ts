@@ -10,6 +10,24 @@ export type VendorStatus = {
   error?: string;
 };
 
+function normalizeVendorStatusByRemains(status: unknown, remains: number | undefined): string | undefined {
+  if (typeof status !== "string") return undefined;
+  const text = status.trim();
+  if (!text) return undefined;
+  if (typeof remains !== "number" || !Number.isFinite(remains) || remains > 0) return text;
+
+  const lower = text.toLowerCase();
+  if (
+    lower.includes("progress") ||
+    lower.includes("processing") ||
+    lower.includes("pending") ||
+    lower.includes("queued")
+  ) {
+    return "Completed";
+  }
+  return text;
+}
+
 function toNum(x: unknown): number | undefined {
   const n = typeof x === "number" ? x : typeof x === "string" ? Number(x) : NaN;
   return Number.isFinite(n) ? n : undefined;
@@ -69,9 +87,10 @@ export function normalizeStatusResponse(orderIds: number[], resp: unknown): Reco
   const r = resp as Record<string, unknown>;
   if (typeof r.status === "string" || typeof r.remains !== "undefined" || typeof r.charge !== "undefined") {
     const id = orderIds[0];
+    const remains = toNum(r.remains);
     setOne(id, {
-      status: typeof r.status === "string" ? r.status : undefined,
-      remains: toNum(r.remains),
+      status: normalizeVendorStatusByRemains(r.status, remains),
+      remains,
       start_count: toNum(r.start_count),
       charge: toNum(r.charge),
       currency: typeof r.currency === "string" ? r.currency : undefined,
@@ -92,9 +111,10 @@ export function normalizeStatusResponse(orderIds: number[], resp: unknown): Reco
       setOne(id, { error: x.error });
       continue;
     }
+    const remains = toNum(x.remains);
     setOne(id, {
-      status: typeof x.status === "string" ? x.status : undefined,
-      remains: toNum(x.remains),
+      status: normalizeVendorStatusByRemains(x.status, remains),
+      remains,
       start_count: toNum(x.start_count),
       charge: toNum(x.charge),
       currency: typeof x.currency === "string" ? x.currency : undefined,
@@ -104,4 +124,3 @@ export function normalizeStatusResponse(orderIds: number[], resp: unknown): Reco
 
   return out;
 }
-

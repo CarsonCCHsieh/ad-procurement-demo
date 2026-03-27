@@ -831,12 +831,32 @@ function statusParamFor(vendor, orderIds) {
   return { key: "orders", value: joined };
 }
 
+function normalizeVendorStatusByRemains(status, remains) {
+  const text = String(status ?? "").trim();
+  if (!text) return text;
+  if (typeof remains !== "number" || !Number.isFinite(remains)) return text;
+  if (remains > 0) return text;
+
+  const lower = text.toLowerCase();
+  if (
+    lower.includes("progress") ||
+    lower.includes("processing") ||
+    lower.includes("pending") ||
+    lower.includes("queued")
+  ) {
+    return "Completed";
+  }
+  return text;
+}
+
 function normalizeSingleStatus(resp) {
   if (!resp || typeof resp !== "object") return { error: "Empty response" };
   if (typeof resp.error === "string") return { error: resp.error };
+  const remains = toNum(resp.remains);
+  const status = normalizeVendorStatusByRemains(resp.status, remains);
   return {
-    status: typeof resp.status === "string" ? resp.status : undefined,
-    remains: toNum(resp.remains),
+    status: status || undefined,
+    remains,
     start_count: toNum(resp.start_count),
     charge: toNum(resp.charge),
     currency: typeof resp.currency === "string" ? resp.currency : undefined,

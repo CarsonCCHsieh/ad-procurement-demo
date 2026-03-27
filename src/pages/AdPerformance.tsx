@@ -76,6 +76,7 @@ function metricValueFromPerformance(row: MetaOrder, key: MetaKpiMetricKey): numb
 
 function summarizeVendorProgress(batch: { splits: VendorSplitExec[]; warnings: string[] }): string {
   if (batch.splits.length === 0) return "請通知管理員完成設定。";
+  if (batch.splits.every((split) => isVendorSplitDone(split))) return "Completed";
 
   const firstError = batch.splits.map((split) => formatVendorUserMessage(split.error)).find(Boolean);
   if (firstError) return firstError;
@@ -117,6 +118,10 @@ function summarizeBatchProgress(batch: DemoOrderBatch): string {
   if (batch.status === "scheduled") {
     return batch.plannedDate ? `預計 ${batch.plannedDate} 送出` : "待送出";
   }
+  if (batch.status === "completed") return "Completed";
+  if (batch.status === "failed") return "Failed";
+  if (batch.status === "partial") return "Partial";
+  if (batch.status === "submitted") return "In progress";
   return summarizeVendorProgress(batch);
 }
 
