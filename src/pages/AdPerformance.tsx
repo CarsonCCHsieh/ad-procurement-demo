@@ -557,6 +557,54 @@ export function AdPerformancePage() {
     }
   };
 
+  const hasPendingVendorSplits = (source: DemoOrder[]) => {
+    for (const order of source) {
+      for (const line of order.lines) {
+        for (const batch of getLineBatches(line)) {
+          for (const split of batch.splits) {
+            if (!split.vendorOrderId) continue;
+            if (!isVendorSplitDone(split)) return true;
+          }
+        }
+      }
+    }
+    return false;
+  };
+
+  const runLocalVendorSync = async (options?: { silent?: boolean }) => {
+    const vendors: VendorKey[] = ["smmraja", "urpanel", "justanotherpanel"];
+    let syncedCount = 0;
+    const errors: string[] = [];
+
+    for (const vendor of vendors) {
+      try {
+        const result = await syncVendor(vendor, { silent: true });
+        syncedCount += result.syncedCount;
+        if (result.error) errors.push(formatVendorUserMessage(result.error));
+      } catch (error) {
+        errors.push(error instanceof Error ? error.message : "同步失敗");
+      }
+    }
+
+    setRefresh((value) => value + 1);
+    if (options?.silent) return;
+
+    if (errors.length > 0) {
+      setMsg(`更新完成，但有提醒：${errors.join(" / ")}`);
+      setTimeout(() => setMsg(null), 4000);
+      return;
+    }
+
+    if (syncedCount === 0) {
+      setMsg("目前沒有需要追蹤的進行中案件。");
+      setTimeout(() => setMsg(null), 2500);
+      return;
+    }
+
+    setMsg(`已更新 ${syncedCount.toLocaleString("zh-TW")} 筆進行中案件。`);
+    setTimeout(() => setMsg(null), 2500);
+  };
+
   const refreshVendorTracking = async (options?: { silent?: boolean }) => {
     if (vendorRefreshing) return;
     setVendorRefreshing(true);
@@ -570,6 +618,12 @@ export function AdPerformancePage() {
           }
 
           await pullLatestOrders();
+          const pendingLocal = hasPendingVendorSplits(listOrders());
+          if ((data.syncedCount ?? 0) === 0 && pendingLocal) {
+            await runLocalVendorSync(options);
+            return;
+          }
+
           if (options?.silent) return;
 
           if ((data.syncedCount ?? 0) === 0) {
@@ -589,34 +643,7 @@ export function AdPerformancePage() {
           }
         }
       }
-
-      const vendors: VendorKey[] = ["smmraja", "urpanel", "justanotherpanel"];
-      let syncedCount = 0;
-      const errors: string[] = [];
-
-      for (const vendor of vendors) {
-        const result = await syncVendor(vendor, { silent: true });
-        syncedCount += result.syncedCount;
-        if (result.error) errors.push(formatVendorUserMessage(result.error));
-      }
-
-      setRefresh((value) => value + 1);
-      if (options?.silent) return;
-
-      if (errors.length > 0) {
-        setMsg(`更新完成，但有提醒：${errors.join(" / ")}`);
-        setTimeout(() => setMsg(null), 4000);
-        return;
-      }
-
-      if (syncedCount === 0) {
-        setMsg("目前沒有需要追蹤的進行中案件。");
-        setTimeout(() => setMsg(null), 2500);
-        return;
-      }
-
-      setMsg(`已更新 ${syncedCount.toLocaleString("zh-TW")} 筆進行中案件。`);
-      setTimeout(() => setMsg(null), 2500);
+      await runLocalVendorSync(options);
     } finally {
       setVendorRefreshing(false);
     }
