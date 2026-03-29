@@ -5189,7 +5189,7 @@
     "type": "Default",
     "rate": "1.08",
     "min": 100,
-    "max": 50000,
+    "max": 500000,
     "dripfeed": true,
     "refill": false,
     "cancel": true,
@@ -5213,7 +5213,7 @@
     "type": "Default",
     "rate": "1.20",
     "min": 100,
-    "max": 50000,
+    "max": 500000,
     "dripfeed": true,
     "refill": false,
     "cancel": true,
@@ -10419,7 +10419,7 @@
     "service": 12251,
     "name": "Twitter -Likes || JAPAN 🇯🇵 || 30 Days || Low Drop",
     "type": "Default",
-    "rate": "15.60",
+    "rate": "16.25",
     "min": 20,
     "max": 200,
     "dripfeed": false,
@@ -10856,7 +10856,7 @@
     "max": 9999999,
     "dripfeed": true,
     "refill": false,
-    "cancel": true,
+    "cancel": false,
     "category": "Twitter - Views / Impressions / Live / Bookmarks"
   },
   {
@@ -11590,18 +11590,6 @@
     "refill": false,
     "cancel": true,
     "category": "TikTok - Targeted USA 🇺🇸"
-  },
-  {
-    "service": 11734,
-    "name": "Tiktok Live Comments [Emoji] [Max: 10K] [Start Time: 0 - 1 Min] [Speed: 5K/Day]",
-    "type": "Default",
-    "rate": "2.50",
-    "min": 1,
-    "max": 1000,
-    "dripfeed": true,
-    "refill": false,
-    "cancel": false,
-    "category": "Tiktok - Comments || Live Comments"
   },
   {
     "service": 5599,
