@@ -10512,6 +10512,18 @@
     "category": "Instagram Comments"
   },
   {
+    "service": 3306,
+    "name": "Instagram Comments [CUSTOM] [Max: 5K] [Start Time: 1 Hour] [Speed: 500/Day]",
+    "type": "Custom Comments",
+    "rate": "5.2965",
+    "min": 10,
+    "max": 5000,
+    "dripfeed": false,
+    "refill": false,
+    "cancel": false,
+    "category": "Instagram Comments"
+  },
+  {
     "service": 1902,
     "name": "Instagram Comments [CUSTOM] [100] [UNITED KINGDOM]",
     "type": "Custom Comments",
@@ -19553,7 +19565,7 @@
     "type": "Default",
     "rate": "1.75",
     "min": 100,
-    "max": 4000,
+    "max": 5000,
     "dripfeed": true,
     "refill": false,
     "cancel": false,
@@ -19565,7 +19577,7 @@
     "type": "Default",
     "rate": "1.75",
     "min": 100,
-    "max": 4000,
+    "max": 5000,
     "dripfeed": true,
     "refill": false,
     "cancel": false,
@@ -19577,7 +19589,7 @@
     "type": "Default",
     "rate": "1.75",
     "min": 100,
-    "max": 4000,
+    "max": 5000,
     "dripfeed": true,
     "refill": false,
     "cancel": false,
@@ -19589,7 +19601,7 @@
     "type": "Default",
     "rate": "1.75",
     "min": 100,
-    "max": 4000,
+    "max": 5000,
     "dripfeed": true,
     "refill": false,
     "cancel": false,
@@ -19601,7 +19613,7 @@
     "type": "Default",
     "rate": "1.75",
     "min": 100,
-    "max": 4000,
+    "max": 5000,
     "dripfeed": true,
     "refill": false,
     "cancel": false,
@@ -19613,7 +19625,7 @@
     "type": "Default",
     "rate": "1.75",
     "min": 100,
-    "max": 4000,
+    "max": 5000,
     "dripfeed": true,
     "refill": false,
     "cancel": false,
@@ -20969,7 +20981,7 @@
     "type": "Default",
     "rate": "3.375",
     "min": 100,
-    "max": 4000,
+    "max": 5000,
     "dripfeed": false,
     "refill": false,
     "cancel": false,
@@ -21017,7 +21029,7 @@
     "type": "Default",
     "rate": "3.125",
     "min": 100,
-    "max": 4000,
+    "max": 5000,
     "dripfeed": true,
     "refill": false,
     "cancel": false,
@@ -34064,7 +34076,7 @@
     "max": 99999,
     "dripfeed": true,
     "refill": false,
-    "cancel": true,
+    "cancel": false,
     "category": "Tiktok Followers"
   },
   {
@@ -34160,7 +34172,7 @@
     "max": 99999,
     "dripfeed": false,
     "refill": false,
-    "cancel": true,
+    "cancel": false,
     "category": "Tiktok Followers"
   },
   {
@@ -34172,7 +34184,7 @@
     "max": 99999,
     "dripfeed": true,
     "refill": false,
-    "cancel": true,
+    "cancel": false,
     "category": "Tiktok Followers"
   },
   {
@@ -34244,7 +34256,7 @@
     "max": 99999,
     "dripfeed": false,
     "refill": false,
-    "cancel": true,
+    "cancel": false,
     "category": "Tiktok Followers"
   },
   {
@@ -34256,7 +34268,7 @@
     "max": 99999,
     "dripfeed": false,
     "refill": false,
-    "cancel": true,
+    "cancel": false,
     "category": "Tiktok Followers"
   },
   {
@@ -34484,7 +34496,7 @@
     "max": 99999,
     "dripfeed": false,
     "refill": false,
-    "cancel": true,
+    "cancel": false,
     "category": "Tiktok Followers"
   },
   {
@@ -34496,7 +34508,7 @@
     "max": 99999,
     "dripfeed": false,
     "refill": false,
-    "cancel": true,
+    "cancel": false,
     "category": "Tiktok Followers"
   },
   {
@@ -34508,7 +34520,7 @@
     "max": 5000,
     "dripfeed": true,
     "refill": true,
-    "cancel": true,
+    "cancel": false,
     "category": "Tiktok Followers"
   },
   {
@@ -34556,7 +34568,7 @@
     "max": 99999,
     "dripfeed": false,
     "refill": false,
-    "cancel": true,
+    "cancel": false,
     "category": "Tiktok Followers"
   },
   {
@@ -34604,7 +34616,7 @@
     "max": 99999,
     "dripfeed": false,
     "refill": false,
-    "cancel": true,
+    "cancel": false,
     "category": "Tiktok Followers"
   },
   {
@@ -34760,7 +34772,7 @@
     "max": 99999,
     "dripfeed": false,
     "refill": false,
-    "cancel": true,
+    "cancel": false,
     "category": "Tiktok Followers"
   },
   {
@@ -34952,7 +34964,7 @@
     "max": 99999,
     "dripfeed": false,
     "refill": false,
-    "cancel": true,
+    "cancel": false,
     "category": "Tiktok Followers"
   },
   {
@@ -37956,6 +37968,90 @@
     "category": "TikTok Live Views"
   },
   {
+    "service": 195,
+    "name": "TikTok Livestream Views [Max: 200K] [Start Time: INSTANT] [Stay: 30 mins]",
+    "type": "Default",
+    "rate": "1.482",
+    "min": 10,
+    "max": 1000,
+    "dripfeed": false,
+    "refill": false,
+    "cancel": false,
+    "category": "TikTok Live Views"
+  },
+  {
+    "service": 5680,
+    "name": "TikTok Livestream Views [Max: 200K] [Start Time: INSTANT] [Stay: 60 mins]",
+    "type": "Default",
+    "rate": "2.964",
+    "min": 10,
+    "max": 1000,
+    "dripfeed": false,
+    "refill": false,
+    "cancel": false,
+    "category": "TikTok Live Views"
+  },
+  {
+    "service": 5681,
+    "name": "TikTok Livestream Views [Max: 200K] [Start Time: INSTANT] [Stay: 90 mins]",
+    "type": "Default",
+    "rate": "4.446",
+    "min": 10,
+    "max": 1000,
+    "dripfeed": false,
+    "refill": false,
+    "cancel": false,
+    "category": "TikTok Live Views"
+  },
+  {
+    "service": 5682,
+    "name": "TikTok Livestream Views [Max: 200K] [Start Time: INSTANT] [Stay: 120 mins]",
+    "type": "Default",
+    "rate": "5.928",
+    "min": 10,
+    "max": 1000,
+    "dripfeed": false,
+    "refill": false,
+    "cancel": false,
+    "category": "TikTok Live Views"
+  },
+  {
+    "service": 5683,
+    "name": "TikTok Livestream Views [Max: 200K] [Start Time: INSTANT] [Stay: 180 mins]",
+    "type": "Default",
+    "rate": "8.892",
+    "min": 10,
+    "max": 1000,
+    "dripfeed": false,
+    "refill": false,
+    "cancel": false,
+    "category": "TikTok Live Views"
+  },
+  {
+    "service": 5684,
+    "name": "TikTok Livestream Views [Max: 200K] [Start Time: INSTANT] [Stay: 240 mins]",
+    "type": "Default",
+    "rate": "11.856",
+    "min": 10,
+    "max": 1000,
+    "dripfeed": false,
+    "refill": false,
+    "cancel": false,
+    "category": "TikTok Live Views"
+  },
+  {
+    "service": 7755,
+    "name": "TikTok Livestream Views [Max: 200K] [Start Time: INSTANT] [Stay: 300 mins]",
+    "type": "Default",
+    "rate": "14.82",
+    "min": 10,
+    "max": 1000,
+    "dripfeed": false,
+    "refill": false,
+    "cancel": false,
+    "category": "TikTok Live Views"
+  },
+  {
     "service": 8380,
     "name": "TikTok Livestream Views [Max: 200K] [Start Time: INSTANT] [Stay: 60 mins]",
     "type": "Default",
@@ -40157,7 +40253,7 @@
     "type": "Default",
     "rate": "12.50",
     "min": 10,
-    "max": 400,
+    "max": 100,
     "dripfeed": true,
     "refill": true,
     "cancel": false,
@@ -53857,7 +53953,7 @@
   },
   {
     "service": 784,
-    "name": "Shazam Plays [Refill: No] [Min: 5K] [Max: 500K] [Start Time: 0-12 Hours] [Speed: 400/Day]⚡️💧",
+    "name": "Shazam Plays [Refill: No] [Min: 5K] [Max: 500K] [Start Time: 0-12 Hours] [Speed: 200/Day]⚡️💧",
     "type": "Default",
     "rate": "1.25",
     "min": 1000,
