@@ -159,6 +159,52 @@ async function fetchLocalPostMetricsProxy(postRef: string): Promise<{
   }
 }
 
+async function fetchLocalPostMetricsProxyByRef(params: {
+  postRef: string;
+  platform?: "facebook" | "instagram";
+  pageId?: string;
+  pageName?: string;
+  sourceUrl?: string;
+}): Promise<{
+  ok: boolean;
+  detail?: string;
+  values?: Partial<Record<MetaKpiMetricKey, number>>;
+  raw?: Record<string, unknown>;
+} | null> {
+  if (typeof window === "undefined") return null;
+  if (!window.location.origin.startsWith("http")) return null;
+
+  try {
+    const qs = new URLSearchParams();
+    qs.set("postId", params.postRef);
+    if (params.platform) qs.set("platform", params.platform);
+    if (params.pageId) qs.set("pageId", params.pageId);
+    if (params.pageName) qs.set("pageName", params.pageName);
+    if (params.sourceUrl) qs.set("sourceUrl", params.sourceUrl);
+
+    const url = apiUrl(`/api/meta/post-metrics?${qs.toString()}`);
+    const res = await fetch(url, {
+      method: "GET",
+      headers: { "Cache-Control": "no-store" },
+    });
+    if (res.status === 404) return null;
+    const json = (await res.json()) as {
+      ok?: boolean;
+      detail?: string;
+      values?: Partial<Record<MetaKpiMetricKey, number>>;
+      raw?: Record<string, unknown>;
+    };
+    return {
+      ok: !!json.ok,
+      detail: typeof json.detail === "string" ? json.detail : undefined,
+      values: json.values,
+      raw: json.raw,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function extractMetricValues(row: Record<string, unknown>): Record<MetaKpiMetricKey, number> {
   const likes = sumAcrossActionTypes(row.actions, ["post_reaction", "like", "post_like", "ig_like"]);
   const allClicks = toNumber(row.clicks);
@@ -318,6 +364,10 @@ export async function fetchMetaAdStatus(params: {
 export async function fetchMetaPostMetrics(params: {
   cfg: MetaConfigV1;
   postId: string;
+  platform?: "facebook" | "instagram";
+  pageId?: string;
+  pageName?: string;
+  sourceUrl?: string;
 }): Promise<{
   ok: boolean;
   detail?: string;
@@ -328,7 +378,13 @@ export async function fetchMetaPostMetrics(params: {
   const token = cfg.accessToken.trim();
   const postRef = params.postId.trim();
   const postId = postRef.replace(/^https?:\/\/[^/]+\//i, "");
-  const proxied = await fetchLocalPostMetricsProxy(postRef);
+  const proxied = await fetchLocalPostMetricsProxyByRef({
+    postRef,
+    platform: params.platform,
+    pageId: params.pageId,
+    pageName: params.pageName,
+    sourceUrl: params.sourceUrl,
+  });
   if (proxied?.ok) {
     return proxied;
   }
@@ -337,6 +393,58 @@ export async function fetchMetaPostMetrics(params: {
   }
   if (!postId) {
     return { ok: false, detail: "缺少貼文 ID" };
+  }
+
+  if (params.platform === "instagram") {
+    try {
+      const base = await graphGet(
+        cfg,
+        token,
+        `/${encodeURIComponent(postId)}`,
+        "id,media_type,permalink,like_count,comments_count,timestamp",
+      );
+
+      const likes = toNumber(base.like_count);
+      const comments = toNumber(base.comments_count);
+      const values: Partial<Record<MetaKpiMetricKey, number>> = {
+        likes,
+        comments,
+        shares: 0,
+        all_clicks: 0,
+        interactions_total: likes + comments,
+      };
+
+      for (const metric of ["impressions", "reach", "video_views"] as const) {
+        try {
+          const insightRaw = await graphGet(
+            cfg,
+            token,
+            `/${encodeURIComponent(postId)}/insights?metric=${metric}`,
+          );
+          const data = Array.isArray(insightRaw.data) ? insightRaw.data : [];
+          const value = readInsightValue(data, metric);
+          if (metric === "impressions") values.impressions = value;
+          if (metric === "reach") values.reach = value;
+          if (metric === "video_views") {
+            values.video_3s_views = value;
+            values.thruplays = value;
+          }
+        } catch {
+          // Keep remaining metrics even if one IG insight metric is unavailable.
+        }
+      }
+
+      return {
+        ok: true,
+        values,
+        raw: {
+          base,
+        },
+      };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Instagram metrics fetch failed";
+      return { ok: false, detail: msg };
+    }
   }
 
   try {

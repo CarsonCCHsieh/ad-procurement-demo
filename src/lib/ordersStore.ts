@@ -37,6 +37,17 @@ export type CompletionAppendExec = {
   lastSyncAt?: string;
 };
 
+export type MetaTrackingRef = {
+  platform: "facebook" | "instagram";
+  refId: string;
+  sourceUrl: string;
+  canonicalUrl?: string;
+  pageId?: string;
+  pageName?: string;
+  resolver?: string;
+  resolvedAt: string;
+};
+
 export type DemoOrderBatchStatus = "scheduled" | "submitted" | "partial" | "failed" | "completed";
 
 export type DemoOrderBatch = {
@@ -81,6 +92,9 @@ export type DemoOrder = {
   mode?: OrderSubmitMode;
   scheduleStartDate?: string;
   scheduleEndDate?: string;
+  tracking?: MetaTrackingRef;
+  trackingError?: string;
+  trackingResolvedAt?: string;
 };
 
 const STORAGE_KEY = "ad_demo_orders_v1";

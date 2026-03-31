@@ -1,4 +1,5 @@
 import type { MetaAdGoalKey, MetaKpiMetricKey } from "./metaGoals";
+import type { MetaTrackingRef } from "./ordersStore";
 import { queueSharedWrite } from "./sharedSync";
 
 export type MetaOrderStatus = "draft" | "submitted" | "running" | "paused" | "failed" | "completed";
@@ -28,6 +29,7 @@ export type MetaOrderInput = {
   };
   detailedTargetingText?: string;
   trackingPostId?: string;
+  trackingRef?: MetaTrackingRef;
   targetMetricKey?: MetaKpiMetricKey;
   targetValue?: number;
   targetCurrentValue?: number;

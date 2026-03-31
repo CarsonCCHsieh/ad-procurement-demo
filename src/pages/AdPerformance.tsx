@@ -12,6 +12,7 @@ import {
   updateOrder,
   type DemoOrder,
   type DemoOrderBatch,
+  type MetaTrackingRef,
   type VendorSplitExec,
 } from "../lib/ordersStore";
 import { clearMetaOrders, listMetaOrders, updateMetaOrder, type MetaOrder } from "../lib/metaOrdersStore";
@@ -151,6 +152,7 @@ type VendorRow = {
   progressText: string;
   placementText: string;
   link: string;
+  trackingRef?: MetaTrackingRef;
   metricKey?: MetaKpiMetricKey;
   metricLabel: string;
   lastSyncAt?: string;
@@ -221,6 +223,7 @@ function buildVendorRows(source: DemoOrder[]): VendorRow[] {
           progressText: summarizeBatchProgress(batch),
           placementText: getPlacementLabel(line.placement) ?? line.placement,
           link: firstLink,
+          trackingRef: order.tracking,
           metricKey: metric?.key,
           metricLabel: metric?.label ?? "目前指標",
           lastSyncAt:
@@ -396,7 +399,14 @@ export function AdPerformancePage() {
     }));
 
     try {
-      const result = await fetchMetaPostMetrics({ cfg: metaCfg, postId: row.link });
+      const result = await fetchMetaPostMetrics({
+        cfg: metaCfg,
+        postId: row.trackingRef?.refId || row.link,
+        platform: row.trackingRef?.platform,
+        pageId: row.trackingRef?.pageId,
+        pageName: row.trackingRef?.pageName,
+        sourceUrl: row.trackingRef?.sourceUrl || row.link,
+      });
       if (!result.ok) {
         const estimatedValue =
           typeof row.remainsValue === "number" && Number.isFinite(row.remainsValue)

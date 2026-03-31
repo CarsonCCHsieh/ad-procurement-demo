@@ -213,6 +213,46 @@ function derivePageIdFromPostId(postId) {
   return m ? m[1] : "";
 }
 
+function buildMetaTrackingRef({
+  platform,
+  refId,
+  sourceUrl,
+  canonicalUrl,
+  pageId,
+  pageName,
+  resolver,
+}) {
+  const normalizedRefId = String(refId || "").trim();
+  if (!normalizedRefId) return null;
+  return {
+    platform: platform === "instagram" ? "instagram" : "facebook",
+    refId: normalizedRefId,
+    sourceUrl: String(sourceUrl || "").trim(),
+    canonicalUrl: String(canonicalUrl || "").trim() || undefined,
+    pageId: String(pageId || "").trim() || undefined,
+    pageName: String(pageName || "").trim() || undefined,
+    resolver: String(resolver || "").trim() || undefined,
+    resolvedAt: new Date().toISOString(),
+  };
+}
+
+function normalizeTrackingRef(value) {
+  if (!value || typeof value !== "object") return null;
+  const row = value;
+  const refId = String(row.refId || "").trim();
+  if (!refId) return null;
+  return {
+    platform: row.platform === "instagram" ? "instagram" : "facebook",
+    refId,
+    sourceUrl: String(row.sourceUrl || "").trim(),
+    canonicalUrl: String(row.canonicalUrl || "").trim() || undefined,
+    pageId: String(row.pageId || "").trim() || undefined,
+    pageName: String(row.pageName || "").trim() || undefined,
+    resolver: String(row.resolver || "").trim() || undefined,
+    resolvedAt: String(row.resolvedAt || "").trim() || undefined,
+  };
+}
+
 function tryParseUrl(rawUrl) {
   try {
     return new URL(rawUrl);
@@ -405,14 +445,24 @@ async function resolveInstagramMediaIdFromUrl(metaSecrets, rawUrl, preloadedAcco
   return null;
 }
 
-async function resolveFacebookPostIdFromUrl(metaSecrets, rawUrl) {
+async function resolveInstagramTrackingFromUrl(metaSecrets, rawUrl, preloadedAccounts = null) {
+  const resolved = await resolveInstagramMediaIdFromUrl(metaSecrets, rawUrl, preloadedAccounts);
+  if (!resolved?.mediaId) return null;
+  return buildMetaTrackingRef({
+    platform: "instagram",
+    refId: resolved.mediaId,
+    sourceUrl: rawUrl,
+    canonicalUrl: resolved.sourceUrl || rawUrl,
+    pageId: resolved.account?.igId || "",
+    pageName: resolved.account?.igUsername || resolved.account?.pageName || "",
+    resolver: "instagram_shortcode_scan",
+  });
+}
+
+async function resolveFacebookTrackingFromUrl(metaSecrets, rawUrl) {
   const expandedUrl = await followRedirectUrl(rawUrl);
   const info = parseFacebookPostUrl(expandedUrl) || parseFacebookPostUrl(rawUrl);
   if (!info?.username) return null;
-
-  if (info.storyFbid && info.pageIdFromQuery && /^\d+$/.test(info.storyFbid) && /^\d+$/.test(info.pageIdFromQuery)) {
-    return `${info.pageIdFromQuery}_${info.storyFbid}`;
-  }
 
   let pageId = "";
   try {
@@ -430,54 +480,116 @@ async function resolveFacebookPostIdFromUrl(metaSecrets, rawUrl) {
 
   const pages = await listAvailablePages(metaSecrets);
   const page = pages.find((item) => String(item?.id || "") === pageId);
+  const pageName = String(page?.name || "").trim();
   const feedToken = typeof page?.access_token === "string" && page.access_token.trim()
     ? page.access_token.trim()
     : metaSecrets.userAccessToken;
 
+  if (info.storyFbid && /^\d+$/.test(info.storyFbid)) {
+    return buildMetaTrackingRef({
+      platform: "facebook",
+      refId: `${pageId}_${info.storyFbid}`,
+      sourceUrl: rawUrl,
+      canonicalUrl: expandedUrl || rawUrl,
+      pageId,
+      pageName,
+      resolver: "facebook_story_fbid",
+    });
+  }
+
+  const urlCandidates = [expandedUrl, rawUrl]
+    .map((item) => String(item || "").trim())
+    .filter(Boolean)
+    .filter((item, idx, arr) => arr.indexOf(item) === idx);
+
+  for (const candidate of urlCandidates) {
+    try {
+      const resolved = await graphApiGet(metaSecrets.apiVersion, metaSecrets.userAccessToken, "/", {
+        id: candidate,
+        fields: "id",
+      });
+      const directId = typeof resolved?.id === "string" ? resolved.id.trim() : "";
+      if (directId && directId !== candidate && directId.includes("_")) {
+        return buildMetaTrackingRef({
+          platform: "facebook",
+          refId: directId,
+          sourceUrl: rawUrl,
+          canonicalUrl: candidate,
+          pageId: derivePageIdFromPostId(directId) || pageId,
+          pageName,
+          resolver: "facebook_graph_id",
+        });
+      }
+    } catch {
+      // fallback below
+    }
+  }
+
   const matchToken = info.token || info.postIdToken;
   if (!matchToken) return null;
 
-  let after = "";
-  for (let pageIndex = 0; pageIndex < 4; pageIndex += 1) {
-    let feed = null;
-    try {
-      feed = await graphApiGet(metaSecrets.apiVersion, feedToken, `/${encodeURIComponent(pageId)}/posts`, {
-        fields: "id,permalink_url",
-        limit: 100,
-        after: after || undefined,
-      });
-    } catch {
-      break;
-    }
-    const rows = Array.isArray(feed?.data) ? feed.data : [];
-    const normalizedSource = normalizeComparableUrl(info.rawUrl || expandedUrl || rawUrl);
-    for (const row of rows) {
-      const permalink = typeof row?.permalink_url === "string" ? row.permalink_url : "";
-      const normalizedPermalink = normalizeComparableUrl(permalink);
-      if (
-        permalink &&
-        (permalink.includes(matchToken) ||
-          normalizedPermalink.includes(matchToken) ||
-          normalizedPermalink === normalizedSource)
-      ) {
-        const id = typeof row?.id === "string" ? row.id.trim() : "";
-        if (id) return id;
+  const normalizedSource = normalizeComparableUrl(info.rawUrl || expandedUrl || rawUrl);
+  for (const edge of ["posts", "feed"]) {
+    let after = "";
+    for (let pageIndex = 0; pageIndex < 6; pageIndex += 1) {
+      let feed = null;
+      try {
+        feed = await graphApiGet(metaSecrets.apiVersion, feedToken, `/${encodeURIComponent(pageId)}/${edge}`, {
+          fields: "id,permalink_url,created_time",
+          limit: 100,
+          after: after || undefined,
+        });
+      } catch {
+        break;
       }
-    }
 
-    const nextAfter = typeof feed?.paging?.cursors?.after === "string" ? feed.paging.cursors.after : "";
-    if (!nextAfter || nextAfter === after) break;
-    after = nextAfter;
+      const rows = Array.isArray(feed?.data) ? feed.data : [];
+      for (const row of rows) {
+        const permalink = typeof row?.permalink_url === "string" ? row.permalink_url : "";
+        const normalizedPermalink = normalizeComparableUrl(permalink);
+        if (
+          permalink &&
+          (permalink.includes(matchToken) ||
+            normalizedPermalink.includes(matchToken) ||
+            normalizedPermalink === normalizedSource)
+        ) {
+          const id = typeof row?.id === "string" ? row.id.trim() : "";
+          if (id) {
+            return buildMetaTrackingRef({
+              platform: "facebook",
+              refId: id,
+              sourceUrl: rawUrl,
+              canonicalUrl: permalink || normalizedPermalink || rawUrl,
+              pageId,
+              pageName,
+              resolver: `facebook_${edge}_scan`,
+            });
+          }
+        }
+      }
+
+      const nextAfter = typeof feed?.paging?.cursors?.after === "string" ? feed.paging.cursors.after : "";
+      if (!nextAfter || nextAfter === after) break;
+      after = nextAfter;
+    }
   }
 
   if (info.postIdToken && /^\d+$/.test(info.postIdToken) && /^\d+$/.test(pageId)) {
-    return `${pageId}_${info.postIdToken}`;
+    return buildMetaTrackingRef({
+      platform: "facebook",
+      refId: `${pageId}_${info.postIdToken}`,
+      sourceUrl: rawUrl,
+      canonicalUrl: expandedUrl || rawUrl,
+      pageId,
+      pageName,
+      resolver: "facebook_page_postid_fallback",
+    });
   }
 
   return null;
 }
 
-async function resolvePostIdFromUrl(metaSecrets, url) {
+async function resolveTrackingFromUrl(metaSecrets, url) {
   const expandedUrl = await followRedirectUrl(url);
   const urlCandidates = [expandedUrl, url]
     .map((item) => String(item || "").trim())
@@ -486,24 +598,15 @@ async function resolvePostIdFromUrl(metaSecrets, url) {
 
   for (const candidate of urlCandidates) {
     const parsed = tryParseUrl(candidate);
-    if (parsed && isInstagramHost(parsed.hostname)) continue;
-    try {
-      const resolved = await graphApiGet(metaSecrets.apiVersion, metaSecrets.userAccessToken, "/", {
-        id: candidate,
-        fields: "id",
-      });
-      const id = typeof resolved?.id === "string" ? resolved.id.trim() : "";
-      if (id && id !== candidate && id.includes("_")) return id;
-    } catch {
-      // fallback below
+    if (!parsed) continue;
+    if (isInstagramHost(parsed.hostname)) {
+      const resolved = await resolveInstagramTrackingFromUrl(metaSecrets, candidate);
+      if (resolved) return resolved;
     }
-  }
-
-  for (const candidate of urlCandidates) {
-    const parsed = tryParseUrl(candidate);
-    if (!parsed || !isFacebookHost(parsed.hostname)) continue;
-    const resolved = await resolveFacebookPostIdFromUrl(metaSecrets, candidate);
-    if (resolved) return resolved;
+    if (isFacebookHost(parsed.hostname)) {
+      const resolved = await resolveFacebookTrackingFromUrl(metaSecrets, candidate);
+      if (resolved) return resolved;
+    }
   }
 
   return null;
@@ -512,12 +615,12 @@ async function resolvePostIdFromUrl(metaSecrets, url) {
 async function fetchInstagramMediaMetricsSecure(metaSecrets, rawUrl) {
   const accounts = await listInstagramAccounts(metaSecrets);
   if (accounts.length === 0) {
-    return { ok: false, detail: "目前 token 下沒有已綁定的 Instagram 商業帳號，無法抓取 Instagram 貼文成效。" };
+    return { ok: false, detail: "No linked Instagram business account available for this token" };
   }
 
   const resolved = await resolveInstagramMediaIdFromUrl(metaSecrets, rawUrl, accounts);
   if (!resolved?.mediaId || !resolved?.account?.pageToken) {
-    return { ok: false, detail: "Instagram 連結無法對應到可讀取的媒體 ID" };
+    return { ok: false, detail: "Instagram URL could not be resolved to a readable media ID" };
   }
 
   let base = null;
@@ -533,7 +636,7 @@ async function fetchInstagramMediaMetricsSecure(metaSecrets, rawUrl) {
   }
 
   if (!base) {
-    return { ok: false, detail: "Instagram 媒體讀取失敗" };
+    return { ok: false, detail: "Instagram media fetch failed" };
   }
 
   const values = {
@@ -595,6 +698,99 @@ async function fetchInstagramMediaMetricsSecure(metaSecrets, rawUrl) {
   };
 }
 
+async function fetchInstagramMediaMetricsByIdSecure(metaSecrets, trackingRef, pageTokenOverride = "") {
+  const ref = normalizeTrackingRef(trackingRef);
+  if (!ref?.refId) {
+    return { ok: false, detail: "Instagram media id is required" };
+  }
+
+  const accounts = await listInstagramAccounts(metaSecrets);
+  const matchedAccount =
+    accounts.find((account) => String(account?.igId || "") === String(ref.pageId || "")) ||
+    accounts.find((account) => String(account?.pageId || "") === String(ref.pageId || "")) ||
+    accounts.find((account) => String(account?.igUsername || "").toLowerCase() === String(ref.pageName || "").toLowerCase()) ||
+    accounts[0];
+
+  const pageToken = pageTokenOverride || matchedAccount?.pageToken || "";
+  if (!pageToken) {
+    return { ok: false, detail: "Instagram page token is unavailable" };
+  }
+
+  let base = null;
+  try {
+    base = await graphApiGet(
+      metaSecrets.apiVersion,
+      pageToken,
+      `/${encodeURIComponent(ref.refId)}`,
+      { fields: "id,media_type,permalink,like_count,comments_count,timestamp" },
+    );
+  } catch {
+    base = null;
+  }
+
+  if (!base) {
+    return { ok: false, detail: "Instagram media fetch failed" };
+  }
+
+  const values = {
+    likes: Number(base?.like_count || 0),
+    comments: Number(base?.comments_count || 0),
+    shares: 0,
+    all_clicks: 0,
+    interactions_total: 0,
+    impressions: 0,
+    reach: 0,
+    video_3s_views: 0,
+    thruplays: 0,
+  };
+
+  const metricMap = {
+    impressions: "impressions",
+    reach: "reach",
+    video_3s_views: "video_views",
+    thruplays: "video_views",
+  };
+  const validMetrics = [];
+  const invalidMetrics = [];
+
+  for (const [key, metric] of Object.entries(metricMap)) {
+    try {
+      const insight = await graphApiGet(
+        metaSecrets.apiVersion,
+        pageToken,
+        `/${encodeURIComponent(ref.refId)}/insights`,
+        { metric },
+      );
+      const metricValue = readFirstInsightValue(insight);
+      values[key] = metricValue;
+      validMetrics.push(metric);
+    } catch (error) {
+      invalidMetrics.push({
+        metric,
+        detail: error instanceof Error ? error.message : "unknown error",
+      });
+    }
+  }
+
+  values.interactions_total = values.likes + values.comments + values.shares + values.all_clicks;
+
+  return {
+    ok: true,
+    page: {
+      id: String(ref.pageId || matchedAccount?.igId || matchedAccount?.pageId || ""),
+      name: ref.pageName || matchedAccount?.igUsername || matchedAccount?.pageName || "Instagram",
+    },
+    values,
+    raw: {
+      base,
+      tracking: ref,
+      mediaId: ref.refId,
+      validMetrics,
+      invalidMetrics,
+    },
+  };
+}
+
 function readFirstInsightValue(raw) {
   const row = Array.isArray(raw?.data) ? raw.data[0] : null;
   const valueRow = row && Array.isArray(row.values) ? row.values[0] : null;
@@ -607,38 +803,71 @@ function readFirstInsightValue(raw) {
   return 0;
 }
 
-async function fetchMetaPostMetricsSecure({ postId, pageId, pageName }) {
+async function fetchMetaPostMetricsSecure({ postId, platform, pageId, pageName, sourceUrl }) {
   const metaSecrets = loadMetaSecrets();
   if (!metaSecrets) {
-    return { ok: false, detail: "Meta 本機權限尚未設定" };
+    return { ok: false, detail: "Meta local credentials are not configured" };
   }
 
   const postRef = String(postId || "").trim();
-  const parsedPostUrl = tryParseUrl(postRef);
-  if (parsedPostUrl && isInstagramHost(parsedPostUrl.hostname)) {
-    return await fetchInstagramMediaMetricsSecure(metaSecrets, postRef);
+  if (!postRef) {
+    return { ok: false, detail: "缂傚倸鎼惃顖滄尒閸忓吋鐎?ID" };
   }
 
-  const isHttpUrl = /^https?:\/\//i.test(postRef);
-  const resolvedByUrl = isHttpUrl ? await resolvePostIdFromUrl(metaSecrets, postRef) : null;
-  if (isHttpUrl && !resolvedByUrl) {
+  const hintedPlatform = platform === "instagram" || platform === "facebook" ? platform : "";
+  const parsedPostUrl = tryParseUrl(sourceUrl || postRef);
+  const urlPlatform = parsedPostUrl
+    ? isInstagramHost(parsedPostUrl.hostname)
+      ? "instagram"
+      : isFacebookHost(parsedPostUrl.hostname)
+        ? "facebook"
+        : ""
+    : "";
+  const effectivePlatform = hintedPlatform || urlPlatform || (postRef.includes("_") ? "facebook" : "");
+
+  let resolvedTracking = null;
+  if (/^https?:\/\//i.test(postRef)) {
+    resolvedTracking = await resolveTrackingFromUrl(metaSecrets, sourceUrl || postRef);
+  }
+
+  if (/^https?:\/\//i.test(postRef) && !resolvedTracking) {
     return {
       ok: false,
-      detail: "連結無法轉成可查詢的貼文 ID。Facebook 請改用含 story_fbid/id 的永久連結或直接貼 pageId_postId；Instagram 請使用已綁定商業帳號可解析的貼文。",
+      detail: "The supplied URL could not be resolved into a trackable Meta post reference",
     };
   }
 
-  const normalizedPostId = (resolvedByUrl || postRef)
+  const trackingRef = normalizeTrackingRef(
+    resolvedTracking ||
+      buildMetaTrackingRef({
+        platform: effectivePlatform === "instagram" ? "instagram" : "facebook",
+        refId: postRef,
+        sourceUrl: sourceUrl || postRef,
+        pageId: String(pageId || "").trim() || undefined,
+        pageName: String(pageName || "").trim() || undefined,
+        resolver: "direct_ref",
+      }),
+  );
+
+  if (trackingRef?.platform === "instagram") {
+    return await fetchInstagramMediaMetricsByIdSecure(metaSecrets, trackingRef);
+  }
+
+  const normalizedPostId = String(trackingRef?.refId || postRef)
     .replace(/^https?:\/\/[^/]+\//i, "")
     .split("?")[0]
     .split("#")[0]
     .trim();
   if (!normalizedPostId) {
-    return { ok: false, detail: "缺少貼文 ID" };
+    return { ok: false, detail: "缂傚倸鎼惃顖滄尒閸忓吋鐎?ID" };
   }
 
-  const targetPageId = String(pageId || "").trim() || derivePageIdFromPostId(normalizedPostId) || metaSecrets.preferredPageId;
-  const targetPageName = String(pageName || "").trim() || metaSecrets.preferredPageName;
+  const targetPageId =
+    String(pageId || "").trim() ||
+    String(trackingRef?.pageId || "").trim() ||
+    derivePageIdFromPostId(normalizedPostId) ||
+    metaSecrets.preferredPageId;
+  const targetPageName = String(pageName || "").trim() || String(trackingRef?.pageName || "").trim() || metaSecrets.preferredPageName;
   const pages = await listAvailablePages(metaSecrets);
   const page = pages.find((item) =>
     (targetPageId && String(item?.id || "") === targetPageId) ||
@@ -663,11 +892,11 @@ async function fetchMetaPostMetricsSecure({ postId, pageId, pageName }) {
       baseToken = token;
       break;
     } catch (error) {
-      lastBaseError = error instanceof Error ? error.message : "讀取貼文失敗";
+      lastBaseError = error instanceof Error ? error.message : "Facebook post fetch failed";
     }
   }
   if (!base || !baseToken) {
-    return { ok: false, detail: lastBaseError || "找不到對應貼文資料" };
+    return { ok: false, detail: lastBaseError || "Facebook post not found" };
   }
 
   const pageLabel = String(page?.name || targetPageName || targetPageId || "");
@@ -726,6 +955,7 @@ async function fetchMetaPostMetricsSecure({ postId, pageId, pageName }) {
     values,
     raw: {
       base,
+      tracking: trackingRef,
       validMetrics,
       invalidMetrics,
     },
@@ -867,7 +1097,7 @@ function normalizeSingleStatus(resp) {
 async function fetchVendorStatus(vendor, orderId) {
   const runtime = getVendorRuntime(vendor);
   if (!runtime.enabled || !runtime.baseUrl || !runtime.key) {
-    return { error: "供應商設定不完整" };
+    return { error: "Vendor runtime is not configured" };
   }
   const param = statusParamFor(vendor, [orderId]);
   const resp = await postVendorPanel({
@@ -1147,7 +1377,7 @@ async function maybeHandleLineAppend(line, links) {
           vendor: appendOnComplete.vendor,
           serviceId: appendOnComplete.serviceId,
           quantity: appendOnComplete.quantity,
-          error: "缺少可送單的連結",
+          error: "Missing order link for append submit",
           lastSyncAt: new Date().toISOString(),
         },
       },
@@ -1174,7 +1404,7 @@ async function maybeHandleLineAppend(line, links) {
           vendor: appendOnComplete.vendor,
           serviceId: appendOnComplete.serviceId,
           quantity: appendOnComplete.quantity,
-          error: result.error ?? "追加送單失敗",
+          error: result.error ?? "Append submit failed",
           lastSyncAt: now,
         },
       },
@@ -1210,13 +1440,13 @@ async function maybeHandleLineAppend(line, links) {
 async function submitVendorSplit({ vendor, serviceId, quantity, link }) {
   const runtime = getVendorRuntime(vendor);
   if (!runtime.enabled) {
-    return { ok: false, error: "供應商未啟用" };
+    return { ok: false, error: "Vendor is not enabled" };
   }
   if (!runtime.baseUrl || !runtime.key) {
-    return { ok: false, error: "供應商 API 設定不完整" };
+    return { ok: false, error: "Vendor API config is incomplete" };
   }
   if (!serviceId || serviceId <= 0) {
-    return { ok: false, error: "serviceId 未設定" };
+    return { ok: false, error: "serviceId is missing" };
   }
 
   const resp = await postVendorPanel({
@@ -1236,7 +1466,7 @@ async function submitVendorSplit({ vendor, serviceId, quantity, link }) {
 
   const vendorOrderId = toNum(resp?.order ?? resp?.id ?? resp?.data?.order);
   if (!vendorOrderId || vendorOrderId <= 0) {
-    return { ok: false, error: "供應商未回傳有效訂單編號", raw: resp };
+    return { ok: false, error: "Vendor did not return a valid order id", raw: resp };
   }
 
   let status = {
@@ -1273,7 +1503,7 @@ async function submitBatch(batch, links) {
         splits: (Array.isArray(batch?.splits) ? batch.splits : []).map((split) => ({
           ...split,
           vendorStatus: "failed",
-          error: "缺少可送單的連結",
+          error: "Missing order link",
           lastSyncAt: now,
         })),
       },
@@ -1316,7 +1546,7 @@ async function submitBatch(batch, links) {
         ...split,
         vendorStatus: "failed",
         remains: split?.quantity ?? 0,
-        error: result.error ?? "送單失敗",
+        error: result.error ?? "Submit failed",
         lastSyncAt: now,
       });
     }
@@ -1335,10 +1565,10 @@ async function submitBatch(batch, links) {
 async function fetchVendorBalance(vendor) {
   const runtime = getVendorRuntime(vendor);
   if (!runtime.enabled) {
-    return { ok: false, error: "供應商未啟用", source: runtime.keySource };
+    return { ok: false, error: "Vendor is not enabled", source: runtime.keySource };
   }
   if (!runtime.baseUrl || !runtime.key) {
-    return { ok: false, error: "供應商 API 設定不完整", source: runtime.keySource };
+    return { ok: false, error: "Vendor API config is incomplete", source: runtime.keySource };
   }
 
   const resp = await postVendorPanel({
@@ -1362,31 +1592,31 @@ async function fetchVendorBalance(vendor) {
 async function retrySharedOrderBatch(orderId, lineIndex, batchId) {
   const orders = readSharedJson(ORDERS_KEY);
   if (!Array.isArray(orders)) {
-    throw new Error("找不到共享訂單資料");
+    throw new Error("Shared order storage not found");
   }
 
   const orderIndex = orders.findIndex((order) => String(order?.id) === String(orderId));
   if (orderIndex < 0) {
-    throw new Error("找不到指定案件");
+    throw new Error("Order not found");
   }
 
   const order = orders[orderIndex];
   const lines = Array.isArray(order?.lines) ? order.lines.map((line) => ({ ...line })) : [];
   if (!Number.isInteger(lineIndex) || lineIndex < 0 || lineIndex >= lines.length) {
-    throw new Error("找不到指定項目");
+    throw new Error("Line not found");
   }
 
   const targetLine = lines[lineIndex];
   const batches = normalizeLineBatches(targetLine);
   const batchIndex = batches.findIndex((batch) => String(batch?.id) === String(batchId));
   if (batchIndex < 0) {
-    throw new Error("找不到指定批次");
+    throw new Error("Batch not found");
   }
 
   const today = taipeiDateString();
   const targetBatch = batches[batchIndex];
   if (targetBatch.plannedDate && targetBatch.plannedDate > today) {
-    throw new Error(`此批次預計 ${targetBatch.plannedDate} 送出，尚未到可重送時間`);
+    throw new Error(`This batch is scheduled for ${targetBatch.plannedDate} and is not retryable yet`);
   }
 
   const resetBatch = {
@@ -1437,11 +1667,34 @@ async function syncSharedOrders() {
     return { syncedCount: 0, orders: [] };
   }
 
+  const metaSecrets = loadMetaSecrets();
   let syncedCount = 0;
   const nextOrders = [];
   const today = taipeiDateString();
 
   for (const order of orders) {
+    let tracking = normalizeTrackingRef(order?.tracking);
+    let trackingError = typeof order?.trackingError === "string" ? order.trackingError : "";
+    let trackingResolvedAt = typeof order?.trackingResolvedAt === "string" ? order.trackingResolvedAt : "";
+    const firstLink =
+      Array.isArray(order?.links) && order.links.length > 0 && typeof order.links[0] === "string"
+        ? String(order.links[0]).trim()
+        : "";
+
+    if (!tracking?.refId && metaSecrets && firstLink) {
+      try {
+        const resolvedTracking = await resolveTrackingFromUrl(metaSecrets, firstLink);
+        if (resolvedTracking?.refId) {
+          tracking = resolvedTracking;
+          trackingError = "";
+          trackingResolvedAt = resolvedTracking.resolvedAt || new Date().toISOString();
+        }
+      } catch (error) {
+        trackingError = error instanceof Error ? error.message : "tracking resolve failed";
+        trackingResolvedAt = new Date().toISOString();
+      }
+    }
+
     const nextLines = [];
     for (const line of Array.isArray(order?.lines) ? order.lines : []) {
       const nextBatches = [];
@@ -1502,6 +1755,9 @@ async function syncSharedOrders() {
       ...order,
       lines: nextLines,
       status: deriveOrderStatus(nextLines),
+      tracking: tracking ?? undefined,
+      trackingError: trackingError || undefined,
+      trackingResolvedAt: trackingResolvedAt || undefined,
     });
   }
 
@@ -1553,8 +1809,10 @@ const server = http.createServer(async (req, res) => {
       const url = new URL(req.url, `http://${req.headers.host || "127.0.0.1"}`);
       const result = await fetchMetaPostMetricsSecure({
         postId: url.searchParams.get("postId") || "",
+        platform: url.searchParams.get("platform") || "",
         pageId: url.searchParams.get("pageId") || "",
         pageName: url.searchParams.get("pageName") || "",
+        sourceUrl: url.searchParams.get("sourceUrl") || "",
       });
       json(res, result.ok ? 200 : 400, result);
       return;
@@ -1564,7 +1822,7 @@ const server = http.createServer(async (req, res) => {
       const url = new URL(req.url, `http://${req.headers.host || "127.0.0.1"}`);
       const vendor = String(url.searchParams.get("vendor") || "").trim();
       if (!vendor) {
-        json(res, 400, { ok: false, error: "缺少 vendor" });
+        json(res, 400, { ok: false, error: "缂傚倸鎼惃?vendor" });
         return;
       }
       const result = await fetchVendorBalance(vendor);
@@ -1580,15 +1838,15 @@ const server = http.createServer(async (req, res) => {
       const firstLink = links[0] ?? "";
 
       if (!firstLink) {
-        json(res, 400, { ok: false, error: "缺少可送單的連結" });
+        json(res, 400, { ok: false, error: "Missing order link" });
         return;
       }
       if (links.length > 1) {
-        json(res, 400, { ok: false, error: "一次只能送出 1 個連結" });
+        json(res, 400, { ok: false, error: "Only one link is allowed per submission" });
         return;
       }
       if (lines.length === 0) {
-        json(res, 400, { ok: false, error: "缺少送單項目" });
+        json(res, 400, { ok: false, error: "Missing order lines" });
         return;
       }
 
@@ -1597,6 +1855,26 @@ const server = http.createServer(async (req, res) => {
       const submittedLines = [];
       let successCount = 0;
       let failureCount = 0;
+      const metaSecrets = loadMetaSecrets();
+      let tracking = undefined;
+      let trackingError = "";
+      let trackingResolvedAt = "";
+
+      if (metaSecrets && firstLink) {
+        try {
+          const resolvedTracking = await resolveTrackingFromUrl(metaSecrets, firstLink);
+          if (resolvedTracking?.refId) {
+            tracking = resolvedTracking;
+            trackingResolvedAt = resolvedTracking.resolvedAt || now;
+          } else {
+            trackingError = "tracking resolve returned empty";
+            trackingResolvedAt = now;
+          }
+        } catch (error) {
+          trackingError = error instanceof Error ? error.message : "tracking resolve failed";
+          trackingResolvedAt = now;
+        }
+      }
 
       for (const line of lines) {
         const appendOnComplete = normalizeAppendConfig(line?.appendOnComplete);
@@ -1663,6 +1941,9 @@ const server = http.createServer(async (req, res) => {
         lines: submittedLines,
         totalAmount: Number(payload?.totalAmount ?? 0),
         status: deriveOrderStatus(submittedLines),
+        tracking,
+        trackingError: trackingError || undefined,
+        trackingResolvedAt: trackingResolvedAt || undefined,
       };
 
       const existingOrders = readSharedJson(ORDERS_KEY);
@@ -1698,7 +1979,7 @@ const server = http.createServer(async (req, res) => {
       const batchId = String(payload?.batchId || "").trim();
 
       if (!orderId || !Number.isInteger(lineIndex) || !batchId) {
-        json(res, 400, { ok: false, error: "缺少重送所需參數" });
+        json(res, 400, { ok: false, error: "Missing retry parameters" });
         return;
       }
 
