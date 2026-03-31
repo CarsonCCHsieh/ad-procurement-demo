@@ -1106,6 +1106,14 @@ export function AdPerformancePage() {
                   const canPause = !!adId && row.status !== "paused";
                   const canResume = !!adId && row.status === "paused";
                   const metricLabel = getGoalPrimaryMetricLabel(row.goal);
+                  const accountLabel =
+                    metaPresetCfg.accounts.find((account) => account.id === row.accountId)?.label || row.accountLabel || "-";
+                  const industryLabel =
+                    metaPresetCfg.industries.find((industry) => industry.key === row.industryKey)?.label || row.industryLabel || "未套用";
+                  const sourceLabel = row.useExistingPost
+                    ? row.existingPostSource || row.trackingRef?.sourceUrl || row.existingPostId || row.trackingPostId || "既有貼文"
+                    : row.landingUrl || "連結廣告";
+                  const targetSourceLabel = row.trackingPostId ? "貼文指標" : "廣告層級指標";
 
                   return (
                     <div className="item" key={row.id}>
@@ -1124,6 +1132,22 @@ export function AdPerformancePage() {
                           <input value={row.apiStatusText ?? row.status} readOnly />
                         </div>
                         <div className="field">
+                          <div className="label">投放帳號</div>
+                          <input value={accountLabel} readOnly />
+                        </div>
+                        <div className="field">
+                          <div className="label">產業模板</div>
+                          <input value={industryLabel} readOnly />
+                        </div>
+                        <div className="field" style={{ gridColumn: "1 / -1" }}>
+                          <div className="label">素材來源</div>
+                          <input value={sourceLabel} readOnly />
+                        </div>
+                        <div className="field">
+                          <div className="label">廣告 ID</div>
+                          <input value={adId || "-"} readOnly />
+                        </div>
+                        <div className="field">
                           <div className="label">目標進度</div>
                           <input
                             value={
@@ -1133,6 +1157,7 @@ export function AdPerformancePage() {
                             }
                             readOnly
                           />
+                          {row.targetValue ? <div className="hint">目前判讀依據：{targetSourceLabel}</div> : null}
                         </div>
                         <div className="field">
                           <div className="label">操作</div>
@@ -1183,6 +1208,11 @@ export function AdPerformancePage() {
                           {row.targetReachedAt ? (
                             <div className="hint" style={{ marginTop: 6, color: "rgba(16, 185, 129, 0.95)" }}>
                               已達目標並自動停止：{new Date(row.targetReachedAt).toLocaleString("zh-TW")}
+                            </div>
+                          ) : null}
+                          {row.trackingRef?.resolver ? (
+                            <div className="hint" style={{ marginTop: 6 }}>
+                              貼文追蹤來源：{row.trackingRef.resolver}
                             </div>
                           ) : null}
                         </>
