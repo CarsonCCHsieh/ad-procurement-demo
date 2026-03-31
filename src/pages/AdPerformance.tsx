@@ -17,7 +17,7 @@ import {
 } from "../lib/ordersStore";
 import { clearMetaOrders, listMetaOrders, updateMetaOrder, type MetaOrder } from "../lib/metaOrdersStore";
 import { getMetaConfig } from "../config/metaConfig";
-import { getMetaPresetConfig } from "../config/metaPresetConfig";
+import { getMetaPresetConfig, type MetaOptimizationConfig } from "../config/metaPresetConfig";
 import { fetchMetaAdSnapshot, fetchMetaPostMetrics, updateMetaAdDelivery } from "../lib/metaGraphApi";
 import { getGoalPrimaryMetricKey, getGoalPrimaryMetricLabel, META_AD_GOALS, type MetaKpiMetricKey } from "../lib/metaGoals";
 import { fetchSharedValues, flushAllSharedState, pullSharedState, SHARED_SYNC_EVENT } from "../lib/sharedSync";
@@ -73,6 +73,143 @@ const VENDOR_POST_METRIC_ENABLED = false;
 function metricValueFromPerformance(row: MetaOrder, key: MetaKpiMetricKey): number | null {
   const hit = row.performance?.metrics?.find((metric) => metric.key === key);
   return typeof hit?.value === "number" ? hit.value : null;
+}
+
+type MetaDerivedKpis = {
+  primaryMetricKey: MetaKpiMetricKey;
+  primaryMetricLabel: string;
+  primaryMetricValue: number | null;
+  spend: number | null;
+  impressions: number | null;
+  allClicks: number | null;
+  ctr: number | null;
+  cpm: number | null;
+  cpc: number | null;
+  costPerResult: number | null;
+};
+
+type MetaRecommendation = {
+  tone: "info" | "warn" | "success";
+  text: string;
+};
+
+function roundMetric(value: number | null, digits = 2): number | null {
+  if (value == null || !Number.isFinite(value)) return null;
+  return Number(value.toFixed(digits));
+}
+
+function formatCurrency(value: number | null, digits = 0): string {
+  if (value == null || !Number.isFinite(value)) return "-";
+  return `NT$ ${value.toLocaleString("zh-TW", {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  })}`;
+}
+
+function buildMetaDerivedKpis(row: MetaOrder): MetaDerivedKpis {
+  const primaryMetricKey = getGoalPrimaryMetricKey(row.goal);
+  const primaryMetricLabel = getGoalPrimaryMetricLabel(row.goal);
+  const spend = metricValueFromPerformance(row, "spend");
+  const impressions = metricValueFromPerformance(row, "impressions");
+  const allClicks = metricValueFromPerformance(row, "all_clicks");
+  const fallbackPrimaryMetric = metricValueFromPerformance(row, primaryMetricKey);
+  const primaryMetricValue =
+    typeof row.targetCurrentValue === "number" && Number.isFinite(row.targetCurrentValue) ? row.targetCurrentValue : fallbackPrimaryMetric;
+  const ctr = spend != null && impressions && allClicks != null && impressions > 0 ? roundMetric((allClicks / impressions) * 100, 2) : null;
+  const cpm = spend != null && impressions && impressions > 0 ? roundMetric((spend / impressions) * 1000, 2) : null;
+  const cpc = spend != null && allClicks != null && allClicks > 0 ? roundMetric(spend / allClicks, 2) : null;
+  const costPerResult =
+    spend != null && primaryMetricValue != null && primaryMetricValue > 0 ? roundMetric(spend / primaryMetricValue, 2) : null;
+
+  return {
+    primaryMetricKey,
+    primaryMetricLabel,
+    primaryMetricValue,
+    spend,
+    impressions,
+    allClicks,
+    ctr,
+    cpm,
+    cpc,
+    costPerResult,
+  };
+}
+
+function buildMetaRecommendations(row: MetaOrder, optimization: MetaOptimizationConfig, derived: MetaDerivedKpis): MetaRecommendation[] {
+  const out: MetaRecommendation[] = [];
+  if (!optimization.enabled) return out;
+  if (row.targetReachedAt) {
+    out.push({ tone: "success", text: "已達設定目標，系統已自動停止投放。" });
+    return out;
+  }
+
+  const spend = derived.spend ?? 0;
+  if (spend <= 0) {
+    out.push({ tone: "info", text: "尚未累積花費，先觀察開始投遞後的數據。" });
+    return out;
+  }
+
+  if (spend < optimization.minSpendForAdvice) {
+    out.push({
+      tone: "info",
+      text: `目前花費 ${formatCurrency(spend)}，尚未達提醒門檻 ${formatCurrency(optimization.minSpendForAdvice)}。`,
+    });
+    return out;
+  }
+
+  if ((derived.primaryMetricValue ?? 0) <= 0) {
+    out.push({
+      tone: "warn",
+      text: `已有花費 ${formatCurrency(spend)}，但主要成果仍為 0，建議先檢查素材、受眾與版位。`,
+    });
+  }
+
+  if (derived.ctr != null && derived.ctr < optimization.lowCtrThreshold) {
+    out.push({
+      tone: "warn",
+      text: `CTR ${derived.ctr}% 低於門檻 ${optimization.lowCtrThreshold}% ，建議優先更換素材、文案或 CTA。`,
+    });
+  }
+
+  if (derived.cpm != null && derived.cpm > optimization.highCpmThreshold) {
+    out.push({
+      tone: "warn",
+      text: `CPM ${formatCurrency(derived.cpm, 2)} 偏高，建議檢查受眾是否過寬或版位是否過於分散。`,
+    });
+  }
+
+  if (derived.cpc != null && derived.cpc > optimization.highCpcThreshold) {
+    out.push({
+      tone: "warn",
+      text: `CPC ${formatCurrency(derived.cpc, 2)} 偏高，建議調整 CTA、素材切角或落地頁連結。`,
+    });
+  }
+
+  if (derived.costPerResult != null && derived.costPerResult > optimization.highCostPerResultThreshold) {
+    out.push({
+      tone: "warn",
+      text: `${derived.primaryMetricLabel}單位成本 ${formatCurrency(derived.costPerResult, 2)} 偏高，可考慮縮小受眾或更換模板。`,
+    });
+  }
+
+  if (
+    out.length === 0 &&
+    derived.ctr != null &&
+    derived.ctr >= optimization.lowCtrThreshold * 1.5 &&
+    derived.costPerResult != null &&
+    derived.costPerResult <= optimization.highCostPerResultThreshold * 0.75
+  ) {
+    out.push({
+      tone: "success",
+      text: `目前 CTR 與 ${derived.primaryMetricLabel}成本表現穩定，可先維持設定持續觀察。`,
+    });
+  }
+
+  if (out.length === 0) {
+    out.push({ tone: "info", text: "目前沒有明顯異常，建議持續觀察 1 至 2 個檢查週期。" });
+  }
+
+  return out.slice(0, 3);
 }
 
 function summarizeVendorProgress(batch: { splits: VendorSplitExec[]; warnings: string[] }): string {
@@ -1180,6 +1317,8 @@ export function AdPerformancePage() {
                   const canPause = !!adId && row.status !== "paused";
                   const canResume = !!adId && row.status === "paused";
                   const metricLabel = getGoalPrimaryMetricLabel(row.goal);
+                  const derived = buildMetaDerivedKpis(row);
+                  const recommendations = buildMetaRecommendations(row, metaPresetCfg.optimization, derived);
                   const accountLabel =
                     metaPresetCfg.accounts.find((account) => account.id === row.accountId)?.label || row.accountLabel || "-";
                   const industryLabel =
@@ -1251,6 +1390,38 @@ export function AdPerformancePage() {
                           </div>
                         </div>
                       </div>
+
+                      {row.performance?.metrics?.length ? (
+                        <>
+                          <div className="sep" />
+                          <div className="meta-kpi-grid">
+                            <div className="meta-kpi-card">
+                              <div className="meta-kpi-label">CTR</div>
+                              <div className="meta-kpi-value">{derived.ctr != null ? `${derived.ctr}%` : "-"}</div>
+                            </div>
+                            <div className="meta-kpi-card">
+                              <div className="meta-kpi-label">CPM</div>
+                              <div className="meta-kpi-value">{formatCurrency(derived.cpm, 2)}</div>
+                            </div>
+                            <div className="meta-kpi-card">
+                              <div className="meta-kpi-label">CPC</div>
+                              <div className="meta-kpi-value">{formatCurrency(derived.cpc, 2)}</div>
+                            </div>
+                            <div className="meta-kpi-card">
+                              <div className="meta-kpi-label">{derived.primaryMetricLabel}成本</div>
+                              <div className="meta-kpi-value">{formatCurrency(derived.costPerResult, 2)}</div>
+                            </div>
+                          </div>
+
+                          <div className="meta-review-list">
+                            {recommendations.map((item, index) => (
+                              <div className={`meta-review meta-review--${item.tone}`} key={`${row.id}-review-${index}`}>
+                                {item.text}
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      ) : null}
 
                       {row.performance?.metrics?.length ? (
                         <>

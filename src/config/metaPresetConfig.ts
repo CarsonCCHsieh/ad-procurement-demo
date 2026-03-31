@@ -34,11 +34,21 @@ export type MetaIndustryPreset = {
   igPositions: string[];
 };
 
+export type MetaOptimizationConfig = {
+  enabled: boolean;
+  minSpendForAdvice: number;
+  lowCtrThreshold: number;
+  highCpmThreshold: number;
+  highCpcThreshold: number;
+  highCostPerResultThreshold: number;
+};
+
 export type MetaPresetConfigV1 = {
   version: 1;
   updatedAt: string;
   defaultAccountId: string;
   autoStopCheckMinutes: number;
+  optimization: MetaOptimizationConfig;
   accounts: MetaManagedAccount[];
   industries: MetaIndustryPreset[];
 };
@@ -58,6 +68,15 @@ const ALLOWED_GOALS: MetaAdGoalKey[] = [
   "ig_engagement",
   "ig_followers",
 ];
+
+export const DEFAULT_META_OPTIMIZATION_CONFIG: MetaOptimizationConfig = {
+  enabled: true,
+  minSpendForAdvice: 500,
+  lowCtrThreshold: 0.8,
+  highCpmThreshold: 220,
+  highCpcThreshold: 18,
+  highCostPerResultThreshold: 45,
+};
 
 function isoNow() {
   return new Date().toISOString();
@@ -128,6 +147,32 @@ function normalizeIndustry(raw: unknown, index: number): MetaIndustryPreset | nu
     useExistingPost: row.useExistingPost !== false,
     fbPositions: uniqueStrings(row.fbPositions).length > 0 ? uniqueStrings(row.fbPositions) : [...DEFAULT_FB_POSITIONS],
     igPositions: uniqueStrings(row.igPositions).length > 0 ? uniqueStrings(row.igPositions) : [...DEFAULT_IG_POSITIONS],
+  };
+}
+
+function normalizeOptimization(raw: unknown): MetaOptimizationConfig {
+  if (!raw || typeof raw !== "object") return { ...DEFAULT_META_OPTIMIZATION_CONFIG };
+  const row = raw as Partial<MetaOptimizationConfig>;
+  const minSpendForAdvice = Number(row.minSpendForAdvice);
+  const lowCtrThreshold = Number(row.lowCtrThreshold);
+  const highCpmThreshold = Number(row.highCpmThreshold);
+  const highCpcThreshold = Number(row.highCpcThreshold);
+  const highCostPerResultThreshold = Number(row.highCostPerResultThreshold);
+
+  return {
+    enabled: row.enabled !== false,
+    minSpendForAdvice:
+      Number.isFinite(minSpendForAdvice) && minSpendForAdvice >= 0 ? Math.round(minSpendForAdvice) : DEFAULT_META_OPTIMIZATION_CONFIG.minSpendForAdvice,
+    lowCtrThreshold:
+      Number.isFinite(lowCtrThreshold) && lowCtrThreshold >= 0 ? Number(lowCtrThreshold.toFixed(2)) : DEFAULT_META_OPTIMIZATION_CONFIG.lowCtrThreshold,
+    highCpmThreshold:
+      Number.isFinite(highCpmThreshold) && highCpmThreshold >= 0 ? Number(highCpmThreshold.toFixed(2)) : DEFAULT_META_OPTIMIZATION_CONFIG.highCpmThreshold,
+    highCpcThreshold:
+      Number.isFinite(highCpcThreshold) && highCpcThreshold >= 0 ? Number(highCpcThreshold.toFixed(2)) : DEFAULT_META_OPTIMIZATION_CONFIG.highCpcThreshold,
+    highCostPerResultThreshold:
+      Number.isFinite(highCostPerResultThreshold) && highCostPerResultThreshold >= 0
+        ? Number(highCostPerResultThreshold.toFixed(2))
+        : DEFAULT_META_OPTIMIZATION_CONFIG.highCostPerResultThreshold,
   };
 }
 
@@ -221,6 +266,7 @@ export const DEFAULT_META_PRESET_CONFIG: MetaPresetConfigV1 = {
   updatedAt: isoNow(),
   defaultAccountId: "",
   autoStopCheckMinutes: 5,
+  optimization: { ...DEFAULT_META_OPTIMIZATION_CONFIG },
   accounts: [],
   industries: buildDefaultIndustries(),
 };
@@ -236,6 +282,7 @@ function normalize(raw: unknown): MetaPresetConfigV1 | null {
     : buildDefaultIndustries();
   const defaultAccountId = String(row.defaultAccountId || "").trim();
   const autoStopCheckMinutes = Number(row.autoStopCheckMinutes);
+  const optimization = normalizeOptimization(row.optimization);
 
   return {
     version: 1,
@@ -248,6 +295,7 @@ function normalize(raw: unknown): MetaPresetConfigV1 | null {
       Number.isFinite(autoStopCheckMinutes) && autoStopCheckMinutes >= 1 && autoStopCheckMinutes <= 60
         ? Math.floor(autoStopCheckMinutes)
         : 5,
+    optimization,
     accounts,
     industries: industries.length > 0 ? industries : buildDefaultIndustries(),
   };

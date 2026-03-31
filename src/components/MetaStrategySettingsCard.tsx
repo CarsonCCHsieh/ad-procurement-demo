@@ -2,11 +2,13 @@ import { useMemo, useState } from "react";
 import { CollapsibleCard } from "./CollapsibleCard";
 import { getMetaConfig } from "../config/metaConfig";
 import {
+  DEFAULT_META_OPTIMIZATION_CONFIG,
   getMetaPresetConfig,
   resetMetaPresetConfig,
   saveMetaPresetConfig,
   type MetaIndustryPreset,
   type MetaManagedAccount,
+  type MetaOptimizationConfig,
   type MetaPresetConfigV1,
 } from "../config/metaPresetConfig";
 import { listMetaAdAccounts } from "../lib/metaGraphApi";
@@ -77,6 +79,41 @@ function blankIndustry(): MetaIndustryPreset {
   };
 }
 
+function optimizationSummary(cfg: MetaOptimizationConfig) {
+  if (!cfg.enabled) return "目前停用";
+  return [
+    `最低花費 NT$ ${cfg.minSpendForAdvice.toLocaleString("zh-TW")}`,
+    `CTR 低於 ${cfg.lowCtrThreshold}%`,
+    `CPM 高於 NT$ ${cfg.highCpmThreshold}`,
+    `CPC 高於 NT$ ${cfg.highCpcThreshold}`,
+  ].join(" / ");
+}
+
+function goalSummary(industry: MetaIndustryPreset, goalMap: Map<string, string>) {
+  if (industry.recommendedGoals.length === 0) return "尚未指定";
+  return industry.recommendedGoals.map((key) => goalMap.get(key) || key).join("、");
+}
+
+function renderPlacementChecks(params: {
+  title: string;
+  options: Array<{ value: string; label: string }>;
+  values: string[];
+  onToggle: (value: string) => void;
+}) {
+  const { title, options, values, onToggle } = params;
+  return (
+    <div className="placement-col">
+      <div className="placement-title">{title}</div>
+      {options.map((option) => (
+        <label className="check-row" key={`${title}-${option.value}`}>
+          <input type="checkbox" checked={values.includes(option.value)} onChange={() => onToggle(option.value)} />
+          <span>{option.label}</span>
+        </label>
+      ))}
+    </div>
+  );
+}
+
 export function MetaStrategySettingsCard(props: {
   onNotice: (kind: MsgKind, text: string, ms?: number) => void;
 }) {
@@ -84,6 +121,7 @@ export function MetaStrategySettingsCard(props: {
   const [cfg, setCfg] = useState<MetaPresetConfigV1>(() => getMetaPresetConfig());
   const [loadingAccounts, setLoadingAccounts] = useState(false);
   const goals = useMemo(() => listMetaGoals(), []);
+  const goalLabelMap = useMemo(() => new Map(goals.map((goal) => [goal.key, goal.label])), [goals]);
 
   const save = () => {
     saveMetaPresetConfig(cfg);
@@ -100,18 +138,24 @@ export function MetaStrategySettingsCard(props: {
   const setAccountField = <K extends keyof MetaManagedAccount>(index: number, field: K, value: MetaManagedAccount[K]) => {
     setCfg((current) => ({
       ...current,
-      accounts: current.accounts.map((account, currentIndex) =>
-        currentIndex === index ? { ...account, [field]: value } : account,
-      ),
+      accounts: current.accounts.map((account, currentIndex) => (currentIndex === index ? { ...account, [field]: value } : account)),
     }));
   };
 
   const setIndustryField = <K extends keyof MetaIndustryPreset>(index: number, field: K, value: MetaIndustryPreset[K]) => {
     setCfg((current) => ({
       ...current,
-      industries: current.industries.map((industry, currentIndex) =>
-        currentIndex === index ? { ...industry, [field]: value } : industry,
-      ),
+      industries: current.industries.map((industry, currentIndex) => (currentIndex === index ? { ...industry, [field]: value } : industry)),
+    }));
+  };
+
+  const setOptimizationField = <K extends keyof MetaOptimizationConfig>(field: K, value: MetaOptimizationConfig[K]) => {
+    setCfg((current) => ({
+      ...current,
+      optimization: {
+        ...current.optimization,
+        [field]: value,
+      },
     }));
   };
 
@@ -140,10 +184,12 @@ export function MetaStrategySettingsCard(props: {
           if (existingIndex >= 0) merged[existingIndex] = { ...merged[existingIndex], ...nextAccount };
           else merged.push(nextAccount);
         }
+
+        const nextDefaultId = current.defaultAccountId || merged.find((account) => account.enabled)?.id || "";
         return {
           ...current,
           accounts: merged,
-          defaultAccountId: current.defaultAccountId || merged.find((account) => account.enabled)?.id || "",
+          defaultAccountId: nextDefaultId,
         };
       });
 
@@ -157,305 +203,415 @@ export function MetaStrategySettingsCard(props: {
     <CollapsibleCard
       accent="green"
       title="Meta 投放策略"
-      desc="設定預設帳號、產業模板與自動停投檢查頻率。下單頁會直接套用這裡的設定。"
+      desc="管理預設廣告帳號、產業模板與成效頁提醒規則。Meta 下單頁會直接套用這裡的設定。"
       tag="策略"
       storageKey="sec:meta-strategy"
       defaultOpen={false}
+      actions={
+        <>
+          <button className="btn" type="button" onClick={reset}>
+            重設
+          </button>
+          <button className="btn primary" type="button" onClick={save}>
+            儲存策略
+          </button>
+        </>
+      }
     >
-      <div className="row cols2" style={{ marginBottom: 12 }}>
-        <div className="field">
-          <div className="label">自動停投檢查頻率（分鐘）</div>
-          <input
-            value={String(cfg.autoStopCheckMinutes)}
-            inputMode="numeric"
-            onChange={(event) =>
-              setCfg((current) => ({
-                ...current,
-                autoStopCheckMinutes: Number(event.target.value) || 5,
-              }))
-            }
-          />
-          <div className="hint">成效頁會依這個頻率檢查進行中的 Meta 案件是否已達標。</div>
-        </div>
-        <div className="field">
-          <div className="label">預設投放帳號</div>
-          <select
-            value={cfg.defaultAccountId}
-            onChange={(event) => setCfg((current) => ({ ...current, defaultAccountId: event.target.value }))}
-          >
-            <option value="">請選擇</option>
-            {cfg.accounts.filter((account) => account.enabled).map((account) => (
-              <option key={account.id} value={account.id}>
-                {account.label} / act_{account.adAccountId}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      <div className="actions inline" style={{ marginBottom: 12 }}>
-        <button className="btn" type="button" onClick={loadAccountsFromMeta} disabled={loadingAccounts}>
-          {loadingAccounts ? "匯入中..." : "從 Meta 匯入廣告帳號"}
-        </button>
-        <button className="btn" type="button" onClick={() => setCfg((current) => ({ ...current, accounts: [...current.accounts, blankAccount()] }))}>
-          新增帳號
-        </button>
-      </div>
-
-      <div className="list" style={{ marginBottom: 12 }}>
-        {cfg.accounts.length === 0 ? (
-          <div className="hint">尚未建立 Meta 投放帳號。若 token 權限足夠，可直接從 Meta 匯入。</div>
-        ) : (
-          cfg.accounts.map((account, index) => (
-            <div className="item" key={account.id}>
-              <div className="item-hd">
-                <div className="item-title">{account.label || `帳號 ${index + 1}`}</div>
-                <div className="actions inline">
-                  <span className="tag">{cfg.defaultAccountId === account.id ? "預設" : account.enabled ? "啟用中" : "停用"}</span>
-                  <button
-                    className="btn danger sm"
-                    type="button"
-                    onClick={() =>
-                      setCfg((current) => ({
-                        ...current,
-                        accounts: current.accounts.filter((_, currentIndex) => currentIndex !== index),
-                        defaultAccountId:
-                          current.defaultAccountId === account.id
-                            ? current.accounts.find((_, currentIndex) => currentIndex !== index && current.accounts[currentIndex].enabled)?.id || ""
-                            : current.defaultAccountId,
-                      }))
-                    }
-                  >
-                    刪除
-                  </button>
-                </div>
-              </div>
-
-              <div className="row cols2">
-                <div className="field">
-                  <div className="label">顯示名稱</div>
-                  <input value={account.label} onChange={(event) => setAccountField(index, "label", event.target.value)} />
-                </div>
-                <div className="field">
-                  <div className="label">狀態</div>
-                  <select
-                    value={account.enabled ? "on" : "off"}
-                    onChange={(event) => setAccountField(index, "enabled", event.target.value === "on")}
-                  >
-                    <option value="on">啟用</option>
-                    <option value="off">停用</option>
-                  </select>
-                </div>
-                <div className="field">
-                  <div className="label">廣告帳號 ID</div>
-                  <input
-                    value={account.adAccountId}
-                    onChange={(event) => setAccountField(index, "adAccountId", event.target.value.trim().replace(/^act_/i, ""))}
-                    placeholder="1234567890"
-                  />
-                </div>
-                <div className="field">
-                  <div className="label">Facebook 粉專 ID</div>
-                  <input value={account.pageId} onChange={(event) => setAccountField(index, "pageId", event.target.value.trim())} />
-                </div>
-                <div className="field">
-                  <div className="label">粉專名稱</div>
-                  <input value={account.pageName} onChange={(event) => setAccountField(index, "pageName", event.target.value)} />
-                </div>
-                <div className="field">
-                  <div className="label">Instagram Actor ID</div>
-                  <input
-                    value={account.instagramActorId}
-                    onChange={(event) => setAccountField(index, "instagramActorId", event.target.value.trim())}
-                  />
-                </div>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-
-      <div className="sep" />
-
-      <div className="actions inline" style={{ marginBottom: 12 }}>
-        <button className="btn" type="button" onClick={() => setCfg((current) => ({ ...current, industries: [...current.industries, blankIndustry()] }))}>
-          新增產業模板
-        </button>
-      </div>
-
       <div className="list">
-        {cfg.industries.map((industry, index) => (
-          <div className="item" key={industry.key}>
-            <div className="item-hd">
-              <div className="item-title">{industry.label}</div>
-              <div className="actions inline">
-                <span className="tag">{industry.enabled ? "啟用中" : "停用"}</span>
-                <button
-                  className="btn danger sm"
-                  type="button"
-                  onClick={() =>
-                    setCfg((current) => ({
-                      ...current,
-                      industries: current.industries.filter((_, currentIndex) => currentIndex !== index),
-                    }))
-                  }
-                >
-                  刪除
-                </button>
-              </div>
+        <div className="item">
+          <div className="item-hd">
+            <div className="item-title">基本策略</div>
+            <span className="tag">{cfg.defaultAccountId ? "已指定預設帳號" : "尚未指定帳號"}</span>
+          </div>
+          <div className="row cols2">
+            <div className="field">
+              <div className="label">自動停投檢查頻率</div>
+              <input
+                inputMode="numeric"
+                value={String(cfg.autoStopCheckMinutes)}
+                onChange={(event) =>
+                  setCfg((current) => ({
+                    ...current,
+                    autoStopCheckMinutes: Number(event.target.value) || 5,
+                  }))
+                }
+              />
+              <div className="hint">單位為分鐘。後端或成效頁會依這個頻率檢查進行中案件是否已達標。</div>
             </div>
-
-            <div className="row cols2">
-              <div className="field">
-                <div className="label">產業代碼</div>
-                <input
-                  value={industry.key}
-                  onChange={(event) => setIndustryField(index, "key", normalizeKey(event.target.value) || industry.key)}
-                />
-              </div>
-              <div className="field">
-                <div className="label">狀態</div>
-                <select
-                  value={industry.enabled ? "on" : "off"}
-                  onChange={(event) => setIndustryField(index, "enabled", event.target.value === "on")}
-                >
-                  <option value="on">啟用</option>
-                  <option value="off">停用</option>
-                </select>
-              </div>
-              <div className="field">
-                <div className="label">顯示名稱</div>
-                <input value={industry.label} onChange={(event) => setIndustryField(index, "label", event.target.value)} />
-              </div>
-              <div className="field">
-                <div className="label">說明</div>
-                <input value={industry.description} onChange={(event) => setIndustryField(index, "description", event.target.value)} />
-              </div>
-              <div className="field">
-                <div className="label">投放地區</div>
-                <input value={industry.countriesCsv} onChange={(event) => setIndustryField(index, "countriesCsv", event.target.value.trim())} placeholder="TW 或 TW,HK" />
-              </div>
-              <div className="field">
-                <div className="label">建議日預算</div>
-                <input value={String(industry.dailyBudget)} inputMode="numeric" onChange={(event) => setIndustryField(index, "dailyBudget", Number(event.target.value) || 0)} />
-              </div>
-              <div className="field">
-                <div className="label">年齡區間</div>
-                <div className="row cols2">
-                  <input value={String(industry.ageMin)} inputMode="numeric" onChange={(event) => setIndustryField(index, "ageMin", Number(event.target.value) || 18)} />
-                  <input value={String(industry.ageMax)} inputMode="numeric" onChange={(event) => setIndustryField(index, "ageMax", Number(event.target.value) || 49)} />
-                </div>
-              </div>
-              <div className="field">
-                <div className="label">性別</div>
-                <select value={industry.gender} onChange={(event) => setIndustryField(index, "gender", event.target.value as MetaIndustryPreset["gender"])}>
-                  <option value="all">不限</option>
-                  <option value="male">男性</option>
-                  <option value="female">女性</option>
-                </select>
-              </div>
-              <div className="field">
-                <div className="label">CTA 預設值</div>
-                <input value={industry.ctaType} onChange={(event) => setIndustryField(index, "ctaType", event.target.value.trim())} />
-              </div>
-              <div className="field">
-                <div className="label">預設使用現有貼文</div>
-                <select value={industry.useExistingPost ? "yes" : "no"} onChange={(event) => setIndustryField(index, "useExistingPost", event.target.value === "yes")}>
-                  <option value="yes">是</option>
-                  <option value="no">否</option>
-                </select>
-              </div>
-              <div className="field" style={{ gridColumn: "1 / -1" }}>
-                <div className="label">建議投放目標</div>
-                <div className="placement-grid">
-                  {goals.map((goal) => {
-                    const active = industry.recommendedGoals.includes(goal.key);
-                    return (
-                      <button
-                        key={goal.key}
-                        className={`btn sm ${active ? "primary" : ""}`}
-                        type="button"
-                        onClick={() =>
-                          setIndustryField(
-                            index,
-                            "recommendedGoals",
-                            active
-                              ? industry.recommendedGoals.filter((item) => item !== goal.key)
-                              : [...industry.recommendedGoals, goal.key as MetaAdGoalKey],
-                          )
-                        }
-                      >
-                        {goal.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-              <div className="field" style={{ gridColumn: "1 / -1" }}>
-                <div className="label">興趣受眾</div>
-                <textarea rows={3} value={industry.detailedTargetingText} onChange={(event) => setIndustryField(index, "detailedTargetingText", event.target.value)} placeholder="每行一筆 interest_id，可加名稱，例如 6003139266461|Streetwear" />
-              </div>
-              <div className="field" style={{ gridColumn: "1 / -1" }}>
-                <div className="label">受眾備註</div>
-                <textarea rows={2} value={industry.audienceNote} onChange={(event) => setIndustryField(index, "audienceNote", event.target.value)} placeholder="描述這組模板要鎖定的受眾方向" />
-              </div>
-              <div className="field">
-                <div className="label">包含自訂受眾 ID</div>
-                <textarea rows={2} value={industry.customAudienceIdsText} onChange={(event) => setIndustryField(index, "customAudienceIdsText", event.target.value)} placeholder="每行一筆 Audience ID" />
-              </div>
-              <div className="field">
-                <div className="label">排除自訂受眾 ID</div>
-                <textarea rows={2} value={industry.excludedAudienceIdsText} onChange={(event) => setIndustryField(index, "excludedAudienceIdsText", event.target.value)} placeholder="每行一筆 Audience ID" />
-              </div>
-              <div className="field" style={{ gridColumn: "1 / -1" }}>
-                <div className="label">Facebook 版位</div>
-                <div className="placement-grid">
-                  {FB_POSITION_OPTIONS.map((option) => {
-                    const active = industry.fbPositions.includes(option.value);
-                    return (
-                      <button
-                        key={`fb-${option.value}`}
-                        className={`btn sm ${active ? "primary" : ""}`}
-                        type="button"
-                        onClick={() => setIndustryField(index, "fbPositions", toggleValue(industry.fbPositions, option.value))}
-                      >
-                        {option.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-              <div className="field" style={{ gridColumn: "1 / -1" }}>
-                <div className="label">Instagram 版位</div>
-                <div className="placement-grid">
-                  {IG_POSITION_OPTIONS.map((option) => {
-                    const active = industry.igPositions.includes(option.value);
-                    return (
-                      <button
-                        key={`ig-${option.value}`}
-                        className={`btn sm ${active ? "primary" : ""}`}
-                        type="button"
-                        onClick={() => setIndustryField(index, "igPositions", toggleValue(industry.igPositions, option.value))}
-                      >
-                        {option.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+            <div className="field">
+              <div className="label">預設投放帳號</div>
+              <select value={cfg.defaultAccountId} onChange={(event) => setCfg((current) => ({ ...current, defaultAccountId: event.target.value }))}>
+                <option value="">請選擇</option>
+                {cfg.accounts
+                  .filter((account) => account.enabled)
+                  .map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {account.label} / act_{account.adAccountId}
+                    </option>
+                  ))}
+              </select>
+              <div className="hint">若未特別指定，下單頁會預先帶入這個帳號。</div>
             </div>
           </div>
-        ))}
-      </div>
+        </div>
 
-      <div className="sep" />
-      <div className="actions inline">
-        <button className="btn" type="button" onClick={reset}>
-          重設
-        </button>
-        <button className="btn primary" type="button" onClick={save}>
-          儲存 Meta 投放策略
-        </button>
+        <div className="item">
+          <div className="item-hd">
+            <div>
+              <div className="item-title">成效優化提醒</div>
+              <div className="dense-meta">目前只會提供提醒，不會自動修改 Meta 廣告設定。</div>
+            </div>
+            <span className="tag">{optimizationSummary(cfg.optimization)}</span>
+          </div>
+          <div className="row cols3">
+            <div className="field">
+              <div className="label">狀態</div>
+              <select
+                value={cfg.optimization.enabled ? "on" : "off"}
+                onChange={(event) => setOptimizationField("enabled", event.target.value === "on")}
+              >
+                <option value="on">啟用提醒</option>
+                <option value="off">停用提醒</option>
+              </select>
+            </div>
+            <div className="field">
+              <div className="label">最低觀察花費</div>
+              <input
+                inputMode="decimal"
+                value={String(cfg.optimization.minSpendForAdvice)}
+                onChange={(event) => setOptimizationField("minSpendForAdvice", Number(event.target.value) || 0)}
+              />
+              <div className="hint">未達這個花費時，先不提示優化建議。</div>
+            </div>
+            <div className="field">
+              <div className="label">CTR 偏低門檻</div>
+              <input
+                inputMode="decimal"
+                value={String(cfg.optimization.lowCtrThreshold)}
+                onChange={(event) => setOptimizationField("lowCtrThreshold", Number(event.target.value) || 0)}
+              />
+              <div className="hint">百分比，例如 0.8 代表低於 0.8% 就提示。</div>
+            </div>
+            <div className="field">
+              <div className="label">CPM 偏高門檻</div>
+              <input
+                inputMode="decimal"
+                value={String(cfg.optimization.highCpmThreshold)}
+                onChange={(event) => setOptimizationField("highCpmThreshold", Number(event.target.value) || 0)}
+              />
+              <div className="hint">單位 NT$，以每千次曝光成本計算。</div>
+            </div>
+            <div className="field">
+              <div className="label">CPC 偏高門檻</div>
+              <input
+                inputMode="decimal"
+                value={String(cfg.optimization.highCpcThreshold)}
+                onChange={(event) => setOptimizationField("highCpcThreshold", Number(event.target.value) || 0)}
+              />
+              <div className="hint">單位 NT$，以每次點擊成本計算。</div>
+            </div>
+            <div className="field">
+              <div className="label">單位成果成本門檻</div>
+              <input
+                inputMode="decimal"
+                value={String(cfg.optimization.highCostPerResultThreshold)}
+                onChange={(event) => setOptimizationField("highCostPerResultThreshold", Number(event.target.value) || 0)}
+              />
+              <div className="hint">單位 NT$，用於判斷每個核心成果成本是否過高。</div>
+            </div>
+          </div>
+          <div className="actions inline">
+            <button
+              className="btn"
+              type="button"
+              onClick={() =>
+                setCfg((current) => ({
+                  ...current,
+                  optimization: { ...DEFAULT_META_OPTIMIZATION_CONFIG },
+                }))
+              }
+            >
+              還原預設門檻
+            </button>
+          </div>
+        </div>
+
+        <div className="item">
+          <div className="item-hd">
+            <div>
+              <div className="item-title">投放帳號清單</div>
+              <div className="dense-meta">每個帳號可對應不同廣告帳號、Facebook 粉專與 Instagram Actor。</div>
+            </div>
+            <div className="actions inline">
+              <button className="btn" type="button" onClick={loadAccountsFromMeta} disabled={loadingAccounts}>
+                {loadingAccounts ? "匯入中..." : "從 Meta 匯入"}
+              </button>
+              <button className="btn" type="button" onClick={() => setCfg((current) => ({ ...current, accounts: [...current.accounts, blankAccount()] }))}>
+                新增帳號
+              </button>
+            </div>
+          </div>
+
+          {cfg.accounts.length === 0 ? (
+            <div className="hint">尚未建立 Meta 投放帳號。若 token 權限足夠，可直接從 Meta 匯入。</div>
+          ) : (
+            <div className="list">
+              {cfg.accounts.map((account, index) => (
+                <div className="item" key={account.id}>
+                  <div className="item-hd">
+                    <div>
+                      <div className="item-title">{account.label || `帳號 ${index + 1}`}</div>
+                      <div className="dense-meta">act_{account.adAccountId || "未填寫"} / 粉專 {account.pageName || account.pageId || "未綁定"}</div>
+                    </div>
+                    <div className="actions inline">
+                      <span className="tag">{cfg.defaultAccountId === account.id ? "預設" : account.enabled ? "啟用中" : "停用"}</span>
+                      <button
+                        className="btn"
+                        type="button"
+                        onClick={() =>
+                          setCfg((current) => ({
+                            ...current,
+                            defaultAccountId: current.defaultAccountId === account.id ? "" : account.id,
+                          }))
+                        }
+                      >
+                        {cfg.defaultAccountId === account.id ? "取消預設" : "設為預設"}
+                      </button>
+                      <button
+                        className="btn danger sm"
+                        type="button"
+                        onClick={() =>
+                          setCfg((current) => ({
+                            ...current,
+                            accounts: current.accounts.filter((_, currentIndex) => currentIndex !== index),
+                            defaultAccountId: current.defaultAccountId === account.id ? "" : current.defaultAccountId,
+                          }))
+                        }
+                      >
+                        刪除
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="row cols2">
+                    <div className="field">
+                      <div className="label">顯示名稱</div>
+                      <input value={account.label} onChange={(event) => setAccountField(index, "label", event.target.value)} />
+                    </div>
+                    <div className="field">
+                      <div className="label">狀態</div>
+                      <select value={account.enabled ? "on" : "off"} onChange={(event) => setAccountField(index, "enabled", event.target.value === "on")}>
+                        <option value="on">啟用</option>
+                        <option value="off">停用</option>
+                      </select>
+                    </div>
+                    <div className="field">
+                      <div className="label">廣告帳號 ID</div>
+                      <input value={account.adAccountId} onChange={(event) => setAccountField(index, "adAccountId", event.target.value.trim().replace(/^act_/i, ""))} />
+                    </div>
+                    <div className="field">
+                      <div className="label">Facebook 粉專 ID</div>
+                      <input value={account.pageId} onChange={(event) => setAccountField(index, "pageId", event.target.value.trim())} />
+                    </div>
+                    <div className="field">
+                      <div className="label">粉專名稱</div>
+                      <input value={account.pageName} onChange={(event) => setAccountField(index, "pageName", event.target.value)} />
+                    </div>
+                    <div className="field">
+                      <div className="label">Instagram Actor ID</div>
+                      <input value={account.instagramActorId} onChange={(event) => setAccountField(index, "instagramActorId", event.target.value.trim())} />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="item">
+          <div className="item-hd">
+            <div>
+              <div className="item-title">產業模板</div>
+              <div className="dense-meta">用來預先帶入目標、預算、受眾、地區與版位，減少下單時需要重複設定的內容。</div>
+            </div>
+            <button className="btn" type="button" onClick={() => setCfg((current) => ({ ...current, industries: [...current.industries, blankIndustry()] }))}>
+              新增產業模板
+            </button>
+          </div>
+
+          <div className="list">
+            {cfg.industries.map((industry, index) => (
+              <div className="item" key={industry.key}>
+                <div className="item-hd">
+                  <div>
+                    <div className="item-title">{industry.label || `產業 ${index + 1}`}</div>
+                    <div className="dense-meta">
+                      建議目標：{goalSummary(industry, goalLabelMap)} / 地區：{industry.countriesCsv || "TW"}
+                    </div>
+                  </div>
+                  <div className="actions inline">
+                    <span className="tag">{industry.enabled ? "啟用中" : "停用"}</span>
+                    <button
+                      className="btn danger sm"
+                      type="button"
+                      onClick={() =>
+                        setCfg((current) => ({
+                          ...current,
+                          industries: current.industries.filter((_, currentIndex) => currentIndex !== index),
+                        }))
+                      }
+                    >
+                      刪除
+                    </button>
+                  </div>
+                </div>
+
+                <div className="row cols2">
+                  <div className="field">
+                    <div className="label">產業代碼</div>
+                    <input value={industry.key} onChange={(event) => setIndustryField(index, "key", normalizeKey(event.target.value) || industry.key)} />
+                  </div>
+                  <div className="field">
+                    <div className="label">狀態</div>
+                    <select value={industry.enabled ? "on" : "off"} onChange={(event) => setIndustryField(index, "enabled", event.target.value === "on")}>
+                      <option value="on">啟用</option>
+                      <option value="off">停用</option>
+                    </select>
+                  </div>
+                  <div className="field">
+                    <div className="label">顯示名稱</div>
+                    <input value={industry.label} onChange={(event) => setIndustryField(index, "label", event.target.value)} />
+                  </div>
+                  <div className="field">
+                    <div className="label">說明</div>
+                    <input value={industry.description} onChange={(event) => setIndustryField(index, "description", event.target.value)} />
+                  </div>
+                  <div className="field">
+                    <div className="label">投放地區</div>
+                    <input value={industry.countriesCsv} onChange={(event) => setIndustryField(index, "countriesCsv", event.target.value.trim())} placeholder="TW 或 TW,HK" />
+                    <div className="hint">可填國碼，例如 `TW`、`TW,HK`。</div>
+                  </div>
+                  <div className="field">
+                    <div className="label">建議日預算</div>
+                    <input inputMode="numeric" value={String(industry.dailyBudget)} onChange={(event) => setIndustryField(index, "dailyBudget", Number(event.target.value) || 0)} />
+                  </div>
+                </div>
+
+                <div className="row cols3" style={{ marginTop: 10 }}>
+                  <div className="field">
+                    <div className="label">最小年齡</div>
+                    <input inputMode="numeric" value={String(industry.ageMin)} onChange={(event) => setIndustryField(index, "ageMin", Number(event.target.value) || 18)} />
+                  </div>
+                  <div className="field">
+                    <div className="label">最大年齡</div>
+                    <input inputMode="numeric" value={String(industry.ageMax)} onChange={(event) => setIndustryField(index, "ageMax", Number(event.target.value) || 49)} />
+                  </div>
+                  <div className="field">
+                    <div className="label">性別</div>
+                    <select value={industry.gender} onChange={(event) => setIndustryField(index, "gender", event.target.value as MetaIndustryPreset["gender"])}>
+                      <option value="all">不限</option>
+                      <option value="male">男性</option>
+                      <option value="female">女性</option>
+                    </select>
+                  </div>
+                  <div className="field">
+                    <div className="label">CTA 預設值</div>
+                    <input value={industry.ctaType} onChange={(event) => setIndustryField(index, "ctaType", event.target.value.trim())} />
+                  </div>
+                  <div className="field">
+                    <div className="label">預設使用現有貼文</div>
+                    <select value={industry.useExistingPost ? "yes" : "no"} onChange={(event) => setIndustryField(index, "useExistingPost", event.target.value === "yes")}>
+                      <option value="yes">是</option>
+                      <option value="no">否</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="field" style={{ marginTop: 10 }}>
+                  <div className="label">建議投放目標</div>
+                  <div className="actions inline" style={{ flexWrap: "wrap" }}>
+                    {goals.map((goal) => {
+                      const selected = industry.recommendedGoals.includes(goal.key as MetaAdGoalKey);
+                      return (
+                        <button
+                          key={`${industry.key}-${goal.key}`}
+                          type="button"
+                          className={`btn ${selected ? "primary" : ""}`}
+                          onClick={() =>
+                            setIndustryField(
+                              index,
+                              "recommendedGoals",
+                              selected
+                                ? industry.recommendedGoals.filter((item) => item !== goal.key)
+                                : [...industry.recommendedGoals, goal.key as MetaAdGoalKey],
+                            )
+                          }
+                        >
+                          {goal.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="row cols2" style={{ marginTop: 10 }}>
+                  <div className="field">
+                    <div className="label">興趣受眾</div>
+                    <textarea
+                      rows={3}
+                      value={industry.detailedTargetingText}
+                      onChange={(event) => setIndustryField(index, "detailedTargetingText", event.target.value)}
+                      placeholder="每行一筆 interest_id，可加名稱，例如 6003139266461|Streetwear"
+                    />
+                  </div>
+                  <div className="field">
+                    <div className="label">受眾備註</div>
+                    <textarea
+                      rows={3}
+                      value={industry.audienceNote}
+                      onChange={(event) => setIndustryField(index, "audienceNote", event.target.value)}
+                      placeholder="描述這組模板要鎖定的受眾方向"
+                    />
+                  </div>
+                  <div className="field">
+                    <div className="label">包含自訂受眾 ID</div>
+                    <textarea
+                      rows={2}
+                      value={industry.customAudienceIdsText}
+                      onChange={(event) => setIndustryField(index, "customAudienceIdsText", event.target.value)}
+                      placeholder="每行一筆 Audience ID"
+                    />
+                  </div>
+                  <div className="field">
+                    <div className="label">排除自訂受眾 ID</div>
+                    <textarea
+                      rows={2}
+                      value={industry.excludedAudienceIdsText}
+                      onChange={(event) => setIndustryField(index, "excludedAudienceIdsText", event.target.value)}
+                      placeholder="每行一筆 Audience ID"
+                    />
+                  </div>
+                </div>
+
+                <div className="placement-grid" style={{ marginTop: 10 }}>
+                  {renderPlacementChecks({
+                    title: "Facebook 版位",
+                    options: FB_POSITION_OPTIONS,
+                    values: industry.fbPositions,
+                    onToggle: (value) => setIndustryField(index, "fbPositions", toggleValue(industry.fbPositions, value)),
+                  })}
+                  {renderPlacementChecks({
+                    title: "Instagram 版位",
+                    options: IG_POSITION_OPTIONS,
+                    values: industry.igPositions,
+                    onToggle: (value) => setIndustryField(index, "igPositions", toggleValue(industry.igPositions, value)),
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </CollapsibleCard>
   );
