@@ -65,7 +65,7 @@ export const META_AD_GOALS: Record<MetaAdGoalKey, MetaAdGoalTemplate> = {
     optimizationGoal: "POST_ENGAGEMENT",
     recommendedPlacement: "feed",
     desc: "提升貼文按讚與基礎互動。",
-    kpiDefinition: "主要追蹤貼文讚，並同步觀察點擊、留言、分享與總互動。",
+    kpiDefinition: "主要追蹤貼文按讚，並同步觀察點擊、留言、分享與總互動。",
     reportMetrics: [
       { key: "likes", label: "貼文讚" },
       { key: "all_clicks", label: "所有點擊" },
@@ -83,7 +83,7 @@ export const META_AD_GOALS: Record<MetaAdGoalKey, MetaAdGoalTemplate> = {
     optimizationGoal: "POST_ENGAGEMENT",
     recommendedPlacement: "feed",
     desc: "提升貼文互動，包含按讚、留言、分享與點擊。",
-    kpiDefinition: "互動定義為貼文讚、所有點擊、留言、分享的總和。",
+    kpiDefinition: "互動定義為貼文按讚、所有點擊、留言、分享的總和。",
     reportMetrics: [
       { key: "interactions_total", label: "總互動" },
       { key: "likes", label: "貼文讚" },
@@ -100,7 +100,7 @@ export const META_AD_GOALS: Record<MetaAdGoalKey, MetaAdGoalTemplate> = {
     objective: "OUTCOME_AWARENESS",
     optimizationGoal: "REACH",
     recommendedPlacement: "mixed",
-    desc: "擴大曝光與觸及人數。",
+    desc: "放大曝光與觸及人數。",
     kpiDefinition: "主要追蹤曝光數與觸及人數。",
     reportMetrics: [
       { key: "impressions", label: "曝光數" },
@@ -115,7 +115,7 @@ export const META_AD_GOALS: Record<MetaAdGoalKey, MetaAdGoalTemplate> = {
     objective: "OUTCOME_ENGAGEMENT",
     optimizationGoal: "THRUPLAY",
     recommendedPlacement: "reels",
-    desc: "提升影片觀看與完播表現。",
+    desc: "提升影片觀看與完整播放表現。",
     kpiDefinition: "主要追蹤 3 秒觀看與 ThruPlay。",
     reportMetrics: [
       { key: "video_3s_views", label: "3 秒觀看" },
@@ -165,7 +165,7 @@ export const META_AD_GOALS: Record<MetaAdGoalKey, MetaAdGoalTemplate> = {
     objective: "OUTCOME_ENGAGEMENT",
     optimizationGoal: "THRUPLAY",
     recommendedPlacement: "reels",
-    desc: "提升影片觀看與完播表現。",
+    desc: "提升影片觀看與完整播放表現。",
     kpiDefinition: "主要追蹤 3 秒觀看與 ThruPlay。",
     reportMetrics: [
       { key: "video_3s_views", label: "3 秒觀看" },
@@ -181,7 +181,7 @@ export const META_AD_GOALS: Record<MetaAdGoalKey, MetaAdGoalTemplate> = {
     objective: "OUTCOME_ENGAGEMENT",
     optimizationGoal: "POST_ENGAGEMENT",
     recommendedPlacement: "mixed",
-    desc: "提升貼文或影音互動。",
+    desc: "提升貼文或影片互動。",
     kpiDefinition: "互動定義為按讚、所有點擊、留言、分享的總和。",
     reportMetrics: [
       { key: "interactions_total", label: "總互動" },

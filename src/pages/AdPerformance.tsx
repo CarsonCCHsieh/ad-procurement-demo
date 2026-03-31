@@ -170,6 +170,15 @@ type VendorMetricState = {
   source?: "meta" | "estimated";
 };
 
+type MetaSyncStatus = {
+  ok?: boolean;
+  lastRunAt?: string;
+  syncedCount?: number;
+  updatedCount?: number;
+  pausedCount?: number;
+  error?: string;
+};
+
 const VENDOR_METRIC_BY_PLACEMENT: Partial<Record<string, { key: MetaKpiMetricKey; label: string }>> = {
   fb_like: { key: "likes", label: "目前按讚" },
   ig_like: { key: "likes", label: "目前按讚" },
@@ -259,6 +268,7 @@ export function AdPerformancePage() {
   const [hourlyAutoRunning, setHourlyAutoRunning] = useState(false);
   const [hourlyAutoLastRunAt, setHourlyAutoLastRunAt] = useState<string | null>(null);
   const [remoteOrdersFallback, setRemoteOrdersFallback] = useState<DemoOrder[]>([]);
+  const [metaSyncStatus, setMetaSyncStatus] = useState<MetaSyncStatus | null>(null);
 
   const orders = useMemo(() => {
     void refresh;
@@ -278,6 +288,8 @@ export function AdPerformancePage() {
   const cfg = getConfig();
   const metaCfg = getMetaConfig();
   const metaPresetCfg = getMetaPresetConfig();
+  const usesServerMetaAutomation = !!API_BASE;
+  const metaLastUpdatedAt = metaSyncStatus?.lastRunAt || hourlyAutoLastRunAt;
 
   const setSyncFlag = (key: string, value: boolean) => setSyncing((state) => ({ ...state, [key]: value }));
 
@@ -294,24 +306,36 @@ export function AdPerformancePage() {
 
   const pullLatestOrders = async () => {
     try {
-      await pullSharedState(["ad_demo_orders_v1", "ad_demo_meta_orders_v1"]);
-      const remote = await fetchSharedValues(["ad_demo_orders_v1"]);
+      await pullSharedState(["ad_demo_orders_v1", "ad_demo_meta_orders_v1", "ad_demo_meta_sync_status_v1"]);
+      const remote = await fetchSharedValues(["ad_demo_orders_v1", "ad_demo_meta_sync_status_v1"]);
       const raw = remote.values.ad_demo_orders_v1;
+      const metaSyncRaw = remote.values.ad_demo_meta_sync_status_v1;
       if (typeof raw === "string") {
         const parsed = JSON.parse(raw);
         setRemoteOrdersFallback(Array.isArray(parsed) ? (parsed as DemoOrder[]) : []);
       } else {
         setRemoteOrdersFallback([]);
       }
+      if (typeof metaSyncRaw === "string") {
+        const parsed = JSON.parse(metaSyncRaw);
+        setMetaSyncStatus(parsed && typeof parsed === "object" ? (parsed as MetaSyncStatus) : null);
+      } else {
+        setMetaSyncStatus(null);
+      }
       setRefresh((value) => value + 1);
     } catch {
       try {
-        const remote = await fetchSharedValues(["ad_demo_orders_v1"]);
+        const remote = await fetchSharedValues(["ad_demo_orders_v1", "ad_demo_meta_sync_status_v1"]);
         const raw = remote.values.ad_demo_orders_v1;
+        const metaSyncRaw = remote.values.ad_demo_meta_sync_status_v1;
         if (typeof raw === "string") {
           const parsed = JSON.parse(raw);
           setRemoteOrdersFallback(Array.isArray(parsed) ? (parsed as DemoOrder[]) : []);
           setRefresh((value) => value + 1);
+        }
+        if (typeof metaSyncRaw === "string") {
+          const parsed = JSON.parse(metaSyncRaw);
+          setMetaSyncStatus(parsed && typeof parsed === "object" ? (parsed as MetaSyncStatus) : null);
         }
       } catch {
         // keep local state if shared fetch fails
@@ -775,6 +799,44 @@ export function AdPerformancePage() {
   };
 
   const syncAllMeta = async (options?: { silent?: boolean; includePaused?: boolean }) => {
+    if (API_BASE) {
+      try {
+        const response = await fetch(apiUrl("/api/meta/sync-shared-orders"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ includePaused: !!options?.includePaused }),
+        });
+        const data = (await response.json()) as {
+          ok?: boolean;
+          syncedCount?: number;
+          updatedCount?: number;
+          pausedCount?: number;
+          error?: string;
+        };
+        if (!response.ok || !data.ok) {
+          throw new Error(data.error || `HTTP ${response.status}`);
+        }
+
+        await pullLatestOrders();
+        if (!options?.silent) {
+          if (Number(data.syncedCount ?? 0) === 0) {
+            setMsg("目前沒有需要同步的 Meta 投放案件。");
+          } else if (Number(data.pausedCount ?? 0) > 0) {
+            setMsg(`已同步 ${Number(data.syncedCount ?? 0).toLocaleString("zh-TW")} 筆 Meta 案件，並自動暫停 ${Number(data.pausedCount ?? 0).toLocaleString("zh-TW")} 筆已達目標投放。`);
+          } else {
+            setMsg(`已同步 ${Number(data.syncedCount ?? 0).toLocaleString("zh-TW")} 筆 Meta 案件。`);
+          }
+          setTimeout(() => setMsg(null), 3000);
+        }
+        return;
+      } catch (error) {
+        if (!options?.silent) {
+          setMsg(`Meta 遠端同步失敗，改用本機同步：${error instanceof Error ? error.message : "未知錯誤"}`);
+          setTimeout(() => setMsg(null), 3200);
+        }
+      }
+    }
+
     const activeRows = metaRows.filter((row) => {
       if (!row.submitResult?.adId) return false;
       if (row.status === "running" || row.status === "submitted") return true;
@@ -871,6 +933,7 @@ export function AdPerformancePage() {
   }, [hourlyAutoRunning, orders.length, metaRows.length]);
 
   useEffect(() => {
+    if (usesServerMetaAutomation) return;
     if (!metaAutoEnabled || metaAutoRunning) return;
 
     const tick = async () => {
@@ -905,7 +968,7 @@ export function AdPerformancePage() {
     }, Math.max(1, metaPresetCfg.autoStopCheckMinutes || 5) * 60 * 1000);
 
     return () => window.clearInterval(timer);
-  }, [metaAutoEnabled, metaAutoRunning, metaPresetCfg.autoStopCheckMinutes]);
+  }, [metaAutoEnabled, metaAutoRunning, metaPresetCfg.autoStopCheckMinutes, usesServerMetaAutomation]);
 
   useEffect(() => {
     void pullLatestOrders();
@@ -1081,9 +1144,15 @@ export function AdPerformancePage() {
             <div className="actions inline">
               <button className="btn" onClick={() => setRefresh((value) => value + 1)}>重新整理</button>
               <button className="btn" onClick={() => void syncAllMeta()}>全部同步</button>
-              <button className="btn" onClick={() => setMetaAutoEnabled((value) => !value)}>
-                自動停投：{metaAutoEnabled ? "開啟" : "關閉"}
-              </button>
+              {usesServerMetaAutomation ? (
+                <button className="btn" type="button" disabled>
+                  自動停投：後端執行中
+                </button>
+              ) : (
+                <button className="btn" onClick={() => setMetaAutoEnabled((value) => !value)}>
+                  自動停投：{metaAutoEnabled ? "開啟" : "關閉"}
+                </button>
+              )}
               <button className="btn danger" onClick={() => { clearMetaOrders(); setRefresh((value) => value + 1); }}>
                 清空 Meta 案件
               </button>
@@ -1091,9 +1160,14 @@ export function AdPerformancePage() {
 
             <div className="sep" />
             <div className="hint">
-              最近一次更新時間：{hourlyAutoLastRunAt ? new Date(hourlyAutoLastRunAt).toLocaleString("zh-TW") : "尚未執行"}
-              {metaAutoRunning ? "（檢查中）" : ""}
+              最近一次更新時間：{metaLastUpdatedAt ? new Date(metaLastUpdatedAt).toLocaleString("zh-TW") : "尚未執行"}
+              {usesServerMetaAutomation ? "（後端背景同步）" : metaAutoRunning ? "（檢查中）" : ""}
             </div>
+            {metaSyncStatus?.error ? (
+              <div className="hint" style={{ marginTop: 8, color: "rgba(220, 38, 38, 0.95)" }}>
+                後端同步提醒：{metaSyncStatus.error}
+              </div>
+            ) : null}
 
             {metaRows.length === 0 ? (
               <div className="hint">目前沒有 Meta 投放案件。</div>

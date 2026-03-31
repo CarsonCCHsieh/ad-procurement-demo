@@ -67,12 +67,15 @@ let metaPagesCache = null;
 let instagramAccountsCache = null;
 const instagramMediaCache = new Map();
 let backgroundSyncRunning = false;
+let backgroundMetaSyncRunning = false;
 let trackingCachePrimed = false;
 
 const APP_CONFIG_KEY = "ad_demo_config_v1";
 const VENDOR_KEYS_KEY = "ad_demo_vendor_keys_v1";
 const ORDERS_KEY = "ad_demo_orders_v1";
 const META_ORDERS_KEY = "ad_demo_meta_orders_v1";
+const META_SYNC_STATUS_KEY = "ad_demo_meta_sync_status_v1";
+const META_BACKGROUND_SYNC_INTERVAL_MS = 5 * 60 * 1000;
 const DEFAULT_VENDOR_BASES = {
   smmraja: "https://www.smmraja.com/api/v3",
   urpanel: "https://urpanel.com/api/v2",
@@ -204,6 +207,27 @@ function graphUrl(apiVersion, path, params = {}) {
 async function graphApiGet(apiVersion, token, path, params = {}) {
   const url = graphUrl(apiVersion, path, { ...params, access_token: token });
   const res = await fetch(url, { method: "GET" });
+  const jsonBody = await res.json();
+  if (!res.ok || jsonBody.error) {
+    const e = jsonBody?.error;
+    throw new Error(e?.error_user_msg || e?.message || `HTTP ${res.status}`);
+  }
+  return jsonBody;
+}
+
+async function graphApiPost(apiVersion, token, path, params = {}) {
+  const body = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value == null || value === "") continue;
+    body.set(key, typeof value === "string" ? value : JSON.stringify(value));
+  }
+  body.set("access_token", token);
+
+  const res = await fetch(graphUrl(apiVersion, path), {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body,
+  });
   const jsonBody = await res.json();
   if (!res.ok || jsonBody.error) {
     const e = jsonBody?.error;
@@ -1176,6 +1200,238 @@ function readFirstInsightValue(raw) {
     return Number.isFinite(n) ? n : 0;
   }
   return 0;
+}
+
+function toNumber(value) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  if (typeof value === "string") {
+    const num = Number(value);
+    return Number.isFinite(num) ? num : 0;
+  }
+  return 0;
+}
+
+function asActions(value) {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item) => item && typeof item === "object");
+}
+
+function sumAcrossActionTypes(value, actionTypes) {
+  const rows = asActions(value);
+  if (rows.length === 0) return 0;
+  const allow = new Set(actionTypes.map((item) => String(item).toLowerCase()));
+  return rows
+    .filter((row) => allow.has(String(row.action_type || "").toLowerCase()))
+    .reduce((sum, row) => sum + toNumber(row.value), 0);
+}
+
+function sumActions(value, actionTypes) {
+  const rows = asActions(value);
+  if (rows.length === 0) return 0;
+  const allow = new Set(actionTypes.map((item) => String(item).toLowerCase()));
+  const matched = rows
+    .filter((row) => allow.has(String(row.action_type || "").toLowerCase()))
+    .reduce((sum, row) => sum + toNumber(row.value), 0);
+  if (matched > 0) return matched;
+  return rows.reduce((sum, row) => sum + toNumber(row.value), 0);
+}
+
+function firstInsightRow(raw) {
+  const row = Array.isArray(raw?.data) ? raw.data[0] : null;
+  return row && typeof row === "object" ? row : null;
+}
+
+const META_REPORT_METRICS = {
+  fb_post_likes: [
+    { key: "likes", label: "貼文讚" },
+    { key: "all_clicks", label: "所有點擊" },
+    { key: "comments", label: "留言" },
+    { key: "shares", label: "分享" },
+    { key: "interactions_total", label: "總互動" },
+    { key: "spend", label: "花費" },
+  ],
+  fb_post_engagement: [
+    { key: "interactions_total", label: "總互動" },
+    { key: "likes", label: "貼文讚" },
+    { key: "all_clicks", label: "所有點擊" },
+    { key: "comments", label: "留言" },
+    { key: "shares", label: "分享" },
+    { key: "spend", label: "花費" },
+  ],
+  fb_reach: [
+    { key: "impressions", label: "曝光數" },
+    { key: "reach", label: "觸及人數" },
+    { key: "spend", label: "花費" },
+  ],
+  fb_video_views: [
+    { key: "video_3s_views", label: "3 秒觀看" },
+    { key: "thruplays", label: "ThruPlay" },
+    { key: "all_clicks", label: "所有點擊" },
+    { key: "spend", label: "花費" },
+  ],
+  ig_post_spread: [
+    { key: "followers", label: "增粉數" },
+    { key: "profile_visits", label: "個人檔案瀏覽" },
+    { key: "reach", label: "觸及人數" },
+    { key: "impressions", label: "曝光數" },
+    { key: "spend", label: "花費" },
+  ],
+  ig_reels_spread: [
+    { key: "followers", label: "增粉數" },
+    { key: "profile_visits", label: "個人檔案瀏覽" },
+    { key: "reach", label: "觸及人數" },
+    { key: "impressions", label: "曝光數" },
+    { key: "spend", label: "花費" },
+  ],
+  ig_video_views: [
+    { key: "video_3s_views", label: "3 秒觀看" },
+    { key: "thruplays", label: "ThruPlay" },
+    { key: "all_clicks", label: "所有點擊" },
+    { key: "spend", label: "花費" },
+  ],
+  ig_engagement: [
+    { key: "interactions_total", label: "總互動" },
+    { key: "likes", label: "按讚數" },
+    { key: "all_clicks", label: "所有點擊" },
+    { key: "comments", label: "留言" },
+    { key: "shares", label: "分享" },
+    { key: "spend", label: "花費" },
+  ],
+  ig_followers: [
+    { key: "followers", label: "增粉數" },
+    { key: "profile_visits", label: "個人檔案瀏覽" },
+    { key: "all_clicks", label: "所有點擊" },
+    { key: "spend", label: "花費" },
+  ],
+};
+
+const META_PRIMARY_METRIC = {
+  fb_post_likes: "likes",
+  fb_post_engagement: "interactions_total",
+  fb_reach: "reach",
+  fb_video_views: "video_3s_views",
+  ig_post_spread: "followers",
+  ig_reels_spread: "followers",
+  ig_video_views: "video_3s_views",
+  ig_engagement: "interactions_total",
+  ig_followers: "followers",
+};
+
+function extractAdMetricValues(row) {
+  const likes = sumAcrossActionTypes(row?.actions, ["post_reaction", "like", "post_like", "ig_like"]);
+  const allClicks = toNumber(row?.clicks);
+  const comments = sumAcrossActionTypes(row?.actions, ["comment", "post_comment", "ig_comment"]);
+  const shares = sumAcrossActionTypes(row?.actions, ["post_share", "share", "ig_share"]);
+  const followers = sumAcrossActionTypes(row?.actions, [
+    "follow",
+    "ig_follow",
+    "instagram_follow",
+    "omni_follow",
+    "onsite_conversion.follow",
+    "profile_follow",
+  ]);
+  const profileVisits = sumAcrossActionTypes(row?.actions, [
+    "profile_visit",
+    "ig_profile_visit",
+    "instagram_profile_visit",
+    "onsite_conversion.profile_visit",
+  ]);
+  const video3s = sumActions(row?.video_3_sec_watched_actions, ["video_view"]);
+  const thruplays = Math.max(
+    sumActions(row?.video_thruplay_watched_actions, ["video_view"]),
+    sumAcrossActionTypes(row?.actions, ["thruplay", "video_view"]),
+  );
+
+  return {
+    likes,
+    all_clicks: allClicks,
+    comments,
+    shares,
+    interactions_total: likes + allClicks + comments + shares,
+    impressions: toNumber(row?.impressions),
+    reach: toNumber(row?.reach),
+    video_3s_views: video3s,
+    thruplays,
+    followers,
+    profile_visits: profileVisits,
+    spend: toNumber(row?.spend),
+  };
+}
+
+function buildMetaPerformance(goal, values, raw) {
+  const metrics = META_REPORT_METRICS[goal] || [];
+  return {
+    updatedAt: new Date().toISOString(),
+    metrics: metrics.map((metric) => ({
+      key: metric.key,
+      label: metric.label,
+      value: values?.[metric.key] ?? 0,
+    })),
+    raw,
+  };
+}
+
+function getGoalPrimaryMetricKey(goal) {
+  return META_PRIMARY_METRIC[goal] || "reach";
+}
+
+function mapMetaOrderStatus(statusText) {
+  const text = String(statusText || "").toUpperCase();
+  if (text.includes("PAUSED")) return "paused";
+  if (text.includes("ACTIVE")) return "running";
+  if (text.includes("DELETED") || text.includes("ARCHIVED")) return "completed";
+  return "submitted";
+}
+
+async function fetchMetaAdSnapshotSecure(metaSecrets, adId, goal) {
+  try {
+    const statusRaw = await graphApiGet(
+      metaSecrets.apiVersion,
+      metaSecrets.userAccessToken,
+      `/${encodeURIComponent(adId)}`,
+      { fields: "id,name,status,effective_status,updated_time" },
+    );
+    const statusText = String(statusRaw.effective_status || statusRaw.status || "UNKNOWN");
+    const insightsRaw = await graphApiGet(
+      metaSecrets.apiVersion,
+      metaSecrets.userAccessToken,
+      `/${encodeURIComponent(adId)}/insights`,
+      { fields: "impressions,reach,clicks,spend,actions,video_3_sec_watched_actions,video_thruplay_watched_actions" },
+    );
+    const row = firstInsightRow(insightsRaw) || {};
+    return {
+      ok: true,
+      statusText,
+      performance: buildMetaPerformance(goal, extractAdMetricValues(row), insightsRaw),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      detail: error instanceof Error ? error.message : "讀取投放狀態失敗",
+    };
+  }
+}
+
+async function updateMetaAdDeliverySecure(metaSecrets, adId, status) {
+  try {
+    await graphApiPost(metaSecrets.apiVersion, metaSecrets.userAccessToken, `/${encodeURIComponent(adId)}`, { status });
+    const raw = await graphApiGet(
+      metaSecrets.apiVersion,
+      metaSecrets.userAccessToken,
+      `/${encodeURIComponent(adId)}`,
+      { fields: "id,name,status,effective_status,updated_time" },
+    );
+    return {
+      ok: true,
+      statusText: String(raw.effective_status || raw.status || status),
+      raw,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      detail: error instanceof Error ? error.message : "更新投放狀態失敗",
+    };
+  }
 }
 
 function findPageFromList(pages, targetPageId, targetPageName) {
@@ -2243,6 +2499,147 @@ async function processScheduledOrdersInBackground() {
   }
 }
 
+async function syncSharedMetaOrders(options = {}) {
+  const includePaused = !!options.includePaused;
+  const metaSecrets = loadMetaSecrets();
+  const rows = readSharedJson(META_ORDERS_KEY);
+  const nextRows = Array.isArray(rows) ? rows.map((row) => ({ ...row })) : [];
+  const nowIso = new Date().toISOString();
+
+  if (!metaSecrets) {
+    writeSharedJson(
+      META_SYNC_STATUS_KEY,
+      {
+        ok: false,
+        lastRunAt: nowIso,
+        syncedCount: 0,
+        updatedCount: 0,
+        pausedCount: 0,
+        error: "Meta local credentials are not configured",
+      },
+      "server-meta-sync",
+    );
+    return { syncedCount: 0, updatedCount: 0, pausedCount: 0, skipped: true, error: "Meta local credentials are not configured" };
+  }
+
+  let syncedCount = 0;
+  let updatedCount = 0;
+  let pausedCount = 0;
+
+  for (let index = 0; index < nextRows.length; index += 1) {
+    const row = nextRows[index];
+    const adId = String(row?.submitResult?.adId || "").trim();
+    if (!adId) continue;
+    if (!(row?.status === "running" || row?.status === "submitted" || (includePaused && row?.status === "paused"))) {
+      continue;
+    }
+
+    syncedCount += 1;
+    const snapshot = await fetchMetaAdSnapshotSecure(metaSecrets, adId, row.goal);
+    if (!snapshot.ok) {
+      nextRows[index] = {
+        ...row,
+        error: snapshot.detail || "同步失敗",
+        targetLastCheckedAt: nowIso,
+      };
+      updatedCount += 1;
+      continue;
+    }
+
+    const metricKey = row.targetMetricKey || getGoalPrimaryMetricKey(row.goal);
+    let targetCurrent = snapshot.performance?.metrics?.find((metric) => metric.key === metricKey)?.value;
+    let postError = "";
+
+    const trackingPostId = String(row.trackingPostId || row.trackingRef?.refId || "").trim();
+    if (trackingPostId) {
+      const postMetrics = await fetchMetaPostMetricsSecure({
+        postId: trackingPostId,
+        platform: row?.trackingRef?.platform,
+        pageId: row?.trackingRef?.pageId,
+        pageName: row?.trackingRef?.pageName,
+        sourceUrl: row?.trackingRef?.sourceUrl || row?.existingPostSource || "",
+      });
+      if (postMetrics.ok && typeof postMetrics.values?.[metricKey] === "number") {
+        targetCurrent = postMetrics.values[metricKey];
+      } else if (!postMetrics.ok) {
+        postError = postMetrics.detail || "";
+      }
+    }
+
+    let nextStatus = mapMetaOrderStatus(snapshot.statusText);
+    let nextApiStatus = snapshot.statusText || "UNKNOWN";
+    let targetReachedAt = row.targetReachedAt;
+    const targetValue = Number(row.targetValue || 0);
+    const shouldAutoStop = !!row.autoStopByTarget && targetValue > 0 && typeof targetCurrent === "number";
+
+    if (shouldAutoStop && targetCurrent >= targetValue && nextStatus !== "paused") {
+      const pauseResult = await updateMetaAdDeliverySecure(metaSecrets, adId, "PAUSED");
+      if (pauseResult.ok) {
+        nextStatus = "paused";
+        nextApiStatus = pauseResult.statusText || "PAUSED";
+        targetReachedAt = nowIso;
+        pausedCount += 1;
+      } else if (!postError) {
+        postError = pauseResult.detail || "達標停投失敗";
+      }
+    } else if (!shouldAutoStop || targetCurrent < targetValue) {
+      targetReachedAt = undefined;
+    }
+
+    nextRows[index] = {
+      ...row,
+      status: nextStatus,
+      apiStatusText: nextApiStatus,
+      performance: snapshot.performance,
+      targetMetricKey: metricKey,
+      targetCurrentValue: typeof targetCurrent === "number" ? targetCurrent : undefined,
+      targetLastCheckedAt: nowIso,
+      targetReachedAt,
+      error: postError,
+    };
+    updatedCount += 1;
+  }
+
+  writeSharedJson(META_ORDERS_KEY, nextRows, "server-meta-sync");
+  writeSharedJson(
+    META_SYNC_STATUS_KEY,
+    {
+      ok: true,
+      lastRunAt: nowIso,
+      syncedCount,
+      updatedCount,
+      pausedCount,
+      error: "",
+    },
+    "server-meta-sync",
+  );
+  return { syncedCount, updatedCount, pausedCount, skipped: syncedCount === 0 };
+}
+
+async function processMetaOrdersInBackground() {
+  if (backgroundMetaSyncRunning) return;
+  backgroundMetaSyncRunning = true;
+  try {
+    await syncSharedMetaOrders();
+  } catch (error) {
+    console.error("[scheduled-meta-orders]", error);
+    writeSharedJson(
+      META_SYNC_STATUS_KEY,
+      {
+        ok: false,
+        lastRunAt: new Date().toISOString(),
+        syncedCount: 0,
+        updatedCount: 0,
+        pausedCount: 0,
+        error: error instanceof Error ? error.message : "Unknown error",
+      },
+      "server-meta-sync",
+    );
+  } finally {
+    backgroundMetaSyncRunning = false;
+  }
+}
+
 const server = http.createServer(async (req, res) => {
   try {
     if (!req.url) {
@@ -2293,6 +2690,16 @@ const server = http.createServer(async (req, res) => {
         pageName: url.searchParams.get("pageName") || "",
       });
       json(res, result.ok ? 200 : 400, result);
+      return;
+    }
+
+    if (req.method === "POST" && req.url === "/api/meta/sync-shared-orders") {
+      const raw = await readBody(req);
+      const payload = JSON.parse(String(raw || "{}"));
+      const result = await syncSharedMetaOrders({
+        includePaused: !!payload?.includePaused,
+      });
+      json(res, result.error ? 400 : 200, { ok: !result.error, ...result });
       return;
     }
 
@@ -2522,6 +2929,10 @@ server.listen(PORT, HOST, () => {
 });
 
 void processScheduledOrdersInBackground();
+void processMetaOrdersInBackground();
 setInterval(() => {
   void processScheduledOrdersInBackground();
 }, 60 * 1000);
+setInterval(() => {
+  void processMetaOrdersInBackground();
+}, META_BACKGROUND_SYNC_INTERVAL_MS);
