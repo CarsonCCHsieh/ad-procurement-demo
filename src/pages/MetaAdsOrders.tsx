@@ -2,14 +2,20 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { getMetaConfig } from "../config/metaConfig";
+import { getManagedMetaAccount, getMetaPresetConfig, type MetaIndustryPreset, type MetaManagedAccount } from "../config/metaPresetConfig";
 import { buildMetaPayloads } from "../lib/metaPayload";
 import { META_AD_GOALS, getGoalPrimaryMetricKey, getGoalPrimaryMetricLabel, listMetaGoals, type MetaAdGoalKey } from "../lib/metaGoals";
 import { addMetaOrder, listMetaOrders, updateMetaOrder, type MetaOrder, type MetaOrderInput } from "../lib/metaOrdersStore";
-import { submitMetaOrderToGraph } from "../lib/metaGraphApi";
+import { listMetaExistingPosts, resolveMetaPostReference, submitMetaOrderToGraph, type MetaExistingPostOption } from "../lib/metaGraphApi";
+import type { MetaTrackingRef } from "../lib/ordersStore";
 import { isValidUrl } from "../lib/validate";
 import { SHARED_SYNC_EVENT } from "../lib/sharedSync";
 
+type ExistingPostMode = "picker" | "url" | "id";
+
 type FormState = {
+  accountId: string;
+  industryKey: string;
   title: string;
   campaignName: string;
   adsetName: string;
@@ -19,7 +25,9 @@ type FormState = {
   message: string;
   ctaType: string;
   useExistingPost: boolean;
+  existingPostMode: ExistingPostMode;
   existingPostId: string;
+  existingPostSource: string;
   trackingPostId: string;
   targetValue: string;
   dailyBudget: string;
@@ -30,11 +38,21 @@ type FormState = {
   ageMax: string;
   gender: "all" | "male" | "female";
   detailedTargetingText: string;
+  customAudienceIdsText: string;
+  excludedAudienceIdsText: string;
   fbPositions: string[];
   igPositions: string[];
 };
 
 type Errors = Partial<Record<keyof FormState, string>>;
+
+type ResolvedPostSelection = {
+  existingPostId?: string;
+  existingPostSource?: string;
+  trackingPostId?: string;
+  trackingRef?: MetaTrackingRef;
+  postLabel?: string;
+};
 
 const FB_POSITION_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "feed", label: "Facebook 動態消息" },
@@ -134,6 +152,22 @@ const GOAL_PRESETS: Record<
   },
 };
 
+const TARGET_RECOMMENDS_TRACKING = new Set([
+  "likes",
+  "comments",
+  "shares",
+  "interactions_total",
+  "followers",
+  "profile_visits",
+]);
+
+function parseTextList(raw: string): string[] {
+  return raw
+    .split(/[\r\n,]+/g)
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
 function toInputDateTimeLocal(d = new Date()): string {
   const dt = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
   return dt.toISOString().slice(0, 16);
@@ -165,9 +199,35 @@ function applyGoalPreset(prev: FormState, goal: MetaAdGoalKey): FormState {
   };
 }
 
+function applyIndustryPreset(prev: FormState, industry: MetaIndustryPreset): FormState {
+  const nextGoal = industry.recommendedGoals.includes(prev.goal)
+    ? prev.goal
+    : industry.recommendedGoals[0] ?? prev.goal;
+  const next = applyGoalPreset(prev, nextGoal);
+  return {
+    ...next,
+    industryKey: industry.key,
+    countriesCsv: industry.countriesCsv || next.countriesCsv,
+    ageMin: String(industry.ageMin || 18),
+    ageMax: String(industry.ageMax || 49),
+    gender: industry.gender,
+    detailedTargetingText: industry.detailedTargetingText || "",
+    customAudienceIdsText: industry.customAudienceIdsText || "",
+    excludedAudienceIdsText: industry.excludedAudienceIdsText || "",
+    dailyBudget: String(industry.dailyBudget || next.dailyBudget),
+    ctaType: industry.ctaType || next.ctaType,
+    useExistingPost: industry.useExistingPost,
+    fbPositions: industry.fbPositions.length > 0 ? industry.fbPositions : next.fbPositions,
+    igPositions: industry.igPositions.length > 0 ? industry.igPositions : next.igPositions,
+  };
+}
+
 function defaultState(): FormState {
+  const presetCfg = getMetaPresetConfig();
   const start = new Date(Date.now() + 15 * 60 * 1000);
   const seed: FormState = {
+    accountId: getManagedMetaAccount(presetCfg)?.id ?? "",
+    industryKey: presetCfg.industries.find((industry) => industry.enabled)?.key ?? "",
     title: "新投放",
     campaignName: "新行銷活動",
     adsetName: "新廣告組合",
@@ -177,7 +237,9 @@ function defaultState(): FormState {
     message: "",
     ctaType: "LEARN_MORE",
     useExistingPost: true,
+    existingPostMode: "picker",
     existingPostId: "",
+    existingPostSource: "",
     trackingPostId: "",
     targetValue: "",
     dailyBudget: "1000",
@@ -188,10 +250,14 @@ function defaultState(): FormState {
     ageMax: "49",
     gender: "all",
     detailedTargetingText: "",
+    customAudienceIdsText: "",
+    excludedAudienceIdsText: "",
     fbPositions: [],
     igPositions: [],
   };
-  return applyGoalPreset(seed, seed.goal);
+  const next = applyGoalPreset(seed, seed.goal);
+  const defaultIndustry = presetCfg.industries.find((industry) => industry.enabled);
+  return defaultIndustry ? applyIndustryPreset(next, defaultIndustry) : next;
 }
 
 function fromGenderCodes(genders: number[]): FormState["gender"] {
@@ -200,8 +266,17 @@ function fromGenderCodes(genders: number[]): FormState["gender"] {
   return "all";
 }
 
+function inferExistingPostMode(row: MetaOrder): ExistingPostMode {
+  if (!row.useExistingPost) return "url";
+  if (row.trackingRef?.resolver === "existing_post_picker") return "picker";
+  if (row.existingPostSource && /^https?:\/\//i.test(row.existingPostSource)) return "url";
+  return "id";
+}
+
 function formStateFromOrder(row: MetaOrder): FormState {
   return {
+    accountId: row.accountId ?? "",
+    industryKey: row.industryKey ?? "",
     title: row.title ?? "",
     campaignName: row.campaignName ?? "",
     adsetName: row.adsetName ?? "",
@@ -211,8 +286,10 @@ function formStateFromOrder(row: MetaOrder): FormState {
     message: row.message ?? "",
     ctaType: row.ctaType ?? "LEARN_MORE",
     useExistingPost: !!row.useExistingPost,
+    existingPostMode: inferExistingPostMode(row),
     existingPostId: row.existingPostId ?? "",
-    trackingPostId: row.trackingPostId ?? row.existingPostId ?? "",
+    existingPostSource: row.existingPostSource ?? row.trackingRef?.sourceUrl ?? "",
+    trackingPostId: row.trackingPostId ?? row.trackingRef?.refId ?? row.existingPostId ?? "",
     targetValue: row.targetValue == null ? "" : String(row.targetValue),
     dailyBudget: String(row.dailyBudget ?? ""),
     startTime: toInputFromIso(row.startTime),
@@ -222,8 +299,21 @@ function formStateFromOrder(row: MetaOrder): FormState {
     ageMax: String(row.ageMax ?? 49),
     gender: fromGenderCodes(row.genders ?? []),
     detailedTargetingText: row.detailedTargetingText ?? "",
+    customAudienceIdsText: (row.customAudienceIds ?? []).join("\n"),
+    excludedAudienceIdsText: (row.excludedAudienceIds ?? []).join("\n"),
     fbPositions: row.manualPlacements?.facebook ?? [],
     igPositions: row.manualPlacements?.instagram ?? [],
+  };
+}
+
+function buildResolvedSelectionFromOrder(row: MetaOrder): ResolvedPostSelection | null {
+  if (!row.useExistingPost) return null;
+  return {
+    existingPostId: row.existingPostId,
+    existingPostSource: row.existingPostSource ?? row.trackingRef?.sourceUrl,
+    trackingPostId: row.trackingPostId ?? row.trackingRef?.refId,
+    trackingRef: row.trackingRef,
+    postLabel: row.existingPostSource ?? row.existingPostId ?? row.trackingPostId,
   };
 }
 
@@ -244,27 +334,52 @@ function formatDateTime(isoOrLocal: string): string {
   return dt.toLocaleString("zh-TW", { hour12: false });
 }
 
-function validate(s: FormState): Errors {
+function formatPlatform(platform: "facebook" | "instagram") {
+  return platform === "facebook" ? "Facebook" : "Instagram";
+}
+
+function buildManualTrackingRef(params: {
+  platform: "facebook" | "instagram";
+  refId: string;
+  sourceUrl?: string;
+  account: MetaManagedAccount | null;
+  resolver: string;
+}): MetaTrackingRef {
+  return {
+    platform: params.platform,
+    refId: params.refId,
+    sourceUrl: params.sourceUrl || params.refId,
+    canonicalUrl: params.sourceUrl,
+    pageId: params.account?.pageId,
+    pageName: params.account?.pageName,
+    resolver: params.resolver,
+    resolvedAt: new Date().toISOString(),
+  };
+}
+
+function validate(s: FormState, effectiveConfig: { adAccountId: string; pageId: string; instagramActorId: string }): Errors {
   const e: Errors = {};
+  if (!s.accountId.trim() && !effectiveConfig.adAccountId.trim()) e.accountId = "請先選擇投放帳號";
   if (!s.title.trim()) e.title = "請填寫任務名稱";
   if (!s.campaignName.trim()) e.campaignName = "請填寫行銷活動名稱";
   if (!s.adsetName.trim()) e.adsetName = "請填寫廣告組合名稱";
   if (!s.adName.trim()) e.adName = "請填寫廣告名稱";
 
-  if (!s.useExistingPost) {
+  if (s.useExistingPost) {
+    if (s.existingPostMode === "picker" && !s.existingPostId.trim()) e.existingPostId = "請先從近期貼文中選擇一篇";
+    if (s.existingPostMode === "url") {
+      if (!s.existingPostSource.trim()) e.existingPostSource = "請貼上貼文連結";
+      else if (!isValidUrl(s.existingPostSource.trim())) e.existingPostSource = "貼文連結格式不正確";
+    }
+    if (s.existingPostMode === "id" && !s.existingPostId.trim()) e.existingPostId = "請填寫貼文 ID";
+  } else {
     if (!s.landingUrl.trim()) e.landingUrl = "請填寫網址";
     else if (!isValidUrl(s.landingUrl.trim())) e.landingUrl = "網址格式不正確";
-  } else if (!s.existingPostId.trim()) {
-    e.existingPostId = "請填寫貼文編號";
   }
 
   const target = Number(s.targetValue);
   if (s.targetValue.trim() && (!Number.isFinite(target) || target <= 0)) {
     e.targetValue = "目標數值需為正數";
-  }
-  const trackingPostId = s.trackingPostId.trim() || s.existingPostId.trim();
-  if (s.targetValue.trim() && !trackingPostId) {
-    e.trackingPostId = "有設定目標時，需提供追蹤貼文 ID";
   }
 
   const b = Number(s.dailyBudget);
@@ -285,6 +400,8 @@ function validate(s: FormState): Errors {
   if (s.fbPositions.length + s.igPositions.length === 0) {
     e.fbPositions = "請至少勾選 1 個版位";
   }
+  if (s.goal.startsWith("fb_") && s.useExistingPost && !effectiveConfig.pageId.trim()) e.accountId = "這個帳號尚未設定 Facebook 粉專 ID";
+  if (s.goal.startsWith("ig_") && s.useExistingPost && !effectiveConfig.instagramActorId.trim()) e.accountId = "這個帳號尚未設定 Instagram Actor ID";
   return e;
 }
 
@@ -299,13 +416,30 @@ export function MetaAdsOrdersPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitMsg, setSubmitMsg] = useState<string | null>(null);
   const [editingOrderId, setEditingOrderId] = useState<string | null>(null);
+  const [resolvedPost, setResolvedPost] = useState<ResolvedPostSelection | null>(null);
+  const [loadingPosts, setLoadingPosts] = useState(false);
+  const [postOptions, setPostOptions] = useState<MetaExistingPostOption[]>([]);
+  const [postLoadMessage, setPostLoadMessage] = useState<string | null>(null);
+  const [resolvingPost, setResolvingPost] = useState(false);
 
   const cfg = getMetaConfig();
+  const metaPresetCfg = getMetaPresetConfig();
   const applicant = user?.displayName ?? user?.username ?? "";
   const canManage = hasRole("admin");
   const goal = META_AD_GOALS[state.goal];
   const targetMetricLabel = getGoalPrimaryMetricLabel(state.goal);
+  const targetMetricKey = getGoalPrimaryMetricKey(state.goal);
   const editId = searchParams.get("edit")?.trim() ?? "";
+  const availableAccounts = metaPresetCfg.accounts.filter((account) => account.enabled);
+  const availableIndustries = metaPresetCfg.industries.filter((industry) => industry.enabled);
+  const selectedAccount = getManagedMetaAccount(metaPresetCfg, state.accountId);
+  const selectedIndustry = availableIndustries.find((industry) => industry.key === state.industryKey) ?? null;
+  const effectiveCfg = {
+    ...cfg,
+    adAccountId: selectedAccount?.adAccountId || cfg.adAccountId,
+    pageId: selectedAccount?.pageId || cfg.pageId,
+    instagramActorId: selectedAccount?.instagramActorId || cfg.instagramActorId,
+  };
 
   const clearEditQuery = () => {
     if (!editId) return;
@@ -315,10 +449,17 @@ export function MetaAdsOrdersPage() {
   };
 
   useEffect(() => {
+    if (!state.accountId && availableAccounts.length > 0) {
+      setState((current) => ({ ...current, accountId: selectedAccount?.id ?? availableAccounts[0].id }));
+    }
+  }, [availableAccounts.length, selectedAccount?.id, state.accountId]);
+
+  useEffect(() => {
     if (!editId) return;
     const row = listMetaOrders().find((x) => x.id === editId);
     if (!row) return;
     setState(formStateFromOrder(row));
+    setResolvedPost(buildResolvedSelectionFromOrder(row));
     setErrors({});
     setStep("edit");
     setSubmitMsg(null);
@@ -330,6 +471,11 @@ export function MetaAdsOrdersPage() {
     window.addEventListener(SHARED_SYNC_EVENT, onSharedSync);
     return () => window.removeEventListener(SHARED_SYNC_EVENT, onSharedSync);
   }, []);
+
+  useEffect(() => {
+    setPostOptions([]);
+    setPostLoadMessage(null);
+  }, [state.goal, state.accountId]);
 
   const countries = useMemo(
     () =>
@@ -343,6 +489,10 @@ export function MetaAdsOrdersPage() {
   const previewInput: MetaOrderInput = useMemo(
     () => ({
       applicant,
+      accountId: selectedAccount?.id,
+      accountLabel: selectedAccount?.label,
+      industryKey: selectedIndustry?.key,
+      industryLabel: selectedIndustry?.label,
       title: state.title.trim(),
       campaignName: state.campaignName.trim(),
       adsetName: state.adsetName.trim(),
@@ -352,9 +502,13 @@ export function MetaAdsOrdersPage() {
       message: state.message.trim(),
       ctaType: state.ctaType.trim() || "LEARN_MORE",
       useExistingPost: state.useExistingPost,
-      existingPostId: state.existingPostId.trim() || undefined,
-      trackingPostId: (state.trackingPostId.trim() || state.existingPostId.trim()) || undefined,
-      targetMetricKey: getGoalPrimaryMetricKey(state.goal),
+      existingPostId: state.useExistingPost ? resolvedPost?.existingPostId || state.existingPostId.trim() || undefined : undefined,
+      existingPostSource: state.useExistingPost ? resolvedPost?.existingPostSource || state.existingPostSource.trim() || undefined : undefined,
+      trackingPostId: state.useExistingPost
+        ? (resolvedPost?.trackingPostId || state.trackingPostId.trim() || state.existingPostId.trim()) || undefined
+        : undefined,
+      trackingRef: state.useExistingPost ? resolvedPost?.trackingRef : undefined,
+      targetMetricKey,
       targetValue: state.targetValue.trim() ? Number(state.targetValue) : undefined,
       autoStopByTarget: !!state.targetValue.trim(),
       dailyBudget: Number(state.dailyBudget) || 0,
@@ -364,6 +518,8 @@ export function MetaAdsOrdersPage() {
       ageMin: Number(state.ageMin) || 18,
       ageMax: Number(state.ageMax) || 49,
       genders: toGenders(state.gender),
+      customAudienceIds: parseTextList(state.customAudienceIdsText),
+      excludedAudienceIds: parseTextList(state.excludedAudienceIdsText),
       manualPlacements: {
         facebook: state.fbPositions,
         instagram: state.igPositions,
@@ -371,10 +527,10 @@ export function MetaAdsOrdersPage() {
       detailedTargetingText: state.detailedTargetingText.trim() || undefined,
       mode: "live",
     }),
-    [applicant, countries, state],
+    [applicant, countries, resolvedPost, selectedAccount?.id, selectedAccount?.label, selectedIndustry?.key, selectedIndustry?.label, state, targetMetricKey],
   );
 
-  const payloads = useMemo(() => buildMetaPayloads(cfg, previewInput), [cfg, previewInput]);
+  const payloads = useMemo(() => buildMetaPayloads(effectiveCfg, previewInput), [effectiveCfg, previewInput]);
   const fbPlacementLabels = useMemo(
     () => previewInput.manualPlacements.facebook.map((x) => FB_POSITION_LABEL.get(x) ?? x),
     [previewInput.manualPlacements.facebook],
@@ -384,18 +540,153 @@ export function MetaAdsOrdersPage() {
     [previewInput.manualPlacements.instagram],
   );
 
-  const goConfirm = () => {
-    const e = validate(state);
+  const applyIndustry = (industryKey: string) => {
+    const industry = availableIndustries.find((item) => item.key === industryKey);
+    if (!industry) {
+      setState((current) => ({ ...current, industryKey }));
+      return;
+    }
+    setState((current) => applyIndustryPreset({ ...current, industryKey }, industry));
+    setResolvedPost(null);
+  };
+
+  const loadExistingPosts = async () => {
+    setLoadingPosts(true);
+    setPostLoadMessage(null);
+    try {
+      const result = await listMetaExistingPosts({
+        cfg,
+        platform: goal.platform,
+        pageId: effectiveCfg.pageId,
+        instagramActorId: effectiveCfg.instagramActorId,
+        limit: 12,
+      });
+      if (!result.ok || !result.posts) {
+        setPostOptions([]);
+        setPostLoadMessage(result.detail || "讀取近期貼文失敗");
+        return;
+      }
+      setPostOptions(result.posts);
+      setPostLoadMessage(result.posts.length > 0 ? `已載入 ${result.posts.length} 篇近期貼文` : "目前沒有可選的近期貼文");
+    } finally {
+      setLoadingPosts(false);
+    }
+  };
+
+  const applyPickedPost = (post: MetaExistingPostOption) => {
+    const trackingRef = buildManualTrackingRef({
+      platform: post.platform,
+      refId: post.id,
+      sourceUrl: post.permalink,
+      account: selectedAccount,
+      resolver: "existing_post_picker",
+    });
+    setState((current) => ({
+      ...current,
+      useExistingPost: true,
+      existingPostMode: "picker",
+      existingPostId: post.id,
+      existingPostSource: post.permalink,
+      trackingPostId: post.id,
+      landingUrl: current.landingUrl || post.permalink,
+      message: current.message || post.message || "",
+    }));
+    setResolvedPost({
+      existingPostId: post.id,
+      existingPostSource: post.permalink,
+      trackingPostId: post.id,
+      trackingRef,
+      postLabel: post.label,
+    });
+  };
+
+  const prepareResolvedPost = async (): Promise<ResolvedPostSelection | null> => {
+    if (!state.useExistingPost) return null;
+
+    if (state.existingPostMode === "picker") {
+      const refId = state.existingPostId.trim();
+      if (!refId) return null;
+      return {
+        existingPostId: refId,
+        existingPostSource: state.existingPostSource.trim() || refId,
+        trackingPostId: refId,
+        trackingRef: buildManualTrackingRef({
+          platform: goal.platform,
+          refId,
+          sourceUrl: state.existingPostSource.trim() || refId,
+          account: selectedAccount,
+          resolver: "existing_post_picker",
+        }),
+        postLabel: state.existingPostSource.trim() || refId,
+      };
+    }
+
+    if (state.existingPostMode === "id") {
+      const refId = state.existingPostId.trim();
+      if (!refId) return null;
+      return {
+        existingPostId: refId,
+        existingPostSource: state.existingPostSource.trim() || refId,
+        trackingPostId: state.trackingPostId.trim() || refId,
+        trackingRef: buildManualTrackingRef({
+          platform: goal.platform,
+          refId: state.trackingPostId.trim() || refId,
+          sourceUrl: state.existingPostSource.trim() || refId,
+          account: selectedAccount,
+          resolver: "manual_id",
+        }),
+        postLabel: refId,
+      };
+    }
+
+    const source = state.existingPostSource.trim();
+    if (!source) return null;
+    const resolved = await resolveMetaPostReference({
+      source,
+      platform: goal.platform,
+      pageId: effectiveCfg.pageId,
+      pageName: selectedAccount?.pageName,
+    });
+    if (!resolved.ok || !resolved.trackingRef) {
+      throw new Error(resolved.detail || "貼文連結解析失敗");
+    }
+    return {
+      existingPostId: resolved.existingPostId || resolved.trackingRef.refId,
+      existingPostSource: source,
+      trackingPostId: resolved.trackingRef.refId,
+      trackingRef: resolved.trackingRef,
+      postLabel: source,
+    };
+  };
+
+  const goConfirm = async () => {
+    const e = validate(state, effectiveCfg);
     setErrors(e);
     if (Object.keys(e).length > 0) return;
-    setStep("confirm");
+    setResolvingPost(true);
+    try {
+      const prepared = await prepareResolvedPost();
+      if (state.useExistingPost && !prepared?.trackingPostId && TARGET_RECOMMENDS_TRACKING.has(targetMetricKey) && state.targetValue.trim()) {
+        setErrors((current) => ({ ...current, trackingPostId: "這個目標建議提供可追蹤的貼文，才能在達標時自動停投" }));
+        return;
+      }
+      setResolvedPost(prepared);
+      setStep("confirm");
+    } catch (error) {
+      setErrors((current) => ({
+        ...current,
+        existingPostSource: error instanceof Error ? error.message : "貼文連結解析失敗",
+      }));
+    } finally {
+      setResolvingPost(false);
+    }
   };
 
   const submit = async () => {
     setSubmitting(true);
     setSubmitMsg(null);
     try {
-      const res = await submitMetaOrderToGraph({ cfg, input: previewInput, payloads });
+      const res = await submitMetaOrderToGraph({ cfg: effectiveCfg, input: previewInput, payloads });
       const status = res.status === "submitted" ? "running" : "failed";
       const nextRow = {
         ...previewInput,
@@ -420,7 +711,7 @@ export function MetaAdsOrdersPage() {
       setEditingOrderId(null);
       clearEditQuery();
       if (res.status === "submitted") {
-        setSubmitMsg("已送出，系統正在建立投放。");
+        setSubmitMsg("已送出，系統會依設定建立 Meta 投放，並在成效頁持續檢查是否達標。");
       } else {
         setSubmitMsg(`送出失敗：${res.error ?? "未知錯誤"}`);
       }
@@ -437,7 +728,7 @@ export function MetaAdsOrdersPage() {
           <div className="brand-title">
             {step === "edit" ? "Meta官方投廣" : step === "confirm" ? "確認送出" : "送出結果"}
           </div>
-          <div className="brand-sub">依投放目標自動帶入設定，填完可直接確認送出。</div>
+          <div className="brand-sub">先選投放帳號與產業模板，系統會帶入建議設定，送出後可在成效頁每 5 分鐘檢查是否達標。</div>
         </div>
         <div className="pill">
           <span className="tag">{applicant}</span>
@@ -469,6 +760,60 @@ export function MetaAdsOrdersPage() {
 
       {step === "edit" && (
         <div className="grid">
+          <div className="card section section-blue">
+            <div className="card-hd">
+              <div>
+                <div className="card-title">投放預設</div>
+                <div className="card-desc">先選帳號與產業模板，系統會把建議設定帶入。</div>
+              </div>
+            </div>
+            <div className="card-bd">
+              <div className="row cols2">
+                <div className="field">
+                  <div className="label">投放帳號<span className="req">*</span></div>
+                  <select
+                    value={state.accountId}
+                    onChange={(e) => {
+                      setState((s) => ({ ...s, accountId: e.target.value }));
+                      setResolvedPost(null);
+                    }}
+                  >
+                    <option value="">請選擇</option>
+                    {availableAccounts.map((account) => (
+                      <option key={account.id} value={account.id}>
+                        {account.label} / act_{account.adAccountId}
+                      </option>
+                    ))}
+                  </select>
+                  {errors.accountId && <div className="error">{errors.accountId}</div>}
+                  <div className="hint">
+                    {selectedAccount
+                      ? `Facebook 粉專：${selectedAccount.pageName || selectedAccount.pageId || "未設定"} / Instagram Actor：${selectedAccount.instagramActorId || "未設定"}`
+                      : "尚未選擇帳號，或控制設定還沒有可用的 Meta 帳號。"}
+                  </div>
+                </div>
+                <div className="field">
+                  <div className="label">產業模板</div>
+                  <select value={state.industryKey} onChange={(e) => applyIndustry(e.target.value)}>
+                    <option value="">不套用</option>
+                    {availableIndustries.map((industry) => (
+                      <option key={industry.key} value={industry.key}>
+                        {industry.label}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="hint">選擇後會帶入建議目標、年齡、受眾、地區、版位與預算。</div>
+                </div>
+              </div>
+              {selectedIndustry ? (
+                <>
+                  <div className="sep" />
+                  <div className="hint">{selectedIndustry.description || selectedIndustry.audienceNote || "已套用這個產業模板。"}</div>
+                </>
+              ) : null}
+            </div>
+          </div>
+
           <div className="card">
             <div className="card-hd">
               <div>
@@ -573,6 +918,24 @@ export function MetaAdsOrdersPage() {
                     placeholder={"每行一筆 interest_id，可加名稱\n例如 6003139266461|Streetwear"}
                   />
                 </div>
+                <div className="field">
+                  <div className="label">包含自訂受眾 ID</div>
+                  <textarea
+                    rows={2}
+                    value={state.customAudienceIdsText}
+                    onChange={(e) => setState((s) => ({ ...s, customAudienceIdsText: e.target.value }))}
+                    placeholder={"每行一筆 Audience ID"}
+                  />
+                </div>
+                <div className="field">
+                  <div className="label">排除自訂受眾 ID</div>
+                  <textarea
+                    rows={2}
+                    value={state.excludedAudienceIdsText}
+                    onChange={(e) => setState((s) => ({ ...s, excludedAudienceIdsText: e.target.value }))}
+                    placeholder={"每行一筆 Audience ID"}
+                  />
+                </div>
               </div>
               <div className="sep" />
               <div className="field">
@@ -614,7 +977,7 @@ export function MetaAdsOrdersPage() {
             <div className="card-hd">
               <div>
                 <div className="card-title">廣告</div>
-                <div className="card-desc">會使用設定頁的粉專與 Instagram 帳號資訊。</div>
+                <div className="card-desc">優先使用既有貼文推廣，也可改成建立連結廣告。</div>
               </div>
             </div>
             <div className="card-bd">
@@ -626,24 +989,16 @@ export function MetaAdsOrdersPage() {
                 </div>
                 <div className="field">
                   <div className="label">素材來源</div>
-                  <select value={state.useExistingPost ? "existing" : "link"} onChange={(e) => setState((s) => ({ ...s, useExistingPost: e.target.value === "existing" }))}>
+                  <select
+                    value={state.useExistingPost ? "existing" : "link"}
+                    onChange={(e) => {
+                      setState((s) => ({ ...s, useExistingPost: e.target.value === "existing" }));
+                      setResolvedPost(null);
+                    }}
+                  >
                     <option value="existing">使用既有貼文</option>
                     <option value="link">建立連結廣告</option>
                   </select>
-                </div>
-                <div className="field">
-                  <div className="label">貼文編號</div>
-                  <input value={state.existingPostId} onChange={(e) => setState((s) => ({ ...s, existingPostId: e.target.value }))} />
-                  {errors.existingPostId && <div className="error">{errors.existingPostId}</div>}
-                </div>
-                <div className="field">
-                  <div className="label">追蹤貼文 ID</div>
-                  <input
-                    value={state.trackingPostId}
-                    onChange={(e) => setState((s) => ({ ...s, trackingPostId: e.target.value }))}
-                    placeholder="留空時自動使用貼文編號"
-                  />
-                  {errors.trackingPostId && <div className="error">{errors.trackingPostId}</div>}
                 </div>
                 <div className="field">
                   <div className="label">目標 {targetMetricLabel}</div>
@@ -653,33 +1008,123 @@ export function MetaAdsOrdersPage() {
                     onChange={(e) => setState((s) => ({ ...s, targetValue: e.target.value }))}
                     placeholder="例如 300000"
                   />
-                  <div className="hint">留空表示不啟用自動停投。</div>
+                  <div className="hint">達到這個數字後，成效頁會自動嘗試停止投放。</div>
                   {errors.targetValue && <div className="error">{errors.targetValue}</div>}
-                </div>                <div className="field">
-                  <div className="label">網址{state.useExistingPost ? "" : <span className="req">*</span>}</div>
-                  <input value={state.landingUrl} onChange={(e) => setState((s) => ({ ...s, landingUrl: e.target.value }))} placeholder="https://..." />
-                  {errors.landingUrl && <div className="error">{errors.landingUrl}</div>}
                 </div>
+                {state.useExistingPost ? null : (
+                  <div className="field">
+                    <div className="label">網址<span className="req">*</span></div>
+                    <input value={state.landingUrl} onChange={(e) => setState((s) => ({ ...s, landingUrl: e.target.value }))} placeholder="https://..." />
+                    {errors.landingUrl && <div className="error">{errors.landingUrl}</div>}
+                  </div>
+                )}
+              </div>
+
+              {state.useExistingPost ? (
+                <>
+                  <div className="sep" />
+                  <div className="actions inline">
+                    <button className={`btn ${state.existingPostMode === "picker" ? "primary" : ""}`} type="button" onClick={() => setState((s) => ({ ...s, existingPostMode: "picker" }))}>
+                      從近期貼文挑選
+                    </button>
+                    <button className={`btn ${state.existingPostMode === "url" ? "primary" : ""}`} type="button" onClick={() => setState((s) => ({ ...s, existingPostMode: "url", existingPostId: "", trackingPostId: "" }))}>
+                      貼上貼文連結
+                    </button>
+                    <button className={`btn ${state.existingPostMode === "id" ? "primary" : ""}`} type="button" onClick={() => setState((s) => ({ ...s, existingPostMode: "id" }))}>
+                      手動輸入貼文 ID
+                    </button>
+                  </div>
+
+                  {state.existingPostMode === "picker" ? (
+                    <>
+                      <div className="sep" />
+                      <div className="actions inline">
+                        <span className="hint">目前抓取 {formatPlatform(goal.platform)} 的近期貼文。</span>
+                        <button className="btn" type="button" onClick={() => void loadExistingPosts()} disabled={loadingPosts}>
+                          {loadingPosts ? "載入中..." : "載入近期貼文"}
+                        </button>
+                      </div>
+                      {postLoadMessage && <div className="hint" style={{ marginTop: 8 }}>{postLoadMessage}</div>}
+                      {errors.existingPostId && <div className="error" style={{ marginTop: 8 }}>{errors.existingPostId}</div>}
+                      <div className="list" style={{ marginTop: 10 }}>
+                        {postOptions.map((post) => {
+                          const active = state.existingPostId === post.id;
+                          return (
+                            <button
+                              key={post.id}
+                              type="button"
+                              className={`item meta-post-option ${active ? "is-active" : ""}`}
+                              onClick={() => applyPickedPost(post)}
+                            >
+                              <div className="item-hd">
+                                <div className="item-title">{post.label || post.id}</div>
+                                <span className="tag">{active ? "已選擇" : "選這篇"}</span>
+                              </div>
+                              <div className="hint">{post.createdTime ? formatDateTime(post.createdTime) : "未提供時間"}</div>
+                              {post.message ? <div className="hint" style={{ marginTop: 6 }}>{post.message}</div> : null}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </>
+                  ) : null}
+
+                  {state.existingPostMode === "url" ? (
+                    <>
+                      <div className="sep" />
+                      <div className="field">
+                        <div className="label">貼文連結<span className="req">*</span></div>
+                        <input value={state.existingPostSource} onChange={(e) => setState((s) => ({ ...s, existingPostSource: e.target.value }))} placeholder="https://www.facebook.com/... 或 https://www.instagram.com/..." />
+                        {errors.existingPostSource && <div className="error">{errors.existingPostSource}</div>}
+                        <div className="hint">確認頁會先解析連結，換成可投放與可追蹤的貼文參照。</div>
+                      </div>
+                    </>
+                  ) : null}
+
+                  {state.existingPostMode === "id" ? (
+                    <>
+                      <div className="sep" />
+                      <div className="row cols2">
+                        <div className="field">
+                          <div className="label">貼文 ID<span className="req">*</span></div>
+                          <input value={state.existingPostId} onChange={(e) => setState((s) => ({ ...s, existingPostId: e.target.value }))} placeholder={goal.platform === "facebook" ? "pageId_postId 或 postId" : "Instagram media id"} />
+                          {errors.existingPostId && <div className="error">{errors.existingPostId}</div>}
+                        </div>
+                        <div className="field">
+                          <div className="label">原始連結或備註</div>
+                          <input value={state.existingPostSource} onChange={(e) => setState((s) => ({ ...s, existingPostSource: e.target.value }))} placeholder="可留原始連結，供後續查詢" />
+                        </div>
+                      </div>
+                    </>
+                  ) : null}
+                  {errors.trackingPostId && <div className="error" style={{ marginTop: 8 }}>{errors.trackingPostId}</div>}
+                </>
+              ) : null}
+
+              <div className="row cols2" style={{ marginTop: 12 }}>
                 <div className="field" style={{ gridColumn: "1 / -1" }}>
                   <div className="label">主要文案</div>
                   <textarea rows={4} value={state.message} onChange={(e) => setState((s) => ({ ...s, message: e.target.value }))} />
                 </div>
-                <div className="field">
-                  <div className="label">行動呼籲</div>
-                  <select value={state.ctaType} onChange={(e) => setState((s) => ({ ...s, ctaType: e.target.value }))}>
-                    <option value="LEARN_MORE">了解更多</option>
-                    <option value="SHOP_NOW">立即購買</option>
-                    <option value="SIGN_UP">立即註冊</option>
-                    <option value="CONTACT_US">聯絡我們</option>
-                    <option value="VIEW_MORE">查看更多</option>
-                  </select>
-                </div>
+
+                {state.useExistingPost ? null : (
+                  <div className="field">
+                    <div className="label">行動呼籲</div>
+                    <select value={state.ctaType} onChange={(e) => setState((s) => ({ ...s, ctaType: e.target.value }))}>
+                      <option value="LEARN_MORE">了解更多</option>
+                      <option value="SHOP_NOW">立即購買</option>
+                      <option value="SIGN_UP">立即註冊</option>
+                      <option value="CONTACT_US">聯絡我們</option>
+                      <option value="VIEW_MORE">查看更多</option>
+                    </select>
+                  </div>
+                )}
               </div>
 
               <div className="sep" />
               <div className="actions inline">
-                <button className="btn primary" type="button" onClick={goConfirm}>
-                  下一步
+                <button className="btn primary" type="button" onClick={() => void goConfirm()} disabled={resolvingPost}>
+                  {resolvingPost ? "準備中..." : "下一步"}
                 </button>
               </div>
             </div>
@@ -699,6 +1144,14 @@ export function MetaAdsOrdersPage() {
             <div className="card-bd">
               <div className="row cols2">
                 <div className="field">
+                  <div className="label">投放帳號</div>
+                  <input value={selectedAccount ? `${selectedAccount.label} / act_${selectedAccount.adAccountId}` : effectiveCfg.adAccountId || "-"} readOnly />
+                </div>
+                <div className="field">
+                  <div className="label">產業模板</div>
+                  <input value={selectedIndustry?.label || "未套用"} readOnly />
+                </div>
+                <div className="field">
                   <div className="label">任務名稱</div>
                   <input value={previewInput.title || "-"} readOnly />
                 </div>
@@ -714,6 +1167,10 @@ export function MetaAdsOrdersPage() {
                   <div className="label">手動版位</div>
                   <input value={`Facebook ${previewInput.manualPlacements.facebook.length} 項 / Instagram ${previewInput.manualPlacements.instagram.length} 項`} readOnly />
                 </div>
+                <div className="field" style={{ gridColumn: "1 / -1" }}>
+                  <div className="label">素材</div>
+                  <input value={state.useExistingPost ? resolvedPost?.existingPostSource || resolvedPost?.existingPostId || "既有貼文" : previewInput.landingUrl || "-"} readOnly />
+                </div>
                 <div className="field">
                   <div className="label">開始時間</div>
                   <input value={formatDateTime(state.startTime)} readOnly />
@@ -725,6 +1182,14 @@ export function MetaAdsOrdersPage() {
                 <div className="field">
                   <div className="label">目標 {targetMetricLabel}</div>
                   <input value={previewInput.targetValue == null ? "-" : previewInput.targetValue.toLocaleString("zh-TW")} readOnly />
+                </div>
+                <div className="field">
+                  <div className="label">Facebook 版位</div>
+                  <input value={fbPlacementLabels.join("、") || "未設定"} readOnly />
+                </div>
+                <div className="field">
+                  <div className="label">Instagram 版位</div>
+                  <input value={igPlacementLabels.join("、") || "未設定"} readOnly />
                 </div>
               </div>
 

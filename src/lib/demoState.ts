@@ -1,5 +1,6 @@
 import { getConfig, saveConfig, type AppConfigV1 } from "../config/appConfig";
 import { getMetaConfig, saveMetaConfig, type MetaConfigV1 } from "../config/metaConfig";
+import { getMetaPresetConfig, saveMetaPresetConfig, type MetaPresetConfigV1 } from "../config/metaPresetConfig";
 import { getPricingConfig, savePricingConfig, type PricingConfigV1 } from "../config/pricingConfig";
 import { getServiceCatalog, saveServiceCatalog, type ServiceCatalogV1 } from "../config/serviceCatalog";
 import { getAllVendorKeys, replaceVendorKeys, type VendorKeysV1 } from "../config/vendorKeys";
@@ -17,6 +18,7 @@ export type DemoSnapshotV1 = {
   metaOrders: MetaOrder[];
   vendorKeys?: VendorKeysV1;
   metaConfig?: MetaConfigV1;
+  metaPresetConfig?: MetaPresetConfigV1;
 };
 
 function isoNow() {
@@ -40,6 +42,7 @@ export function createDemoSnapshot(options?: { includeSecrets?: boolean }): Demo
           metaConfig: getMetaConfig(),
         }
       : {}),
+    metaPresetConfig: getMetaPresetConfig(),
   };
 }
 
@@ -71,6 +74,7 @@ export function parseDemoSnapshot(json: string): { ok: true; snapshot: DemoSnaps
         metaOrders: parsed.metaOrders as MetaOrder[],
         vendorKeys: parsed.vendorKeys,
         metaConfig: parsed.metaConfig,
+        metaPresetConfig: parsed.metaPresetConfig,
       },
     };
   } catch {
@@ -89,5 +93,8 @@ export function restoreDemoSnapshot(snapshot: DemoSnapshotV1) {
   }
   if (snapshot.includesSecrets && snapshot.metaConfig) {
     saveMetaConfig(snapshot.metaConfig);
+  }
+  if (snapshot.metaPresetConfig) {
+    saveMetaPresetConfig(snapshot.metaPresetConfig);
   }
 }

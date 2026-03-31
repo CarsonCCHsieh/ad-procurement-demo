@@ -9,6 +9,7 @@ export const SHARED_STORAGE_KEYS = [
   "ad_demo_service_catalog_v1",
   "ad_demo_vendor_keys_v1",
   "ad_demo_meta_config_v1",
+  "ad_demo_meta_preset_config_v1",
 ] as const;
 
 export const SHARED_LIGHT_KEYS = [
@@ -16,6 +17,7 @@ export const SHARED_LIGHT_KEYS = [
   "ad_demo_pricing_v1",
   "ad_demo_orders_v1",
   "ad_demo_meta_orders_v1",
+  "ad_demo_meta_preset_config_v1",
 ] as const;
 
 export const SHARED_SYNC_EVENT = "ad-demo-shared-sync";

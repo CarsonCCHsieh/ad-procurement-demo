@@ -1357,3 +1357,14 @@ textarea:focus {
     grid-template-columns: 1fr;
   }
 }
+
+.meta-post-option {
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+}
+
+.meta-post-option.is-active {
+  border-color: hsl(var(--primary) / 0.7);
+  box-shadow: 0 0 0 2px hsl(var(--primary) / 0.12);
+}

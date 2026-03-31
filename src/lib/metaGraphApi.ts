@@ -3,6 +3,24 @@ import { META_AD_GOALS, type MetaAdGoalKey, type MetaKpiMetricKey } from "./meta
 import type { MetaOrderInput, MetaPerformanceSnapshot, MetaSubmitResult } from "./metaOrdersStore";
 import { apiUrl } from "./apiBase";
 
+export type MetaAdAccountOption = {
+  id: string;
+  label: string;
+  adAccountId: string;
+  pageId?: string;
+  pageName?: string;
+  instagramActorId?: string;
+};
+
+export type MetaExistingPostOption = {
+  id: string;
+  label: string;
+  platform: "facebook" | "instagram";
+  permalink: string;
+  message?: string;
+  createdTime?: string;
+};
+
 type GraphValue = string | number | boolean | Record<string, unknown> | Array<unknown> | null | undefined;
 
 type ActionValue = {
@@ -259,6 +277,208 @@ function buildPerformance(goal: MetaAdGoalKey, values: Record<MetaKpiMetricKey, 
     })),
     raw,
   };
+}
+
+function extractArray(raw: unknown): Record<string, unknown>[] {
+  return Array.isArray(raw) ? raw.filter((item) => item && typeof item === "object") as Record<string, unknown>[] : [];
+}
+
+function safeText(raw: unknown, fallback = ""): string {
+  const text = String(raw ?? "").trim();
+  return text || fallback;
+}
+
+function trimActPrefix(raw: string) {
+  return raw.trim().replace(/^act_/i, "");
+}
+
+export async function listMetaAdAccounts(params: {
+  cfg: MetaConfigV1;
+}): Promise<{ ok: boolean; detail?: string; accounts?: MetaAdAccountOption[] }> {
+  const { cfg } = params;
+  const token = cfg.accessToken.trim();
+  if (!token) {
+    return { ok: false, detail: "請先填入 Meta Access Token" };
+  }
+
+  try {
+    const adAccountsRaw = await graphGet(
+      cfg,
+      token,
+      "/me/adaccounts",
+      "id,account_id,name,account_status,business_name",
+    );
+    const pageRaw = await graphGet(cfg, token, "/me/accounts", "id,name,instagram_business_account{id,username}");
+
+    const accounts = extractArray(adAccountsRaw.data).map((row) => {
+      const accountId = safeText(row.account_id || row.id);
+      return {
+        id: trimActPrefix(accountId || safeText(row.id)),
+        label: safeText(row.name, safeText(row.business_name, `帳號 ${trimActPrefix(accountId)}`)),
+        adAccountId: trimActPrefix(accountId || safeText(row.id)),
+      } satisfies MetaAdAccountOption;
+    });
+
+    const firstPage = extractArray(pageRaw.data)[0];
+    const pageId = safeText(firstPage?.id);
+    const pageName = safeText(firstPage?.name);
+    const instagramActorId = safeText(asRecord(firstPage?.instagram_business_account)?.id);
+
+    return {
+      ok: true,
+      accounts: accounts.map((account) => ({
+        ...account,
+        pageId,
+        pageName,
+        instagramActorId,
+      })),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      detail: error instanceof Error ? error.message : "Meta 廣告帳號讀取失敗",
+    };
+  }
+}
+
+export async function listMetaExistingPosts(params: {
+  cfg: MetaConfigV1;
+  platform: "facebook" | "instagram";
+  pageId?: string;
+  instagramActorId?: string;
+  limit?: number;
+}): Promise<{ ok: boolean; detail?: string; posts?: MetaExistingPostOption[] }> {
+  const { cfg, platform } = params;
+  const token = cfg.accessToken.trim();
+  if (!token) {
+    return { ok: false, detail: "請先填入 Meta Access Token" };
+  }
+
+  try {
+    if (platform === "facebook") {
+      const pageId = safeText(params.pageId || cfg.pageId);
+      if (!pageId) return { ok: false, detail: "請先設定 Facebook 粉專 ID" };
+      const raw = await graphGet(
+        cfg,
+        token,
+        `/${encodeURIComponent(pageId)}/posts?limit=${Math.max(5, Math.min(50, params.limit ?? 12))}`,
+        "id,message,created_time,permalink_url",
+      );
+      const posts = extractArray(raw.data).map((row) => ({
+        id: safeText(row.id),
+        label: safeText(row.message, safeText(row.id)).slice(0, 80),
+        platform: "facebook" as const,
+        permalink: safeText(row.permalink_url),
+        createdTime: safeText(row.created_time),
+        message: safeText(row.message),
+      }));
+      return { ok: true, posts: posts.filter((post) => !!post.id) };
+    }
+
+    const instagramActorId = safeText(params.instagramActorId || cfg.instagramActorId);
+    if (!instagramActorId) return { ok: false, detail: "請先設定 Instagram Actor ID" };
+    const raw = await graphGet(
+      cfg,
+      token,
+      `/${encodeURIComponent(instagramActorId)}/media?limit=${Math.max(5, Math.min(50, params.limit ?? 12))}`,
+      "id,caption,permalink,media_type,timestamp",
+    );
+    const posts = extractArray(raw.data).map((row) => ({
+      id: safeText(row.id),
+      label: safeText(row.caption, `${safeText(row.media_type)} ${safeText(row.id)}`).slice(0, 80),
+      platform: "instagram" as const,
+      permalink: safeText(row.permalink),
+      createdTime: safeText(row.timestamp),
+      message: safeText(row.caption),
+    }));
+    return { ok: true, posts: posts.filter((post) => !!post.id) };
+  } catch (error) {
+    return {
+      ok: false,
+      detail: error instanceof Error ? error.message : "現有貼文讀取失敗",
+    };
+  }
+}
+
+export async function resolveMetaPostReference(params: {
+  source: string;
+  platform?: "facebook" | "instagram";
+  pageId?: string;
+  pageName?: string;
+}): Promise<{
+  ok: boolean;
+  detail?: string;
+  trackingRef?: {
+    platform: "facebook" | "instagram";
+    refId: string;
+    sourceUrl: string;
+    canonicalUrl?: string;
+    pageId?: string;
+    pageName?: string;
+    resolver?: string;
+    resolvedAt: string;
+  };
+  existingPostId?: string;
+}> {
+  const source = params.source.trim();
+  if (!source) return { ok: false, detail: "請輸入貼文連結或貼文 ID" };
+
+  if (!/^https?:\/\//i.test(source)) {
+    return {
+      ok: true,
+      existingPostId: source,
+      trackingRef: {
+        platform: params.platform === "instagram" ? "instagram" : "facebook",
+        refId: source,
+        sourceUrl: source,
+        pageId: params.pageId,
+        pageName: params.pageName,
+        resolver: "manual_input",
+        resolvedAt: new Date().toISOString(),
+      },
+    };
+  }
+
+  try {
+    const qs = new URLSearchParams();
+    qs.set("url", source);
+    if (params.platform) qs.set("platform", params.platform);
+    if (params.pageId) qs.set("pageId", params.pageId);
+    if (params.pageName) qs.set("pageName", params.pageName);
+    const res = await fetch(apiUrl(`/api/meta/resolve-post?${qs.toString()}`), {
+      method: "GET",
+      headers: { "Cache-Control": "no-store" },
+    });
+    const json = (await res.json()) as {
+      ok?: boolean;
+      detail?: string;
+      trackingRef?: {
+        platform: "facebook" | "instagram";
+        refId: string;
+        sourceUrl: string;
+        canonicalUrl?: string;
+        pageId?: string;
+        pageName?: string;
+        resolver?: string;
+        resolvedAt: string;
+      };
+      existingPostId?: string;
+    };
+    if (!res.ok || !json.ok || !json.trackingRef) {
+      return { ok: false, detail: json.detail || `HTTP ${res.status}` };
+    }
+    return {
+      ok: true,
+      detail: json.detail,
+      existingPostId: json.existingPostId || json.trackingRef.refId,
+      trackingRef: json.trackingRef,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      detail: error instanceof Error ? error.message : "貼文解析失敗",
+    };
+  }
 }
 
 export async function submitMetaOrderToGraph(params: {

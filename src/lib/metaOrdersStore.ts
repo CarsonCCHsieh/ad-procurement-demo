@@ -7,6 +7,10 @@ export type MetaOrderStatus = "draft" | "submitted" | "running" | "paused" | "fa
 export type MetaOrderInput = {
   applicant: string;
   title: string;
+  accountId?: string;
+  accountLabel?: string;
+  industryKey?: string;
+  industryLabel?: string;
   campaignName: string;
   adsetName: string;
   adName: string;
@@ -16,6 +20,7 @@ export type MetaOrderInput = {
   ctaType: string;
   useExistingPost: boolean;
   existingPostId?: string;
+  existingPostSource?: string;
   dailyBudget: number;
   startTime: string; // ISO
   endTime?: string; // ISO
@@ -23,6 +28,8 @@ export type MetaOrderInput = {
   ageMin: number;
   ageMax: number;
   genders: number[]; // 0=all,1=male,2=female
+  customAudienceIds?: string[];
+  excludedAudienceIds?: string[];
   manualPlacements: {
     facebook: string[];
     instagram: string[];
@@ -125,4 +132,3 @@ export function clearMetaOrders() {
 export function replaceMetaOrders(rows: MetaOrder[]) {
   writeAll(Array.isArray(rows) ? rows : []);
 }
-

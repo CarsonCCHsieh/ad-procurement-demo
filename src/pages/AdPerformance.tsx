@@ -17,6 +17,7 @@ import {
 } from "../lib/ordersStore";
 import { clearMetaOrders, listMetaOrders, updateMetaOrder, type MetaOrder } from "../lib/metaOrdersStore";
 import { getMetaConfig } from "../config/metaConfig";
+import { getMetaPresetConfig } from "../config/metaPresetConfig";
 import { fetchMetaAdSnapshot, fetchMetaPostMetrics, updateMetaAdDelivery } from "../lib/metaGraphApi";
 import { getGoalPrimaryMetricKey, getGoalPrimaryMetricLabel, META_AD_GOALS, type MetaKpiMetricKey } from "../lib/metaGoals";
 import { fetchSharedValues, flushAllSharedState, pullSharedState, SHARED_SYNC_EVENT } from "../lib/sharedSync";
@@ -66,7 +67,6 @@ function formatVendorUserMessage(error?: string): string {
   return raw;
 }
 
-const META_AUTO_CHECK_INTERVAL_MS = 5 * 60 * 1000;
 const HOURLY_AUTO_REFRESH_INTERVAL_MS = 60 * 60 * 1000;
 const VENDOR_POST_METRIC_ENABLED = false;
 
@@ -277,6 +277,7 @@ export function AdPerformancePage() {
   const canManage = hasRole("admin");
   const cfg = getConfig();
   const metaCfg = getMetaConfig();
+  const metaPresetCfg = getMetaPresetConfig();
 
   const setSyncFlag = (key: string, value: boolean) => setSyncing((state) => ({ ...state, [key]: value }));
 
@@ -701,7 +702,14 @@ export function AdPerformancePage() {
       let postError = "";
 
       if (row.trackingPostId) {
-        const postMetrics = await fetchMetaPostMetrics({ cfg: metaCfg, postId: row.trackingPostId });
+        const postMetrics = await fetchMetaPostMetrics({
+          cfg: metaCfg,
+          postId: row.trackingPostId,
+          platform: row.trackingRef?.platform,
+          pageId: row.trackingRef?.pageId,
+          pageName: row.trackingRef?.pageName,
+          sourceUrl: row.trackingRef?.sourceUrl || row.existingPostSource,
+        });
         if (postMetrics.ok) {
           const value = postMetrics.values?.[metricKey];
           if (typeof value === "number") targetCurrent = value;
@@ -870,7 +878,7 @@ export function AdPerformancePage() {
       const candidates = listMetaOrders().filter((row) => {
         if (!row.submitResult?.adId) return false;
         if (!(row.status === "running" || row.status === "submitted")) return false;
-        return !!row.autoStopByTarget && (row.targetValue ?? 0) > 0 && !!row.trackingPostId;
+        return !!row.autoStopByTarget && (row.targetValue ?? 0) > 0;
       });
       if (candidates.length === 0) return;
 
@@ -894,10 +902,10 @@ export function AdPerformancePage() {
     void tick();
     const timer = window.setInterval(() => {
       void tick();
-    }, META_AUTO_CHECK_INTERVAL_MS);
+    }, Math.max(1, metaPresetCfg.autoStopCheckMinutes || 5) * 60 * 1000);
 
     return () => window.clearInterval(timer);
-  }, [metaAutoEnabled, metaAutoRunning]);
+  }, [metaAutoEnabled, metaAutoRunning, metaPresetCfg.autoStopCheckMinutes]);
 
   useEffect(() => {
     void pullLatestOrders();

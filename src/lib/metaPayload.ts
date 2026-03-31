@@ -57,6 +57,17 @@ function parseInterestObjects(raw: string): Array<{ id: string; name?: string }>
   return out;
 }
 
+function parseIdList(raw: string[] | undefined): Array<{ id: string }> {
+  if (!Array.isArray(raw)) return [];
+  const out: Array<{ id: string }> = [];
+  for (const item of raw) {
+    const id = String(item ?? "").trim();
+    if (!id || out.some((row) => row.id === id)) continue;
+    out.push({ id });
+  }
+  return out;
+}
+
 export function buildMetaPayloads(cfg: MetaConfigV1, input: MetaOrderInput): {
   campaign: Record<string, unknown>;
   adset: Record<string, unknown>;
@@ -84,6 +95,14 @@ export function buildMetaPayloads(cfg: MetaConfigV1, input: MetaOrderInput): {
   }
   if (interests.length > 0) {
     targeting.flexible_spec = [{ interests }];
+  }
+  const customAudiences = parseIdList(input.customAudienceIds);
+  if (customAudiences.length > 0) {
+    targeting.custom_audiences = customAudiences;
+  }
+  const excludedAudiences = parseIdList(input.excludedAudienceIds);
+  if (excludedAudiences.length > 0) {
+    targeting.excluded_custom_audiences = excludedAudiences;
   }
 
   const promotedObject: Record<string, unknown> = {};
@@ -120,8 +139,12 @@ export function buildMetaPayloads(cfg: MetaConfigV1, input: MetaOrderInput): {
     name: `${input.adName || input.title}_creative`,
   };
 
-  if (input.useExistingPost && input.existingPostId && cfg.pageId) {
-    creative.object_story_id = toObjectStoryId(cfg.pageId, input.existingPostId);
+  if (input.useExistingPost && input.existingPostId) {
+    if (goal.platform === "instagram") {
+      creative.source_instagram_media_id = sanitizePostId(input.existingPostId);
+    } else if (cfg.pageId) {
+      creative.object_story_id = toObjectStoryId(cfg.pageId, input.existingPostId);
+    }
   } else {
     const linkData: Record<string, unknown> = {
       message: input.message,

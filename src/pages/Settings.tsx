@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { CollapsibleCard } from "../components/CollapsibleCard";
 import { MetaSettingsCard } from "../components/MetaSettingsCard";
+import { MetaStrategySettingsCard } from "../components/MetaStrategySettingsCard";
 import { ServicePicker } from "../components/ServicePicker";
 import { apiUrl } from "../lib/apiBase";
 import {
@@ -533,6 +534,7 @@ export function SettingsPage() {
       </div>
 
       <MetaSettingsCard key={metaCardKey} onNotice={flashMsg} />
+      <MetaStrategySettingsCard onNotice={flashMsg} />
 
       <div id="sec-pricing">
         <CollapsibleCard

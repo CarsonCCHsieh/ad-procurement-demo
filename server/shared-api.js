@@ -29,6 +29,11 @@ db.exec(`
   INSERT INTO state_meta (id, revision, updated_at)
   VALUES (1, 0, CURRENT_TIMESTAMP)
   ON CONFLICT(id) DO NOTHING;
+  CREATE TABLE IF NOT EXISTS meta_tracking_cache (
+    cache_key TEXT PRIMARY KEY,
+    tracking_ref TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
 `);
 
 const selectAllStmt = db.prepare("SELECT storage_key, storage_value FROM state_entries");
@@ -49,15 +54,25 @@ const bumpRevisionStmt = db.prepare(`
       updated_at = ?
   WHERE id = 1
 `);
+const selectTrackingCacheStmt = db.prepare("SELECT tracking_ref FROM meta_tracking_cache WHERE cache_key = ?");
+const upsertTrackingCacheStmt = db.prepare(`
+  INSERT INTO meta_tracking_cache (cache_key, tracking_ref, updated_at)
+  VALUES (?, ?, ?)
+  ON CONFLICT(cache_key) DO UPDATE SET
+    tracking_ref = excluded.tracking_ref,
+    updated_at = excluded.updated_at
+`);
 
 let metaPagesCache = null;
 let instagramAccountsCache = null;
 const instagramMediaCache = new Map();
 let backgroundSyncRunning = false;
+let trackingCachePrimed = false;
 
 const APP_CONFIG_KEY = "ad_demo_config_v1";
 const VENDOR_KEYS_KEY = "ad_demo_vendor_keys_v1";
 const ORDERS_KEY = "ad_demo_orders_v1";
+const META_ORDERS_KEY = "ad_demo_meta_orders_v1";
 const DEFAULT_VENDOR_BASES = {
   smmraja: "https://www.smmraja.com/api/v3",
   urpanel: "https://urpanel.com/api/v2",
@@ -275,12 +290,113 @@ function normalizeComparableUrl(rawUrl) {
   const parsed = tryParseUrl(rawUrl);
   if (!parsed) return String(rawUrl || "").trim();
   parsed.hash = "";
-  for (const key of ["locale", "igsh", "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"]) {
+  for (const key of ["locale", "igsh", "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "rdid", "share_url"]) {
     parsed.searchParams.delete(key);
   }
   let out = parsed.toString();
   if (out.endsWith("/")) out = out.slice(0, -1);
   return out;
+}
+
+function uniqueStrings(values) {
+  return values
+    .map((value) => String(value || "").trim())
+    .filter(Boolean)
+    .filter((value, index, list) => list.indexOf(value) === index);
+}
+
+function buildTrackingCacheKeys(...urls) {
+  const out = [];
+  for (const url of urls) {
+    const raw = String(url || "").trim();
+    if (!raw) continue;
+    out.push(raw);
+    out.push(normalizeComparableUrl(raw));
+    const parsed = tryParseUrl(raw);
+    if (parsed) {
+      out.push(`${parsed.origin}${parsed.pathname}`.replace(/\/$/, ""));
+    }
+  }
+  return uniqueStrings(out);
+}
+
+function readTrackingCache(...urls) {
+  const keys = buildTrackingCacheKeys(...urls);
+  for (const key of keys) {
+    try {
+      const row = selectTrackingCacheStmt.get(key);
+      if (!row?.tracking_ref) continue;
+      const parsed = normalizeTrackingRef(JSON.parse(String(row.tracking_ref)));
+      if (parsed) return parsed;
+    } catch {
+      // ignore broken cache rows
+    }
+  }
+  return null;
+}
+
+function writeTrackingCache(trackingRef, ...urls) {
+  const normalized = normalizeTrackingRef(trackingRef);
+  if (!normalized) return;
+  const now = new Date().toISOString();
+  const payload = JSON.stringify(normalized);
+  const keys = buildTrackingCacheKeys(
+    normalized.sourceUrl,
+    normalized.canonicalUrl,
+    ...urls,
+  );
+  for (const key of keys) {
+    try {
+      upsertTrackingCacheStmt.run(key, payload, now);
+    } catch {
+      // ignore cache write failures
+    }
+  }
+}
+
+function primeTrackingCacheFromStoredOrders() {
+  if (trackingCachePrimed) return;
+  trackingCachePrimed = true;
+
+  const seedRows = [];
+  try {
+    const vendorOrdersRow = selectEntryStmt.get(ORDERS_KEY);
+    const vendorOrders = JSON.parse(String(vendorOrdersRow?.storage_value || "[]"));
+    if (Array.isArray(vendorOrders)) {
+      for (const order of vendorOrders) {
+        const trackingRef = normalizeTrackingRef(order?.tracking);
+        if (!trackingRef) continue;
+        const links = Array.isArray(order?.links) ? order.links : [];
+        seedRows.push({ trackingRef, urls: links });
+      }
+    }
+  } catch {
+    // ignore invalid vendor order cache
+  }
+
+  try {
+    const metaOrdersRow = selectEntryStmt.get(META_ORDERS_KEY);
+    const metaOrders = JSON.parse(String(metaOrdersRow?.storage_value || "[]"));
+    if (Array.isArray(metaOrders)) {
+      for (const row of metaOrders) {
+        const trackingRef = normalizeTrackingRef(row?.trackingRef);
+        if (!trackingRef) continue;
+        const urls = [
+          row?.existingPostSource,
+          row?.landingUrl,
+          trackingRef.sourceUrl,
+          trackingRef.canonicalUrl,
+        ];
+        seedRows.push({ trackingRef, urls });
+      }
+    }
+  } catch {
+    // ignore invalid meta order cache
+  }
+
+  for (const row of seedRows) {
+    writeTrackingCache(row.trackingRef, ...(Array.isArray(row.urls) ? row.urls : []));
+  }
 }
 
 async function followRedirectUrl(rawUrl) {
@@ -301,6 +417,172 @@ async function followRedirectUrl(rawUrl) {
   } catch {
     return src;
   }
+}
+
+function extractOpenGraphUrl(html) {
+  const raw = String(html || "");
+  if (!raw) return "";
+  const match = raw.match(/<meta[^>]+property=["']og:url["'][^>]+content=["']([^"']+)["']/i)
+    || raw.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:url["']/i);
+  return match?.[1] ? String(match[1]).trim() : "";
+}
+
+async function fetchOpenGraphUrl(rawUrl) {
+  const src = String(rawUrl || "").trim();
+  if (!src) return "";
+  try {
+    const res = await fetch(src, {
+      method: "GET",
+      redirect: "follow",
+      headers: {
+        "User-Agent": "Mozilla/5.0",
+      },
+    });
+    const html = await res.text();
+    const direct = extractOpenGraphUrl(html);
+    if (direct) return direct;
+    const canonical = res?.url ? String(res.url) : "";
+    if (canonical && canonical !== src) {
+      const fallbackRes = await fetch(canonical, {
+        method: "GET",
+        redirect: "follow",
+        headers: {
+          "User-Agent": "Mozilla/5.0",
+        },
+      });
+      const fallbackHtml = await fallbackRes.text();
+      return extractOpenGraphUrl(fallbackHtml);
+    }
+    return "";
+  } catch {
+    return "";
+  }
+}
+
+function extractFacebookProfileIdFromHtml(html) {
+  const raw = String(html || "");
+  if (!raw) return "";
+  const patterns = [
+    /fb:\/\/profile\/(\d{8,})/i,
+    /profile_id\\?":\\?"?(\d{8,})/i,
+    /page_id\\?":\\?"?(\d{8,})/i,
+    /entity_id\\?":\\?"?(\d{8,})/i,
+    /owning_profile_id\\?":\\?"?(\d{8,})/i,
+  ];
+  for (const pattern of patterns) {
+    const match = raw.match(pattern);
+    if (match?.[1]) return String(match[1]).trim();
+  }
+  return "";
+}
+
+async function fetchFacebookProfileIdByUsername(username) {
+  const name = String(username || "").trim();
+  if (!name) return "";
+  try {
+    const res = await fetch(`https://www.facebook.com/${encodeURIComponent(name)}`, {
+      method: "GET",
+      redirect: "follow",
+      headers: {
+        "User-Agent": "Mozilla/5.0",
+      },
+    });
+    const html = await res.text();
+    return extractFacebookProfileIdFromHtml(html);
+  } catch {
+    return "";
+  }
+}
+
+async function resolveFacebookTrackingFromPublicUrl(rawUrl) {
+  const expandedUrl = await followRedirectUrl(rawUrl);
+  const info = parseFacebookPostUrl(expandedUrl) || parseFacebookPostUrl(rawUrl);
+  if (!info?.username) return null;
+
+  let pageId = "";
+  if (info.pageIdFromQuery && /^\d+$/.test(info.pageIdFromQuery)) {
+    pageId = info.pageIdFromQuery;
+  }
+  if (!pageId) {
+    pageId = await fetchFacebookProfileIdByUsername(info.username);
+  }
+
+  const pageName = info.username;
+  if (info.storyFbid && /^\d+$/.test(info.storyFbid) && pageId) {
+    return buildMetaTrackingRef({
+      platform: "facebook",
+      refId: `${pageId}_${info.storyFbid}`,
+      sourceUrl: rawUrl,
+      canonicalUrl: expandedUrl || rawUrl,
+      pageId,
+      pageName,
+      resolver: "facebook_story_fbid_public",
+    });
+  }
+
+  const urlCandidates = [expandedUrl, rawUrl]
+    .flatMap((item) => {
+      const value = String(item || "").trim();
+      if (!value) return [];
+      const parsed = tryParseUrl(value);
+      if (!parsed) return [value];
+      return [value, `${parsed.origin}${parsed.pathname}`, normalizeComparableUrl(value)];
+    })
+    .map((item) => String(item || "").trim())
+    .filter(Boolean)
+    .filter((item, idx, arr) => arr.indexOf(item) === idx);
+
+  for (const candidate of urlCandidates) {
+    const canonicalUrl = await fetchOpenGraphUrl(candidate);
+    if (!canonicalUrl) continue;
+    const canonicalInfo = parseFacebookPostUrl(canonicalUrl);
+    if (!canonicalInfo) continue;
+
+    if (!pageId && canonicalInfo.pageIdFromQuery && /^\d+$/.test(canonicalInfo.pageIdFromQuery)) {
+      pageId = canonicalInfo.pageIdFromQuery;
+    }
+    if (!pageId && canonicalInfo.username) {
+      pageId = await fetchFacebookProfileIdByUsername(canonicalInfo.username);
+    }
+
+    if (canonicalInfo.storyFbid && /^\d+$/.test(canonicalInfo.storyFbid) && pageId) {
+      return buildMetaTrackingRef({
+        platform: "facebook",
+        refId: `${pageId}_${canonicalInfo.storyFbid}`,
+        sourceUrl: rawUrl,
+        canonicalUrl,
+        pageId,
+        pageName: canonicalInfo.username || pageName,
+        resolver: "facebook_og_story_public",
+      });
+    }
+
+    if (canonicalInfo.postIdToken && /^\d+$/.test(canonicalInfo.postIdToken) && pageId) {
+      return buildMetaTrackingRef({
+        platform: "facebook",
+        refId: `${pageId}_${canonicalInfo.postIdToken}`,
+        sourceUrl: rawUrl,
+        canonicalUrl,
+        pageId,
+        pageName: canonicalInfo.username || pageName,
+        resolver: "facebook_og_postid_public",
+      });
+    }
+  }
+
+  if (info.postIdToken && /^\d+$/.test(info.postIdToken) && pageId) {
+    return buildMetaTrackingRef({
+      platform: "facebook",
+      refId: `${pageId}_${info.postIdToken}`,
+      sourceUrl: rawUrl,
+      canonicalUrl: expandedUrl || rawUrl,
+      pageId,
+      pageName,
+      resolver: "facebook_page_postid_public",
+    });
+  }
+
+  return null;
 }
 
 function parseFacebookPostUrl(rawUrl) {
@@ -460,30 +742,22 @@ async function resolveInstagramTrackingFromUrl(metaSecrets, rawUrl, preloadedAcc
 }
 
 async function resolveFacebookTrackingFromUrl(metaSecrets, rawUrl) {
+  const publicResolved = await resolveFacebookTrackingFromPublicUrl(rawUrl);
+  if (publicResolved) return publicResolved;
+
   const expandedUrl = await followRedirectUrl(rawUrl);
   const info = parseFacebookPostUrl(expandedUrl) || parseFacebookPostUrl(rawUrl);
   if (!info?.username) return null;
 
   let pageId = "";
-  try {
-    const page = await graphApiGet(metaSecrets.apiVersion, metaSecrets.userAccessToken, `/${encodeURIComponent(info.username)}`, {
-      fields: "id",
-    });
-    pageId = typeof page?.id === "string" ? page.id.trim() : "";
-  } catch {
-    pageId = "";
-  }
   if (!pageId && info.pageIdFromQuery && /^\d+$/.test(info.pageIdFromQuery)) {
     pageId = info.pageIdFromQuery;
   }
-  if (!pageId) return null;
-
-  const pages = await listAvailablePages(metaSecrets);
-  const page = pages.find((item) => String(item?.id || "") === pageId);
-  const pageName = String(page?.name || "").trim();
-  const feedToken = typeof page?.access_token === "string" && page.access_token.trim()
-    ? page.access_token.trim()
-    : metaSecrets.userAccessToken;
+  if (!pageId) {
+    pageId = await fetchFacebookProfileIdByUsername(info.username);
+  }
+  let pageName = info.username;
+  let feedToken = metaSecrets.userAccessToken;
 
   if (info.storyFbid && /^\d+$/.test(info.storyFbid)) {
     return buildMetaTrackingRef({
@@ -498,9 +772,77 @@ async function resolveFacebookTrackingFromUrl(metaSecrets, rawUrl) {
   }
 
   const urlCandidates = [expandedUrl, rawUrl]
+    .flatMap((item) => {
+      const value = String(item || "").trim();
+      if (!value) return [];
+      const parsed = tryParseUrl(value);
+      if (!parsed) return [value];
+      return [
+        value,
+        `${parsed.origin}${parsed.pathname}`,
+        normalizeComparableUrl(value),
+      ];
+    })
     .map((item) => String(item || "").trim())
     .filter(Boolean)
     .filter((item, idx, arr) => arr.indexOf(item) === idx);
+
+  for (const candidate of urlCandidates) {
+    const canonicalUrl = await fetchOpenGraphUrl(candidate);
+    if (!canonicalUrl) continue;
+    const canonicalInfo = parseFacebookPostUrl(canonicalUrl);
+    if (!pageId && canonicalInfo?.pageIdFromQuery && /^\d+$/.test(canonicalInfo.pageIdFromQuery)) {
+      pageId = canonicalInfo.pageIdFromQuery;
+    }
+    if (!pageId && canonicalInfo?.username) {
+      pageId = await fetchFacebookProfileIdByUsername(canonicalInfo.username);
+    }
+    if (canonicalInfo?.username) {
+      pageName = canonicalInfo.username;
+    }
+    if (canonicalInfo?.storyFbid && /^\d+$/.test(canonicalInfo.storyFbid)) {
+      return buildMetaTrackingRef({
+        platform: "facebook",
+        refId: `${pageId}_${canonicalInfo.storyFbid}`,
+        sourceUrl: rawUrl,
+        canonicalUrl,
+        pageId,
+        pageName,
+        resolver: "facebook_og_url_story",
+      });
+    }
+    if (canonicalInfo?.postIdToken && /^\d+$/.test(canonicalInfo.postIdToken)) {
+      if (!pageId && canonicalInfo?.username) {
+        pageId = await fetchFacebookProfileIdByUsername(canonicalInfo.username);
+      }
+      if (!pageId) continue;
+      return buildMetaTrackingRef({
+        platform: "facebook",
+        refId: `${pageId}_${canonicalInfo.postIdToken}`,
+        sourceUrl: rawUrl,
+        canonicalUrl,
+        pageId,
+        pageName,
+        resolver: "facebook_og_url_postid",
+      });
+    }
+  }
+
+  if (!pageId) return null;
+
+  let pages = [];
+  try {
+    pages = await listAvailablePages(metaSecrets);
+  } catch {
+    pages = [];
+  }
+  const page = pages.find((item) => String(item?.id || "") === pageId);
+  if (String(page?.name || "").trim()) {
+    pageName = String(page.name).trim();
+  }
+  if (typeof page?.access_token === "string" && page.access_token.trim()) {
+    feedToken = page.access_token.trim();
+  }
 
   for (const candidate of urlCandidates) {
     try {
@@ -590,22 +932,55 @@ async function resolveFacebookTrackingFromUrl(metaSecrets, rawUrl) {
 }
 
 async function resolveTrackingFromUrl(metaSecrets, url) {
+  primeTrackingCacheFromStoredOrders();
   const expandedUrl = await followRedirectUrl(url);
-  const urlCandidates = [expandedUrl, url]
-    .map((item) => String(item || "").trim())
-    .filter(Boolean)
-    .filter((item, idx, arr) => arr.indexOf(item) === idx);
+  const cached = readTrackingCache(url, expandedUrl);
+  if (cached) {
+    return {
+      ...cached,
+      sourceUrl: String(url || "").trim() || cached.sourceUrl,
+      resolver: cached.resolver || "cache",
+      resolvedAt: new Date().toISOString(),
+    };
+  }
+
+  const urlCandidates = uniqueStrings([expandedUrl, url]);
 
   for (const candidate of urlCandidates) {
     const parsed = tryParseUrl(candidate);
     if (!parsed) continue;
     if (isInstagramHost(parsed.hostname)) {
-      const resolved = await resolveInstagramTrackingFromUrl(metaSecrets, candidate);
-      if (resolved) return resolved;
+      let resolved = null;
+      try {
+        resolved = await resolveInstagramTrackingFromUrl(metaSecrets, candidate);
+      } catch {
+        resolved = null;
+      }
+      if (resolved) {
+        writeTrackingCache(resolved, url, expandedUrl, candidate);
+        return resolved;
+      }
     }
     if (isFacebookHost(parsed.hostname)) {
-      const resolved = await resolveFacebookTrackingFromUrl(metaSecrets, candidate);
-      if (resolved) return resolved;
+      let resolved = null;
+      try {
+        resolved = await resolveFacebookTrackingFromPublicUrl(candidate);
+      } catch {
+        resolved = null;
+      }
+      if (resolved) {
+        writeTrackingCache(resolved, url, expandedUrl, candidate);
+        return resolved;
+      }
+      try {
+        resolved = await resolveFacebookTrackingFromUrl(metaSecrets, candidate);
+      } catch {
+        resolved = null;
+      }
+      if (resolved) {
+        writeTrackingCache(resolved, url, expandedUrl, candidate);
+        return resolved;
+      }
     }
   }
 
@@ -803,6 +1178,13 @@ function readFirstInsightValue(raw) {
   return 0;
 }
 
+function findPageFromList(pages, targetPageId, targetPageName) {
+  return (Array.isArray(pages) ? pages : []).find((item) =>
+    (targetPageId && String(item?.id || "") === targetPageId) ||
+    (targetPageName && String(item?.name || "") === targetPageName),
+  ) || null;
+}
+
 async function fetchMetaPostMetricsSecure({ postId, platform, pageId, pageName, sourceUrl }) {
   const metaSecrets = loadMetaSecrets();
   if (!metaSecrets) {
@@ -811,7 +1193,7 @@ async function fetchMetaPostMetricsSecure({ postId, platform, pageId, pageName, 
 
   const postRef = String(postId || "").trim();
   if (!postRef) {
-    return { ok: false, detail: "缂傚倸鎼惃顖滄尒閸忓吋鐎?ID" };
+    return { ok: false, detail: "缺少貼文 ID" };
   }
 
   const hintedPlatform = platform === "instagram" || platform === "facebook" ? platform : "";
@@ -859,7 +1241,7 @@ async function fetchMetaPostMetricsSecure({ postId, platform, pageId, pageName, 
     .split("#")[0]
     .trim();
   if (!normalizedPostId) {
-    return { ok: false, detail: "缂傚倸鎼惃顖滄尒閸忓吋鐎?ID" };
+    return { ok: false, detail: "缺少貼文 ID" };
   }
 
   const targetPageId =
@@ -868,15 +1250,12 @@ async function fetchMetaPostMetricsSecure({ postId, platform, pageId, pageName, 
     derivePageIdFromPostId(normalizedPostId) ||
     metaSecrets.preferredPageId;
   const targetPageName = String(pageName || "").trim() || String(trackingRef?.pageName || "").trim() || metaSecrets.preferredPageName;
-  const pages = await listAvailablePages(metaSecrets);
-  const page = pages.find((item) =>
-    (targetPageId && String(item?.id || "") === targetPageId) ||
-    (targetPageName && String(item?.name || "") === targetPageName),
-  );
+  let page = findPageFromList(metaPagesCache?.pages, targetPageId, targetPageName);
 
-  const tokenCandidates = [];
-  if (page?.access_token) tokenCandidates.push(String(page.access_token));
-  tokenCandidates.push(metaSecrets.userAccessToken);
+  const tokenCandidates = uniqueStrings([
+    metaSecrets.userAccessToken,
+    String(page?.access_token || ""),
+  ]);
 
   let base = null;
   let baseToken = "";
@@ -893,6 +1272,34 @@ async function fetchMetaPostMetricsSecure({ postId, platform, pageId, pageName, 
       break;
     } catch (error) {
       lastBaseError = error instanceof Error ? error.message : "Facebook post fetch failed";
+    }
+  }
+  if ((!base || !baseToken) && (targetPageId || targetPageName)) {
+    try {
+      const pages = await listAvailablePages(metaSecrets);
+      page = findPageFromList(pages, targetPageId, targetPageName) || page;
+    } catch {
+      // ignore page list failure, keep direct token attempt result
+    }
+
+    const refreshedCandidates = uniqueStrings([
+      String(page?.access_token || ""),
+      metaSecrets.userAccessToken,
+    ]);
+    for (const token of refreshedCandidates) {
+      if (tokenCandidates.includes(token)) continue;
+      try {
+        base = await graphApiGet(
+          metaSecrets.apiVersion,
+          token,
+          `/${encodeURIComponent(normalizedPostId)}`,
+          { fields: "id,created_time,permalink_url,shares,comments.summary(true),reactions.summary(true),attachments{media_type}" },
+        );
+        baseToken = token;
+        break;
+      } catch (error) {
+        lastBaseError = error instanceof Error ? error.message : "Facebook post fetch failed";
+      }
     }
   }
   if (!base || !baseToken) {
@@ -943,6 +1350,31 @@ async function fetchMetaPostMetricsSecure({ postId, platform, pageId, pageName, 
       });
     }
   }
+  if (invalidMetrics.length > 0 && page?.access_token && String(page.access_token) !== baseToken) {
+    const retryMetrics = [...invalidMetrics];
+    invalidMetrics.length = 0;
+    for (const item of retryMetrics) {
+      const key = Object.entries(metricMap).find((entry) => entry[1] === item.metric)?.[0];
+      if (!key) continue;
+      try {
+        const insight = await graphApiGet(
+          metaSecrets.apiVersion,
+          String(page.access_token),
+          `/${encodeURIComponent(normalizedPostId)}/insights`,
+          { metric: item.metric },
+        );
+        const metricValue = readFirstInsightValue(insight);
+        values[key] = metricValue;
+        if (key === "video_3s_views") values.thruplays = metricValue;
+        validMetrics.push(item.metric);
+      } catch (error) {
+        invalidMetrics.push({
+          metric: item.metric,
+          detail: error instanceof Error ? error.message : "unknown error",
+        });
+      }
+    }
+  }
 
   values.interactions_total = values.likes + values.comments + values.shares + values.all_clicks;
 
@@ -959,6 +1391,40 @@ async function fetchMetaPostMetricsSecure({ postId, platform, pageId, pageName, 
       validMetrics,
       invalidMetrics,
     },
+  };
+}
+
+async function resolveMetaPostSecure({ url, platform, pageId, pageName }) {
+  const metaSecrets = loadMetaSecrets();
+  if (!metaSecrets) {
+    return { ok: false, detail: "Meta local credentials are not configured" };
+  }
+
+  const sourceUrl = String(url || "").trim();
+  if (!sourceUrl) {
+    return { ok: false, detail: "Missing url" };
+  }
+
+  const trackingRef = await resolveTrackingFromUrl(metaSecrets, sourceUrl);
+  if (!trackingRef) {
+    return { ok: false, detail: "The supplied URL could not be resolved into a usable Meta post reference" };
+  }
+
+  const effectivePlatform = platform === "instagram" || platform === "facebook"
+    ? platform
+    : trackingRef.platform;
+  const effectivePageId = String(pageId || trackingRef.pageId || "").trim();
+  const effectivePageName = String(pageName || trackingRef.pageName || "").trim();
+
+  return {
+    ok: true,
+    trackingRef: {
+      ...trackingRef,
+      platform: effectivePlatform,
+      pageId: effectivePageId || trackingRef.pageId,
+      pageName: effectivePageName || trackingRef.pageName,
+    },
+    existingPostId: trackingRef.refId,
   };
 }
 
@@ -1818,11 +2284,23 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (req.method === "GET" && req.url.startsWith("/api/meta/resolve-post")) {
+      const url = new URL(req.url, `http://${req.headers.host || "127.0.0.1"}`);
+      const result = await resolveMetaPostSecure({
+        url: url.searchParams.get("url") || "",
+        platform: url.searchParams.get("platform") || "",
+        pageId: url.searchParams.get("pageId") || "",
+        pageName: url.searchParams.get("pageName") || "",
+      });
+      json(res, result.ok ? 200 : 400, result);
+      return;
+    }
+
     if (req.method === "GET" && req.url.startsWith("/api/vendor/balance")) {
       const url = new URL(req.url, `http://${req.headers.host || "127.0.0.1"}`);
       const vendor = String(url.searchParams.get("vendor") || "").trim();
       if (!vendor) {
-        json(res, 400, { ok: false, error: "缂傚倸鎼惃?vendor" });
+        json(res, 400, { ok: false, error: "缺少 vendor 參數" });
         return;
       }
       const result = await fetchVendorBalance(vendor);

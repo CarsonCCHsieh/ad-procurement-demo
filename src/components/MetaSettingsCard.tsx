@@ -14,29 +14,28 @@ export function MetaSettingsCard(props: {
   const save = () => {
     saveMetaConfig({ ...cfg, mode: "live" });
     setCfg(getMetaConfig());
-    const time = new Date().toLocaleTimeString("zh-TW", { hour12: false });
-    onNotice("success", `Meta 設定已儲存（${time}）`, 3200);
+    onNotice("success", "Meta 基本設定已儲存。", 2800);
   };
 
   const reset = () => {
     resetMetaConfig();
     setCfg(getMetaConfig());
-    onNotice("info", "Meta 設定已重設為預設值。", 3200);
+    onNotice("info", "Meta 基本設定已重設。", 2800);
   };
 
-  const isReady = !!cfg.accessToken && !!cfg.adAccountId;
+  const isReady = !!cfg.accessToken.trim() && !!cfg.adAccountId.trim();
 
   return (
     <CollapsibleCard
       accent="blue"
-      title="Meta 官方投廣設定"
-      desc="管理廣告帳號、粉專身分與投放憑證。這些資料只保存在目前瀏覽器與本機後端。"
+      title="Meta 基本設定"
+      desc="管理 Graph API 版本、Access Token 與預設投放帳號。這裡只放必要憑證，不放投放策略。"
       tag="Meta"
       storageKey="sec:meta-settings"
       defaultOpen={false}
     >
-      <div className="hint" style={{ marginBottom: 10 }}>
-        權杖屬於敏感資料，請由管理員保管與更新。
+      <div className="hint" style={{ marginBottom: 12 }}>
+        Access Token 屬於敏感資料，請只由管理員維護。
       </div>
 
       <div className="row">
@@ -52,19 +51,22 @@ export function MetaSettingsCard(props: {
 
       <div className="row cols2">
         <div className="field">
-          <div className="label">廣告帳號 ID</div>
+          <div className="label">預設廣告帳號 ID</div>
           <input
             value={cfg.adAccountId}
-            onChange={(event) => setCfg((state) => ({ ...state, adAccountId: event.target.value.trim() }))}
-            placeholder="例如：act_1234567890"
+            onChange={(event) =>
+              setCfg((state) => ({ ...state, adAccountId: event.target.value.trim().replace(/^act_/i, "") }))
+            }
+            placeholder="例如 1234567890"
           />
+          <div className="hint">只填數字，不需要加上 `act_`。</div>
         </div>
         <div className="field">
           <div className="label">Facebook 粉專 ID</div>
           <input
             value={cfg.pageId}
             onChange={(event) => setCfg((state) => ({ ...state, pageId: event.target.value.trim() }))}
-            placeholder="例如：1122334455"
+            placeholder="例如 112233445566"
           />
         </div>
       </div>
@@ -75,11 +77,11 @@ export function MetaSettingsCard(props: {
           <input
             value={cfg.instagramActorId}
             onChange={(event) => setCfg((state) => ({ ...state, instagramActorId: event.target.value.trim() }))}
-            placeholder="例如：9988776655"
+            placeholder="例如 9988776655"
           />
         </div>
         <div className="field">
-          <div className="label">幣別與時區</div>
+          <div className="label">時區</div>
           <div className="row cols2">
             <input value="TWD" readOnly />
             <input
@@ -88,7 +90,6 @@ export function MetaSettingsCard(props: {
               placeholder="Asia/Taipei"
             />
           </div>
-          <div className="hint">目前固定使用台幣與台北時區。</div>
         </div>
       </div>
 
@@ -98,28 +99,25 @@ export function MetaSettingsCard(props: {
           type={showToken ? "text" : "password"}
           value={cfg.accessToken}
           onChange={(event) => setCfg((state) => ({ ...state, accessToken: event.target.value.trim() }))}
-          placeholder="請貼上 Meta system user token"
+          placeholder="請貼上 Meta System User Access Token"
         />
-        <div className="actions inline">
+        <div className="actions inline" style={{ marginTop: 8 }}>
           <button className="btn sm" type="button" onClick={() => setShowToken((value) => !value)}>
             {showToken ? "隱藏 Token" : "顯示 Token"}
           </button>
-          <span className="hint">
-            {isReady ? "基本投放設定已完成" : "至少要填廣告帳號 ID 與 Token"}
-          </span>
+          <span className="hint">{isReady ? "已具備基本連線條件" : "至少需填入 Access Token 與廣告帳號 ID"}</span>
         </div>
       </div>
 
       <div className="sep" />
       <div className="actions inline">
         <button className="btn" type="button" onClick={reset}>
-          重設 Meta 設定
+          重設
         </button>
         <button className="btn primary" type="button" onClick={save}>
-          儲存 Meta 設定
+          儲存 Meta 基本設定
         </button>
       </div>
     </CollapsibleCard>
   );
 }
-
