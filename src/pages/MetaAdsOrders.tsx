@@ -4,9 +4,24 @@ import { useAuth } from "../auth/AuthContext";
 import { getMetaConfig } from "../config/metaConfig";
 import { getManagedMetaAccount, getMetaPresetConfig, type MetaIndustryPreset } from "../config/metaPresetConfig";
 import { buildMetaPayloads } from "../lib/metaPayload";
-import { META_AD_GOALS, getGoalPrimaryMetricKey, type MetaAdGoalKey, type MetaKpiMetricKey } from "../lib/metaGoals";
+import {
+  META_AD_GOALS,
+  META_CAMPAIGN_OBJECTIVE_OPTIONS,
+  getGoalObjective,
+  getGoalPrimaryMetricKey,
+  listMetaGoalsByObjective,
+  type MetaAdGoalKey,
+  type MetaCampaignObjective,
+  type MetaKpiMetricKey,
+} from "../lib/metaGoals";
 import { addMetaOrder, listMetaOrders, updateMetaOrder, type MetaOrder, type MetaOrderInput } from "../lib/metaOrdersStore";
-import { resolveMetaPostReference, submitMetaOrderToGraph, type MetaResolvedPostPreview } from "../lib/metaGraphApi";
+import {
+  listMetaSavedAudiences,
+  resolveMetaPostReference,
+  submitMetaOrderToGraph,
+  type MetaResolvedPostPreview,
+  type MetaSavedAudienceOption,
+} from "../lib/metaGraphApi";
 import type { MetaTrackingRef } from "../lib/ordersStore";
 import { isValidUrl } from "../lib/validate";
 import { SHARED_SYNC_EVENT } from "../lib/sharedSync";
@@ -17,6 +32,7 @@ type FormState = {
   campaignName: string;
   adsetName: string;
   adName: string;
+  campaignObjective: MetaCampaignObjective;
   goal: MetaAdGoalKey;
   message: string;
   ctaType: string;
@@ -33,6 +49,7 @@ type FormState = {
   detailedTargetingText: string;
   customAudienceIdsText: string;
   excludedAudienceIdsText: string;
+  savedAudienceId: string;
   fbPositions: string[];
   igPositions: string[];
 };
@@ -48,7 +65,7 @@ type ResolvedPostSelection = {
   preview?: MetaResolvedPostPreview;
 };
 
-const GOAL_OPTIONS: Array<{ key: MetaAdGoalKey; label: string; platform: "facebook" | "instagram" }> = [
+const KPI_OPTIONS: Array<{ key: MetaAdGoalKey; label: string; platform: "facebook" | "instagram" }> = [
   { key: "fb_post_likes", label: "Facebook 貼文讚", platform: "facebook" },
   { key: "fb_post_engagement", label: "Facebook 互動", platform: "facebook" },
   { key: "fb_reach", label: "Facebook 觸及", platform: "facebook" },
@@ -60,7 +77,11 @@ const GOAL_OPTIONS: Array<{ key: MetaAdGoalKey; label: string; platform: "facebo
   { key: "ig_followers", label: "Instagram 帳號增粉", platform: "instagram" },
 ];
 
-const GOAL_LABEL = new Map(GOAL_OPTIONS.map((option) => [option.key, option.label]));
+const GOAL_LABEL = new Map(KPI_OPTIONS.map((option) => [option.key, option.label]));
+const OBJECTIVE_LABEL = new Map(META_CAMPAIGN_OBJECTIVE_OPTIONS.map((option) => [option.value, option.label]));
+const SUPPORTED_OBJECTIVE_OPTIONS = META_CAMPAIGN_OBJECTIVE_OPTIONS.filter(
+  (option) => listMetaGoalsByObjective(option.value).length > 0,
+);
 
 const PRIMARY_METRIC_LABEL: Record<MetaKpiMetricKey, string> = {
   likes: "按讚數",
@@ -154,7 +175,15 @@ function toInputFromIso(iso?: string): string {
 
 function applyGoalPreset(prev: FormState, goal: MetaAdGoalKey): FormState {
   const preset = GOAL_PRESETS[goal];
-  return { ...prev, goal, ctaType: preset.ctaType, dailyBudget: preset.dailyBudget, fbPositions: preset.fbPositions, igPositions: preset.igPositions };
+  return {
+    ...prev,
+    goal,
+    campaignObjective: getGoalObjective(goal),
+    ctaType: preset.ctaType,
+    dailyBudget: preset.dailyBudget,
+    fbPositions: preset.fbPositions,
+    igPositions: preset.igPositions,
+  };
 }
 
 function applyIndustryPreset(prev: FormState, industry: MetaIndustryPreset): FormState {
@@ -170,6 +199,7 @@ function applyIndustryPreset(prev: FormState, industry: MetaIndustryPreset): For
     detailedTargetingText: industry.detailedTargetingText || "",
     customAudienceIdsText: industry.customAudienceIdsText || "",
     excludedAudienceIdsText: industry.excludedAudienceIdsText || "",
+    savedAudienceId: "",
     dailyBudget: String(industry.dailyBudget || next.dailyBudget),
     ctaType: industry.ctaType || next.ctaType,
     fbPositions: industry.fbPositions.length > 0 ? industry.fbPositions : next.fbPositions,
@@ -186,6 +216,7 @@ function defaultState(): FormState {
     campaignName: "新行銷活動",
     adsetName: "新廣告組合",
     adName: "新廣告",
+    campaignObjective: "OUTCOME_ENGAGEMENT",
     goal: "fb_post_engagement",
     message: "",
     ctaType: "LEARN_MORE",
@@ -202,6 +233,7 @@ function defaultState(): FormState {
     detailedTargetingText: "",
     customAudienceIdsText: "",
     excludedAudienceIdsText: "",
+    savedAudienceId: "",
     fbPositions: [],
     igPositions: [],
   };
@@ -223,6 +255,7 @@ function formStateFromOrder(row: MetaOrder): FormState {
     campaignName: row.campaignName ?? "",
     adsetName: row.adsetName ?? "",
     adName: row.adName ?? "",
+    campaignObjective: row.campaignObjective ?? getGoalObjective(row.goal),
     goal: row.goal,
     message: row.message ?? "",
     ctaType: row.ctaType ?? "LEARN_MORE",
@@ -239,6 +272,7 @@ function formStateFromOrder(row: MetaOrder): FormState {
     detailedTargetingText: row.detailedTargetingText ?? "",
     customAudienceIdsText: (row.customAudienceIds ?? []).join("\n"),
     excludedAudienceIdsText: (row.excludedAudienceIds ?? []).join("\n"),
+    savedAudienceId: row.savedAudienceId ?? "",
     fbPositions: row.manualPlacements?.facebook ?? [],
     igPositions: row.manualPlacements?.instagram ?? [],
   };
@@ -296,6 +330,10 @@ function getGoalLabel(goal: MetaAdGoalKey): string {
   return GOAL_LABEL.get(goal) ?? goal;
 }
 
+function getObjectiveLabel(objective: MetaCampaignObjective): string {
+  return OBJECTIVE_LABEL.get(objective) ?? objective;
+}
+
 function getPrimaryMetricLabel(goal: MetaAdGoalKey): string {
   return PRIMARY_METRIC_LABEL[getGoalPrimaryMetricKey(goal)] ?? "目標數值";
 }
@@ -348,6 +386,9 @@ export function MetaAdsOrdersPage() {
   const [resolvedPost, setResolvedPost] = useState<ResolvedPostSelection | null>(null);
   const [resolvingPost, setResolvingPost] = useState(false);
   const [postValidationMessage, setPostValidationMessage] = useState<string | null>(null);
+  const [savedAudiences, setSavedAudiences] = useState<MetaSavedAudienceOption[]>([]);
+  const [loadingSavedAudiences, setLoadingSavedAudiences] = useState(false);
+  const [savedAudiencesMessage, setSavedAudiencesMessage] = useState<string | null>(null);
   const [showAdsetSection, setShowAdsetSection] = useState(false);
   const [showAdSection, setShowAdSection] = useState(false);
 
@@ -372,6 +413,14 @@ export function MetaAdsOrdersPage() {
   const audienceLabels = useMemo(() => summarizeAudience(state.detailedTargetingText), [state.detailedTargetingText]);
   const customAudienceSummary = useMemo(() => summarizeIds(state.customAudienceIdsText), [state.customAudienceIdsText]);
   const excludedAudienceSummary = useMemo(() => summarizeIds(state.excludedAudienceIdsText), [state.excludedAudienceIdsText]);
+  const availableGoalOptions = useMemo(
+    () => listMetaGoalsByObjective(state.campaignObjective).map((goalOption) => ({ key: goalOption.key, label: goalOption.label, platform: goalOption.platform })),
+    [state.campaignObjective],
+  );
+  const selectedSavedAudience = useMemo(
+    () => savedAudiences.find((row) => row.id === state.savedAudienceId) ?? null,
+    [savedAudiences, state.savedAudienceId],
+  );
   
   const postValidated = !!resolvedPost?.trackingPostId;
 
@@ -403,6 +452,23 @@ export function MetaAdsOrdersPage() {
     return () => window.removeEventListener(SHARED_SYNC_EVENT, onSharedSync);
   }, []);
 
+  useEffect(() => {
+    if (availableGoalOptions.length === 0) {
+      const fallbackObjective = SUPPORTED_OBJECTIVE_OPTIONS[0]?.value;
+      const fallbackGoal = fallbackObjective ? listMetaGoalsByObjective(fallbackObjective)[0]?.key : undefined;
+      if (fallbackObjective && fallbackGoal) {
+        setState((current) => applyGoalPreset({ ...current, campaignObjective: fallbackObjective }, fallbackGoal));
+      }
+      return;
+    }
+    if (!availableGoalOptions.some((item) => item.key === state.goal)) {
+      const fallback = availableGoalOptions[0]?.key;
+      if (fallback) {
+        setState((current) => applyGoalPreset(current, fallback));
+      }
+    }
+  }, [availableGoalOptions, state.goal]);
+
   const countries = useMemo(
     () => state.countriesCsv.split(/[,\s]+/g).map((item) => item.trim().toUpperCase()).filter(Boolean),
     [state.countriesCsv],
@@ -419,6 +485,7 @@ export function MetaAdsOrdersPage() {
       campaignName: state.campaignName.trim(),
       adsetName: state.adsetName.trim(),
       adName: state.adName.trim(),
+      campaignObjective: state.campaignObjective,
       goal: state.goal,
       landingUrl: state.existingPostSource.trim(),
       message: state.message.trim(),
@@ -440,6 +507,10 @@ export function MetaAdsOrdersPage() {
       genders: toGenders(state.gender),
       customAudienceIds: parseTextList(state.customAudienceIdsText),
       excludedAudienceIds: parseTextList(state.excludedAudienceIdsText),
+      savedAudienceId: selectedSavedAudience?.id,
+      savedAudienceName: selectedSavedAudience?.name,
+      savedAudienceDescription: selectedSavedAudience?.description,
+      savedAudienceTargeting: selectedSavedAudience?.targeting,
       manualPlacements: {
         facebook: state.fbPositions,
         instagram: state.igPositions,
@@ -447,12 +518,47 @@ export function MetaAdsOrdersPage() {
       detailedTargetingText: state.detailedTargetingText.trim() || undefined,
       mode: "live",
     }),
-    [applicant, countries, resolvedPost, selectedAccount?.id, selectedAccount?.label, selectedIndustry?.key, selectedIndustry?.label, state, targetMetricKey],
+    [applicant, countries, resolvedPost, selectedAccount?.id, selectedAccount?.label, selectedIndustry?.key, selectedIndustry?.label, selectedSavedAudience, state, targetMetricKey],
   );
 
   const payloads = useMemo(() => buildMetaPayloads(effectiveCfg, previewInput), [effectiveCfg, previewInput]);
   const fbPlacementLabels = useMemo(() => previewInput.manualPlacements.facebook.map((item) => FB_POSITION_LABEL.get(item) ?? item), [previewInput.manualPlacements.facebook]);
   const igPlacementLabels = useMemo(() => previewInput.manualPlacements.instagram.map((item) => IG_POSITION_LABEL.get(item) ?? item), [previewInput.manualPlacements.instagram]);
+
+  const loadSavedAudienceOptions = async () => {
+    if (!effectiveCfg.adAccountId.trim()) {
+      setSavedAudiences([]);
+      setSavedAudiencesMessage("請先在控制設定指定預設廣告帳號。");
+      return;
+    }
+
+    setLoadingSavedAudiences(true);
+    setSavedAudiencesMessage(null);
+    try {
+      const result = await listMetaSavedAudiences({
+        cfg: effectiveCfg,
+        adAccountId: effectiveCfg.adAccountId,
+      });
+      if (!result.ok) {
+        setSavedAudiences([]);
+        setSavedAudiencesMessage(result.detail || "無法讀取儲備廣告受眾。");
+        return;
+      }
+      setSavedAudiences(result.audiences ?? []);
+      setSavedAudiencesMessage(
+        (result.audiences?.length ?? 0) > 0
+          ? null
+          : "這個廣告帳號目前沒有可用的儲備廣告受眾。",
+      );
+    } finally {
+      setLoadingSavedAudiences(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!showAdsetSection) return;
+    void loadSavedAudienceOptions();
+  }, [showAdsetSection, effectiveCfg.adAccountId]);
 
   const applyIndustry = (industryKey: string) => {
     const industry = availableIndustries.find((item) => item.key === industryKey);
@@ -646,7 +752,32 @@ export function MetaAdsOrdersPage() {
                 <div className="field"><div className="label">任務名稱<span className="req">*</span></div><input value={state.title} onChange={(e) => setState((current) => ({ ...current, title: e.target.value }))} placeholder="例如：2026_JUKSY_春季主題投放" />{errors.title ? <div className="error">{errors.title}</div> : null}</div>
                 <div className="field"><div className="label">行銷活動名稱<span className="req">*</span></div><input value={state.campaignName} onChange={(e) => setState((current) => ({ ...current, campaignName: e.target.value }))} placeholder="例如：2026_JUKSY_春季互動" />{errors.campaignName ? <div className="error">{errors.campaignName}</div> : null}</div>
                 <div className="field"><div className="label">產業模板</div><select value={state.industryKey} onChange={(e) => applyIndustry(e.target.value)}><option value="">不套用</option>{availableIndustries.map((industry) => <option key={industry.key} value={industry.key}>{industry.label}</option>)}</select>{errors.industryKey ? <div className="error">{errors.industryKey}</div> : null}</div>
-                <div className="field"><div className="label">投放目標<span className="req">*</span></div><select value={state.goal} onChange={(e) => setState((current) => applyGoalPreset(current, e.target.value as MetaAdGoalKey))}>{GOAL_OPTIONS.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}</select></div>
+                <div className="field">
+                  <div className="label">Meta 官方投放目標<span className="req">*</span></div>
+                  <select
+                    value={state.campaignObjective}
+                    onChange={(e) => {
+                      const nextObjective = e.target.value as MetaCampaignObjective;
+                      const nextGoal = listMetaGoalsByObjective(nextObjective)[0]?.key;
+                      setState((current) => {
+                        const base = { ...current, campaignObjective: nextObjective };
+                        return nextGoal ? applyGoalPreset(base, nextGoal) : base;
+                      });
+                    }}
+                  >
+                    {SUPPORTED_OBJECTIVE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                  <div className="hint">{SUPPORTED_OBJECTIVE_OPTIONS.find((option) => option.value === state.campaignObjective)?.desc}</div>
+                </div>
+                <div className="field">
+                  <div className="label">KPI 類型<span className="req">*</span></div>
+                  <select value={state.goal} onChange={(e) => setState((current) => applyGoalPreset(current, e.target.value as MetaAdGoalKey))}>
+                    {availableGoalOptions.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
+                  </select>
+                  <div className="hint">這裡決定成效頁追蹤的主指標與自動停投判斷方式。</div>
+                </div>
                 <div className="field"><div className="label">日預算 TWD<span className="req">*</span></div><input value={state.dailyBudget} inputMode="numeric" onChange={(e) => setState((current) => ({ ...current, dailyBudget: e.target.value }))} />{errors.dailyBudget ? <div className="error">{errors.dailyBudget}</div> : null}</div>
                 <div className="field"><div className="label">目標 {targetMetricLabel}</div><input value={state.targetValue} inputMode="numeric" onChange={(e) => setState((current) => ({ ...current, targetValue: e.target.value }))} placeholder="例如：300000" /><div className="hint">若填入目標值，成效頁會依據數據檢查是否已達標並自動停投。</div>{errors.targetValue ? <div className="error">{errors.targetValue}</div> : null}</div>
                 <div className="field"><div className="label">開始時間<span className="req">*</span></div><input type="datetime-local" value={state.startTime} onChange={(e) => setState((current) => ({ ...current, startTime: e.target.value }))} />{errors.startTime ? <div className="error">{errors.startTime}</div> : null}</div>
@@ -659,6 +790,7 @@ export function MetaAdsOrdersPage() {
                   <div className="meta-preview-card">
                     <div className="meta-preview-grid">
                       <div><div className="label">模板說明</div><div className="hint">{selectedIndustry.description || "此模板會帶入受眾與版位建議。"}</div></div>
+                      <div><div className="label">官方目標</div><div className="hint">{getObjectiveLabel(state.campaignObjective)} / {getGoalLabel(state.goal)}</div></div>
                       <div><div className="label">年齡 / 性別</div><div className="hint">{state.ageMin} - {state.ageMax} / {state.gender === "all" ? "不限" : state.gender === "male" ? "男性" : "女性"}</div></div>
                       <div><div className="label">興趣受眾</div><div className="hint">{audienceLabels.length > 0 ? audienceLabels.join("、") : "依模板自動帶入，無需手動輸入 ID。"}</div></div>
                       <div><div className="label">自訂受眾</div><div className="hint">{customAudienceSummary}</div></div>
@@ -684,6 +816,27 @@ export function MetaAdsOrdersPage() {
                   <div className="field"><div className="label">最大年齡</div><input value={state.ageMax} inputMode="numeric" onChange={(e) => setState((current) => ({ ...current, ageMax: e.target.value }))} />{errors.ageMax ? <div className="error">{errors.ageMax}</div> : null}</div>
                   <div className="field"><div className="label">性別</div><select value={state.gender} onChange={(e) => setState((current) => ({ ...current, gender: e.target.value as FormState["gender"] }))}><option value="all">不限</option><option value="male">男性</option><option value="female">女性</option></select></div>
                   <div className="field"><div className="label">受眾摘要</div><input value={audienceLabels.length > 0 ? audienceLabels.join("、") : "已依模板帶入"} readOnly /><div className="hint">Interest ID 與 Audience ID 由模板管理，一般使用者不需手動輸入。</div></div>
+                  <div className="field">
+                    <div className="label">儲備廣告受眾</div>
+                    <div className="inline-fields">
+                      <select value={state.savedAudienceId} onChange={(e) => setState((current) => ({ ...current, savedAudienceId: e.target.value }))}>
+                        <option value="">不使用</option>
+                        {savedAudiences.map((audience) => (
+                          <option key={audience.id} value={audience.id}>{audience.name}</option>
+                        ))}
+                      </select>
+                      <button className="btn" type="button" onClick={() => void loadSavedAudienceOptions()} disabled={loadingSavedAudiences}>
+                        {loadingSavedAudiences ? "讀取中..." : "重新載入"}
+                      </button>
+                    </div>
+                    <div className="hint">可直接套用廣告帳號內既有的儲備廣告受眾。</div>
+                    {savedAudiencesMessage ? <div className="hint" style={{ color: "#b91c1c" }}>{savedAudiencesMessage}</div> : null}
+                    {selectedSavedAudience ? (
+                      <div className="hint" style={{ marginTop: 6 }}>
+                        {selectedSavedAudience.summary || selectedSavedAudience.description || "已選擇儲備廣告受眾"}
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
                 <div className="sep" />
                 <div className="field">
@@ -749,7 +902,8 @@ export function MetaAdsOrdersPage() {
                 <div className="field"><div className="label">投放帳號</div><input value={selectedAccountSummary} readOnly /></div>
                 <div className="field"><div className="label">產業模板</div><input value={selectedIndustry?.label || "未套用"} readOnly /></div>
                 <div className="field"><div className="label">任務名稱</div><input value={previewInput.title || "-"} readOnly /></div>
-                <div className="field"><div className="label">投放目標</div><input value={getGoalLabel(state.goal)} readOnly /></div>
+                <div className="field"><div className="label">Meta 官方投放目標</div><input value={getObjectiveLabel(state.campaignObjective)} readOnly /></div>
+                <div className="field"><div className="label">KPI 類型</div><input value={getGoalLabel(state.goal)} readOnly /></div>
                 <div className="field"><div className="label">行銷活動名稱</div><input value={previewInput.campaignName || "-"} readOnly /></div>
                 <div className="field"><div className="label">廣告組合名稱</div><input value={previewInput.adsetName || "-"} readOnly /></div>
                 <div className="field"><div className="label">廣告名稱</div><input value={previewInput.adName || "-"} readOnly /></div>
@@ -758,6 +912,7 @@ export function MetaAdsOrdersPage() {
                 <div className="field"><div className="label">結束時間</div><input value={state.endTime ? formatDateTime(state.endTime) : "不設定"} readOnly /></div>
                 <div className="field"><div className="label">目標 {targetMetricLabel}</div><input value={previewInput.targetValue == null ? "-" : previewInput.targetValue.toLocaleString("zh-TW")} readOnly /></div>
                 <div className="field"><div className="label">版位</div><input value={`Facebook：${fbPlacementLabels.join("、") || "未設定"} / Instagram：${igPlacementLabels.join("、") || "未設定"}`} readOnly /></div>
+                <div className="field"><div className="label">儲備廣告受眾</div><input value={selectedSavedAudience?.name || "不使用"} readOnly /></div>
               </div>
               <div className="sep" />
               <div className="meta-preview-card">

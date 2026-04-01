@@ -293,6 +293,7 @@ export function MetaStrategySettingsCard(props: {
                     ))}
                 </select>
                 <div className="hint">前台不會再讓使用者自行切換帳號。</div>
+                <div className="hint">若要在前台使用「儲備廣告受眾」，這個帳號對應的 token 需具備 `ads_read` 或 `ads_management`。</div>
               </div>
               <div className="field">
                 <div className="label">達標檢查頻率</div>

@@ -17,6 +17,12 @@ export type MetaCampaignObjective =
   | "OUTCOME_SALES"
   | "OUTCOME_APP_PROMOTION";
 
+export type MetaCampaignObjectiveOption = {
+  value: MetaCampaignObjective;
+  label: string;
+  desc: string;
+};
+
 export type MetaOptimizationGoal =
   | "REACH"
   | "POST_ENGAGEMENT"
@@ -55,6 +61,39 @@ export type MetaAdGoalTemplate = {
   kpiDefinition: string;
   reportMetrics: MetaKpiMetric[];
 };
+
+export const META_CAMPAIGN_OBJECTIVE_OPTIONS: MetaCampaignObjectiveOption[] = [
+  {
+    value: "OUTCOME_AWARENESS",
+    label: "認知",
+    desc: "提高曝光、觸及與品牌記憶。",
+  },
+  {
+    value: "OUTCOME_ENGAGEMENT",
+    label: "互動",
+    desc: "提高貼文互動、影片觀看或個人檔案相關互動。",
+  },
+  {
+    value: "OUTCOME_TRAFFIC",
+    label: "流量",
+    desc: "導流到網站、貼文或其他可點擊目的地。",
+  },
+  {
+    value: "OUTCOME_LEADS",
+    label: "名單開發",
+    desc: "蒐集表單名單、私訊線索或其他可回收名單。",
+  },
+  {
+    value: "OUTCOME_SALES",
+    label: "銷售",
+    desc: "以轉換或購買為核心的投放目標。",
+  },
+  {
+    value: "OUTCOME_APP_PROMOTION",
+    label: "應用程式推廣",
+    desc: "以 App 安裝或 App 內行為為目標。",
+  },
+];
 
 export const META_AD_GOALS: Record<MetaAdGoalKey, MetaAdGoalTemplate> = {
   fb_post_likes: {
@@ -235,4 +274,12 @@ export function getGoalPrimaryMetricLabel(goal: MetaAdGoalKey): string {
   const key = getGoalPrimaryMetricKey(goal);
   const tpl = META_AD_GOALS[goal];
   return tpl.reportMetrics.find((m) => m.key === key)?.label ?? key;
+}
+
+export function listMetaGoalsByObjective(objective: MetaCampaignObjective): MetaAdGoalTemplate[] {
+  return listMetaGoals().filter((goal) => goal.objective === objective);
+}
+
+export function getGoalObjective(goal: MetaAdGoalKey): MetaCampaignObjective {
+  return META_AD_GOALS[goal].objective;
 }

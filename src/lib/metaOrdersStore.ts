@@ -1,4 +1,4 @@
-import type { MetaAdGoalKey, MetaKpiMetricKey } from "./metaGoals";
+import type { MetaAdGoalKey, MetaCampaignObjective, MetaKpiMetricKey } from "./metaGoals";
 import type { MetaTrackingRef } from "./ordersStore";
 import { queueSharedWrite } from "./sharedSync";
 
@@ -14,6 +14,7 @@ export type MetaOrderInput = {
   campaignName: string;
   adsetName: string;
   adName: string;
+  campaignObjective?: MetaCampaignObjective;
   goal: MetaAdGoalKey;
   landingUrl: string;
   message: string;
@@ -30,6 +31,10 @@ export type MetaOrderInput = {
   genders: number[]; // 0=all,1=male,2=female
   customAudienceIds?: string[];
   excludedAudienceIds?: string[];
+  savedAudienceId?: string;
+  savedAudienceName?: string;
+  savedAudienceDescription?: string;
+  savedAudienceTargeting?: Record<string, unknown>;
   manualPlacements: {
     facebook: string[];
     instagram: string[];

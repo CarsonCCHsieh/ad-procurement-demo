@@ -21,6 +21,15 @@ export type MetaExistingPostOption = {
   createdTime?: string;
 };
 
+export type MetaSavedAudienceOption = {
+  id: string;
+  name: string;
+  description?: string;
+  approximateCount?: number;
+  targeting?: Record<string, unknown>;
+  summary?: string;
+};
+
 export type MetaResolvedPostPreview = {
   id: string;
   createdTime?: string;
@@ -295,6 +304,37 @@ function safeText(raw: unknown, fallback = ""): string {
   return text || fallback;
 }
 
+function summarizeSavedAudienceTargeting(targeting: Record<string, unknown> | undefined): string {
+  if (!targeting) return "";
+  const parts: string[] = [];
+  const geo = asRecord(targeting.geo_locations);
+  const countries = Array.isArray(geo?.countries) ? geo.countries.map((item) => safeText(item)).filter(Boolean) : [];
+  if (countries.length > 0) parts.push(`地區 ${countries.join("/")}`);
+
+  const ageMin = toNumber(targeting.age_min);
+  const ageMax = toNumber(targeting.age_max);
+  if (ageMin > 0 && ageMax > 0) parts.push(`年齡 ${ageMin}-${ageMax}`);
+
+  const genders = Array.isArray(targeting.genders) ? targeting.genders.map((item) => Number(item)).filter((item) => Number.isFinite(item)) : [];
+  if (genders.length === 1) {
+    if (genders[0] === 1) parts.push("男性");
+    if (genders[0] === 2) parts.push("女性");
+  }
+
+  const flexibleSpec = Array.isArray(targeting.flexible_spec) ? targeting.flexible_spec : [];
+  const interestCount = flexibleSpec.reduce((count, row) => {
+    const record = asRecord(row);
+    const interests = Array.isArray(record?.interests) ? record.interests : [];
+    return count + interests.length;
+  }, 0);
+  if (interestCount > 0) parts.push(`興趣 ${interestCount} 項`);
+
+  const customAudienceCount = Array.isArray(targeting.custom_audiences) ? targeting.custom_audiences.length : 0;
+  if (customAudienceCount > 0) parts.push(`自訂受眾 ${customAudienceCount} 個`);
+
+  return parts.join(" / ");
+}
+
 function trimActPrefix(raw: string) {
   return raw.trim().replace(/^act_/i, "");
 }
@@ -344,6 +384,54 @@ export async function listMetaAdAccounts(params: {
     return {
       ok: false,
       detail: error instanceof Error ? error.message : "Meta 廣告帳號讀取失敗",
+    };
+  }
+}
+
+export async function listMetaSavedAudiences(params: {
+  cfg: MetaConfigV1;
+  adAccountId?: string;
+  limit?: number;
+}): Promise<{ ok: boolean; detail?: string; audiences?: MetaSavedAudienceOption[] }> {
+  const { cfg } = params;
+  const token = cfg.accessToken.trim();
+  const accountId = trimActPrefix(params.adAccountId || cfg.adAccountId || "");
+  if (!token) {
+    return { ok: false, detail: "請先填入 Meta Access Token" };
+  }
+  if (!accountId) {
+    return { ok: false, detail: "請先指定廣告帳號" };
+  }
+
+  try {
+    const raw = await graphGet(
+      cfg,
+      token,
+      `/act_${accountId}/saved_audiences?limit=${Math.max(5, Math.min(100, params.limit ?? 30))}`,
+      "id,name,description,approximate_count,targeting",
+    );
+    const audiences = extractArray(raw.data)
+      .map((row) => {
+        const targeting = asRecord(row.targeting) ?? undefined;
+        return {
+          id: safeText(row.id),
+          name: safeText(row.name, safeText(row.id)),
+          description: safeText(row.description),
+          approximateCount: toNumber(row.approximate_count) || undefined,
+          targeting,
+          summary: summarizeSavedAudienceTargeting(targeting),
+        } satisfies MetaSavedAudienceOption;
+      })
+      .filter((row) => !!row.id);
+
+    return { ok: true, audiences };
+  } catch (error) {
+    return {
+      ok: false,
+      detail:
+        error instanceof Error
+          ? error.message
+          : "無法讀取儲備廣告受眾",
     };
   }
 }

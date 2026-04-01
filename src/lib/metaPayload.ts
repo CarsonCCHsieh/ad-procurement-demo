@@ -78,8 +78,13 @@ export function buildMetaPayloads(cfg: MetaConfigV1, input: MetaOrderInput): {
   const countries = input.countries.length > 0 ? input.countries : ["TW"];
   const placement = normalizePlacements(input.manualPlacements);
   const interests = parseInterestObjects(input.detailedTargetingText ?? "");
+  const savedAudienceTargeting =
+    input.savedAudienceTargeting && typeof input.savedAudienceTargeting === "object"
+      ? { ...input.savedAudienceTargeting }
+      : {};
 
   const targeting: Record<string, unknown> = {
+    ...savedAudienceTargeting,
     geo_locations: { countries },
     age_min: input.ageMin,
     age_max: input.ageMax,
@@ -112,7 +117,7 @@ export function buildMetaPayloads(cfg: MetaConfigV1, input: MetaOrderInput): {
   const campaign: Record<string, unknown> = {
     name: input.campaignName || `${input.title}_campaign`,
     buying_type: "AUCTION",
-    objective: goal.objective,
+    objective: input.campaignObjective || goal.objective,
     special_ad_categories: [],
     status: "PAUSED",
     bid_strategy: "LOWEST_COST_WITHOUT_CAP",
