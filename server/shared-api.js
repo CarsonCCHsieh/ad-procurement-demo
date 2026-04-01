@@ -1671,6 +1671,41 @@ async function resolveMetaPostSecure({ url, platform, pageId, pageName }) {
     : trackingRef.platform;
   const effectivePageId = String(pageId || trackingRef.pageId || "").trim();
   const effectivePageName = String(pageName || trackingRef.pageName || "").trim();
+  let preview = null;
+
+  try {
+    if (trackingRef.platform === "instagram") {
+      const media = await fetchInstagramMediaMetricsByIdSecure(metaSecrets, trackingRef);
+      if (media?.ok && media?.raw?.base) {
+        const base = media.raw.base;
+        preview = {
+          id: String(base.id || trackingRef.refId || ""),
+          createdTime: String(base.timestamp || ""),
+          message: String(base.caption || ""),
+          permalink: String(base.permalink || trackingRef.sourceUrl || ""),
+        };
+      }
+    } else {
+      const fbPreview = await fetchMetaPostMetricsSecure({
+        postId: trackingRef.refId,
+        platform: "facebook",
+        pageId: effectivePageId || trackingRef.pageId,
+        pageName: effectivePageName || trackingRef.pageName,
+        sourceUrl: trackingRef.sourceUrl || url,
+      });
+      if (fbPreview?.ok && fbPreview?.raw?.base) {
+        const base = fbPreview.raw.base;
+        preview = {
+          id: String(base.id || trackingRef.refId || ""),
+          createdTime: String(base.created_time || ""),
+          message: String(base.message || ""),
+          permalink: String(base.permalink_url || trackingRef.sourceUrl || ""),
+        };
+      }
+    }
+  } catch {
+    preview = null;
+  }
 
   return {
     ok: true,
@@ -1681,6 +1716,7 @@ async function resolveMetaPostSecure({ url, platform, pageId, pageName }) {
       pageName: effectivePageName || trackingRef.pageName,
     },
     existingPostId: trackingRef.refId,
+    preview,
   };
 }
 

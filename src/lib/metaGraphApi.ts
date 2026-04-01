@@ -21,6 +21,13 @@ export type MetaExistingPostOption = {
   createdTime?: string;
 };
 
+export type MetaResolvedPostPreview = {
+  id: string;
+  createdTime?: string;
+  message?: string;
+  permalink?: string;
+};
+
 type GraphValue = string | number | boolean | Record<string, unknown> | Array<unknown> | null | undefined;
 
 type ActionValue = {
@@ -419,6 +426,7 @@ export async function resolveMetaPostReference(params: {
     resolvedAt: string;
   };
   existingPostId?: string;
+  preview?: MetaResolvedPostPreview;
 }> {
   const source = params.source.trim();
   if (!source) return { ok: false, detail: "請輸入貼文連結或貼文 ID" };
@@ -463,6 +471,7 @@ export async function resolveMetaPostReference(params: {
         resolvedAt: string;
       };
       existingPostId?: string;
+      preview?: MetaResolvedPostPreview;
     };
     if (!res.ok || !json.ok || !json.trackingRef) {
       return { ok: false, detail: json.detail || `HTTP ${res.status}` };
@@ -472,6 +481,7 @@ export async function resolveMetaPostReference(params: {
       detail: json.detail,
       existingPostId: json.existingPostId || json.trackingRef.refId,
       trackingRef: json.trackingRef,
+      preview: json.preview,
     };
   } catch (error) {
     return {
