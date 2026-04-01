@@ -8,10 +8,8 @@ import {
   META_AD_GOALS,
   META_CAMPAIGN_OBJECTIVE_OPTIONS,
   getGoalObjective,
-  getGoalPrimaryMetricKey,
   type MetaAdGoalKey,
   type MetaCampaignObjective,
-  type MetaKpiMetricKey,
 } from "../lib/metaGoals";
 import { addMetaOrder, listMetaOrders, updateMetaOrder, type MetaOrder, type MetaOrderInput } from "../lib/metaOrdersStore";
 import {
@@ -24,6 +22,18 @@ import {
 import type { MetaTrackingRef } from "../lib/ordersStore";
 import { isValidUrl } from "../lib/validate";
 import { SHARED_SYNC_EVENT } from "../lib/sharedSync";
+import {
+  APP_EVENT_OPTIONS,
+  WEB_CONVERSION_EVENT_OPTIONS,
+  getConversionLocationLabel,
+  getConversionLocationOptions,
+  getPerformanceGoalTargetLabel,
+  getRecommendedConversionLocation,
+  getTrackedMetricKeyForPerformanceGoal,
+  needsAppSetup,
+  needsDestinationUrl,
+  needsPixelSetup,
+} from "../lib/metaOrderCapabilities";
 
 type FormState = {
   industryKey: string;
@@ -152,21 +162,6 @@ const OFFICIAL_PERFORMANCE_GOAL_LABEL = new Map(
   OFFICIAL_PERFORMANCE_GOAL_OPTIONS.map((option) => [option.value, option.label]),
 );
 
-const PRIMARY_METRIC_LABEL: Record<MetaKpiMetricKey, string> = {
-  likes: "按讚數",
-  all_clicks: "所有點擊",
-  comments: "留言數",
-  shares: "分享數",
-  interactions_total: "互動總數",
-  impressions: "曝光數",
-  reach: "觸及數",
-  video_3s_views: "3秒觀看",
-  thruplays: "完整觀看",
-  followers: "增粉數",
-  profile_visits: "個人檔案造訪",
-  spend: "花費",
-};
-
 const FB_POSITION_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "feed", label: "Facebook 動態消息" },
   { value: "profile_feed", label: "Facebook 個人檔案動態消息" },
@@ -196,42 +191,6 @@ const CTA_OPTIONS = [
   { value: "SIGN_UP", label: "立即註冊" },
   { value: "CONTACT_US", label: "聯絡我們" },
   { value: "VIEW_MORE", label: "查看更多" },
-];
-
-const CONVERSION_LOCATION_OPTIONS: Record<
-  string,
-  { value: string; label: string }[]
-> = {
-  website: [{ value: "website", label: "網站" }],
-  messenger: [{ value: "messenger", label: "Messenger" }],
-  instagram_profile: [{ value: "instagram_profile", label: "Instagram 個人檔案" }],
-  on_ad: [{ value: "on_ad", label: "Meta 內表單 / 直接互動" }],
-  app: [{ value: "app", label: "應用程式" }],
-  lead_flexible: [
-    { value: "website", label: "網站" },
-    { value: "on_ad", label: "Meta 內表單 / 直接互動" },
-    { value: "messenger", label: "Messenger" },
-  ],
-};
-
-const WEB_CONVERSION_EVENT_OPTIONS = [
-  { value: "PURCHASE", label: "PURCHASE 購買" },
-  { value: "LEAD", label: "LEAD 名單" },
-  { value: "COMPLETE_REGISTRATION", label: "COMPLETE_REGISTRATION 完成註冊" },
-  { value: "ADD_TO_CART", label: "ADD_TO_CART 加入購物車" },
-  { value: "INITIATE_CHECKOUT", label: "INITIATE_CHECKOUT 開始結帳" },
-  { value: "CONTACT", label: "CONTACT 聯絡" },
-  { value: "SUBSCRIBE", label: "SUBSCRIBE 訂閱" },
-  { value: "VIEW_CONTENT", label: "VIEW_CONTENT 內容瀏覽" },
-];
-
-const APP_EVENT_OPTIONS = [
-  { value: "MOBILE_APP_INSTALL", label: "MOBILE_APP_INSTALL 安裝" },
-  { value: "PURCHASE", label: "PURCHASE 購買" },
-  { value: "ADD_TO_CART", label: "ADD_TO_CART 加入購物車" },
-  { value: "COMPLETE_REGISTRATION", label: "COMPLETE_REGISTRATION 完成註冊" },
-  { value: "ACHIEVEMENT_UNLOCKED", label: "ACHIEVEMENT_UNLOCKED 達成成就" },
-  { value: "TUTORIAL_COMPLETION", label: "TUTORIAL_COMPLETION 完成教學" },
 ];
 
 const GOAL_PRESETS: Record<
@@ -492,134 +451,6 @@ function getOfficialPerformanceGoalLabel(performanceGoalCode: string, fallbackGo
   return OFFICIAL_PERFORMANCE_GOAL_LABEL.get(performanceGoalCode) ?? (fallbackGoal ? getGoalLabel(fallbackGoal) : performanceGoalCode);
 }
 
-function getPrimaryMetricLabel(goal: MetaAdGoalKey): string {
-  return PRIMARY_METRIC_LABEL[getGoalPrimaryMetricKey(goal)] ?? "目標數值";
-}
-
-function getPerformanceGoalTargetLabel(performanceGoalCode: string, fallbackGoal: MetaAdGoalKey): string {
-  if (performanceGoalCode.includes("DAILY_UNIQUE_REACH")) return "單日不重複觸及人數";
-  if (performanceGoalCode.includes("REACH")) return "觸及人數";
-  if (performanceGoalCode.includes("IMPRESSIONS")) return "曝光次數";
-  if (performanceGoalCode.includes("AD_RECALL")) return "廣告回想提升幅度";
-  if (performanceGoalCode.includes("THRUPLAY")) return "ThruPlay 觀看次數";
-  if (performanceGoalCode.includes("2S_CONTINUOUS_VIDEO_VIEWS")) return "連續觀看 2 秒以上次數";
-  if (performanceGoalCode.includes("LANDING_PAGE_VIEWS")) return "連結頁面瀏覽次數";
-  if (performanceGoalCode.includes("LINK_CLICKS")) return "連結點擊次數";
-  if (performanceGoalCode.includes("CONVERSATIONS")) return "對話數量";
-  if (performanceGoalCode.includes("INSTAGRAM_PROFILE")) return "Instagram 個人檔案瀏覽次數";
-  if (performanceGoalCode.includes("CALLS")) return "通話次數";
-  if (performanceGoalCode.includes("POST_ENGAGEMENT")) return "貼文互動數";
-  if (performanceGoalCode.includes("EVENT_RESPONSES")) return "活動回覆數量";
-  if (performanceGoalCode.includes("CONVERSIONS")) return "轉換次數";
-  if (performanceGoalCode.includes("APP_EVENTS")) return "應用程式事件";
-  if (performanceGoalCode.includes("REMINDERS")) return "提醒設定數量";
-  if (performanceGoalCode.includes("PAGE_LIKES")) return "粉絲專頁按讚數";
-  if (performanceGoalCode.includes("MAXIMIZE_LEADS")) return "潛在顧客人數";
-  if (performanceGoalCode.includes("QUALIFIED_LEADS")) return "採取轉換動作的潛在顧客人數";
-  if (performanceGoalCode.includes("MESSAGE_LEADS")) return "透過訊息成為潛在顧客的人數";
-  if (performanceGoalCode.includes("INSTALLS")) return "應用程式安裝次數";
-  if (performanceGoalCode.includes("VALUE")) return "轉換價值";
-  if (performanceGoalCode.includes("MESSAGE_PURCHASES")) return "透過訊息購買次數";
-  return getPrimaryMetricLabel(fallbackGoal);
-}
-
-function getTrackedMetricKeyForPerformanceGoal(
-  performanceGoalCode: string,
-  fallbackGoal: MetaAdGoalKey,
-): MetaKpiMetricKey | null {
-  if (performanceGoalCode.includes("DAILY_UNIQUE_REACH") || performanceGoalCode.includes("REACH")) return "reach";
-  if (performanceGoalCode.includes("IMPRESSIONS")) return "impressions";
-  if (performanceGoalCode.includes("THRUPLAY")) return "thruplays";
-  if (performanceGoalCode.includes("2S_CONTINUOUS_VIDEO_VIEWS")) return "video_3s_views";
-  if (performanceGoalCode.includes("LINK_CLICKS") || performanceGoalCode.includes("LANDING_PAGE_VIEWS")) {
-    return "all_clicks";
-  }
-  if (performanceGoalCode.includes("INSTAGRAM_PROFILE")) return "profile_visits";
-  if (performanceGoalCode.includes("POST_ENGAGEMENT")) return "interactions_total";
-  if (performanceGoalCode.includes("PAGE_LIKES")) return null;
-  if (performanceGoalCode.includes("AD_RECALL")) return null;
-  if (performanceGoalCode.includes("EVENT_RESPONSES")) return null;
-  if (performanceGoalCode.includes("CONVERSIONS")) return null;
-  if (performanceGoalCode.includes("APP_EVENTS")) return null;
-  if (performanceGoalCode.includes("REMINDERS")) return null;
-  if (performanceGoalCode.includes("CALLS")) return null;
-  if (performanceGoalCode.includes("CONVERSATIONS") || performanceGoalCode.includes("MESSAGE")) return null;
-  if (performanceGoalCode.includes("MAXIMIZE_LEADS") || performanceGoalCode.includes("QUALIFIED_LEADS")) return null;
-  if (performanceGoalCode.includes("INSTALLS") || performanceGoalCode.includes("VALUE")) return null;
-  return getGoalPrimaryMetricKey(fallbackGoal);
-}
-
-function isAppDrivenPerformanceGoal(objective: MetaCampaignObjective, performanceGoalCode: string): boolean {
-  return (
-    objective === "OUTCOME_APP_PROMOTION" ||
-    performanceGoalCode.includes("APP_EVENTS") ||
-    performanceGoalCode.includes("INSTALLS")
-  );
-}
-
-function getRecommendedConversionLocation(objective: MetaCampaignObjective, performanceGoalCode: string): string {
-  if (isAppDrivenPerformanceGoal(objective, performanceGoalCode)) return "app";
-  if (performanceGoalCode.includes("INSTAGRAM_PROFILE")) return "instagram_profile";
-  if (performanceGoalCode.includes("CALLS")) return "on_ad";
-  if (performanceGoalCode.includes("CONVERSATIONS") || performanceGoalCode.includes("MESSAGE")) return "messenger";
-  if (objective === "OUTCOME_LEADS" && performanceGoalCode === "LEADS_MAXIMIZE_LEADS") return "on_ad";
-  return "website";
-}
-
-function getConversionLocationOptions(
-  objective: MetaCampaignObjective,
-  performanceGoalCode: string,
-): Array<{ value: string; label: string }> {
-  if (objective === "OUTCOME_AWARENESS") return [];
-  if (isAppDrivenPerformanceGoal(objective, performanceGoalCode)) return CONVERSION_LOCATION_OPTIONS.app;
-  if (performanceGoalCode.includes("INSTAGRAM_PROFILE")) return CONVERSION_LOCATION_OPTIONS.instagram_profile;
-  if (performanceGoalCode.includes("CALLS")) return CONVERSION_LOCATION_OPTIONS.on_ad;
-  if (performanceGoalCode.includes("CONVERSATIONS") || performanceGoalCode.includes("MESSAGE")) {
-    return CONVERSION_LOCATION_OPTIONS.messenger;
-  }
-  if (objective === "OUTCOME_LEADS" && performanceGoalCode === "LEADS_MAXIMIZE_LEADS") {
-    return CONVERSION_LOCATION_OPTIONS.lead_flexible;
-  }
-  return CONVERSION_LOCATION_OPTIONS.website;
-}
-
-function needsDestinationUrl(
-  objective: MetaCampaignObjective,
-  performanceGoalCode: string,
-  conversionLocation: string,
-): boolean {
-  if (objective === "OUTCOME_AWARENESS") return false;
-  return conversionLocation === "website";
-}
-
-function needsPixelSetup(
-  objective: MetaCampaignObjective,
-  performanceGoalCode: string,
-  conversionLocation: string,
-): boolean {
-  if (conversionLocation !== "website") return false;
-  if (!(objective === "OUTCOME_LEADS" || objective === "OUTCOME_SALES" || objective === "OUTCOME_ENGAGEMENT")) {
-    return false;
-  }
-  return (
-    performanceGoalCode.includes("CONVERSIONS") ||
-    performanceGoalCode.includes("VALUE") ||
-    performanceGoalCode.includes("QUALIFIED_LEADS")
-  );
-}
-
-function needsAppSetup(objective: MetaCampaignObjective, performanceGoalCode: string, conversionLocation: string): boolean {
-  return conversionLocation === "app" || isAppDrivenPerformanceGoal(objective, performanceGoalCode);
-}
-
-function getConversionLocationLabel(value: string): string {
-  return (
-    Object.values(CONVERSION_LOCATION_OPTIONS)
-      .flat()
-      .find((option) => option.value === value)?.label ?? value
-  );
-}
-
 function validate(s: FormState, effectiveConfig: { adAccountId: string; pageId: string; instagramActorId: string }): Errors {
   const errors: Errors = {};
   const conversionLocation = getConversionLocationOptions(s.campaignObjective, s.performanceGoalCode).some(
@@ -661,7 +492,7 @@ function validate(s: FormState, effectiveConfig: { adAccountId: string; pageId: 
   if (s.goal.startsWith("fb_") && !effectiveConfig.pageId.trim()) errors.industryKey = "目前未設定 Facebook 粉絲專頁，請通知管理員。";
   if (s.goal.startsWith("ig_") && !effectiveConfig.instagramActorId.trim()) errors.industryKey = "目前未設定 Instagram Actor，請通知管理員。";
 
-  if (needsDestinationUrl(s.campaignObjective, s.performanceGoalCode, conversionLocation)) {
+  if (needsDestinationUrl(s.campaignObjective, conversionLocation)) {
     if (!s.destinationUrl.trim()) errors.destinationUrl = "此投放目標需要網站或導流網址。";
     else if (!isValidUrl(s.destinationUrl.trim())) errors.destinationUrl = "導流網址格式不正確。";
   }
@@ -745,7 +576,6 @@ export function MetaAdsOrdersPage() {
   );
   const showDestinationUrl = needsDestinationUrl(
     state.campaignObjective,
-    state.performanceGoalCode,
     effectiveConversionLocation,
   );
   const showPixelSetup = needsPixelSetup(
