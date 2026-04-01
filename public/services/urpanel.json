@@ -7916,7 +7916,7 @@
     "max": 100000000,
     "dripfeed": true,
     "refill": false,
-    "cancel": true,
+    "cancel": false,
     "category": "Youtube - Views"
   },
   {
@@ -10599,7 +10599,7 @@
     "service": 4624,
     "name": "Twitter Likes - (No Refill) (0-12H - 2.5K/Day)",
     "type": "Default",
-    "rate": "4.5877",
+    "rate": "4.5813",
     "min": 10,
     "max": 10000,
     "dripfeed": true,
@@ -11157,6 +11157,18 @@
     "dripfeed": false,
     "refill": false,
     "cancel": true,
+    "category": "Tiktok - VIEWS"
+  },
+  {
+    "service": 12915,
+    "name": "Tiktok - Views || Retention: 30-45 Seconds || Refill 60 Days",
+    "type": "Default",
+    "rate": "1.96",
+    "min": 1000,
+    "max": 500000,
+    "dripfeed": false,
+    "refill": false,
+    "cancel": false,
     "category": "Tiktok - VIEWS"
   },
   {
@@ -14115,10 +14127,10 @@
     "service": 10300,
     "name": "👑 Spotify Followers | ♻️ 90 Days Refill | Max 500k | 30K/Day - ⚡Fast ✔️ Stable",
     "type": "Default",
-    "rate": "0.532",
+    "rate": "0.595",
     "min": 100,
     "max": 100000000,
-    "dripfeed": true,
+    "dripfeed": false,
     "refill": false,
     "cancel": false,
     "category": "Spotify - Followers"
