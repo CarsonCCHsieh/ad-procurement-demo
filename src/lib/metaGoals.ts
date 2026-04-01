@@ -65,7 +65,7 @@ export type MetaAdGoalTemplate = {
 export const META_CAMPAIGN_OBJECTIVE_OPTIONS: MetaCampaignObjectiveOption[] = [
   {
     value: "OUTCOME_AWARENESS",
-    label: "認知",
+    label: "品牌認知",
     desc: "提高曝光、觸及與品牌記憶。",
   },
   {
@@ -80,12 +80,12 @@ export const META_CAMPAIGN_OBJECTIVE_OPTIONS: MetaCampaignObjectiveOption[] = [
   },
   {
     value: "OUTCOME_LEADS",
-    label: "名單開發",
+    label: "潛在顧客",
     desc: "蒐集表單名單、私訊線索或其他可回收名單。",
   },
   {
     value: "OUTCOME_SALES",
-    label: "銷售",
+    label: "銷售業績",
     desc: "以轉換或購買為核心的投放目標。",
   },
   {

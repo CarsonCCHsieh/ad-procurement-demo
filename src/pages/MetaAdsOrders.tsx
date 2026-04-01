@@ -9,7 +9,6 @@ import {
   META_CAMPAIGN_OBJECTIVE_OPTIONS,
   getGoalObjective,
   getGoalPrimaryMetricKey,
-  listMetaGoalsByObjective,
   type MetaAdGoalKey,
   type MetaCampaignObjective,
   type MetaKpiMetricKey,
@@ -79,8 +78,47 @@ const KPI_OPTIONS: Array<{ key: MetaAdGoalKey; label: string; platform: "faceboo
 
 const GOAL_LABEL = new Map(KPI_OPTIONS.map((option) => [option.key, option.label]));
 const OBJECTIVE_LABEL = new Map(META_CAMPAIGN_OBJECTIVE_OPTIONS.map((option) => [option.value, option.label]));
-const SUPPORTED_OBJECTIVE_OPTIONS = META_CAMPAIGN_OBJECTIVE_OPTIONS.filter(
-  (option) => listMetaGoalsByObjective(option.value).length > 0,
+
+const OFFICIAL_PERFORMANCE_GOAL_OPTIONS: Array<{
+  objective: MetaCampaignObjective;
+  goal: MetaAdGoalKey;
+  label: string;
+  desc: string;
+}> = [
+  {
+    objective: "OUTCOME_AWARENESS",
+    goal: "fb_reach",
+    label: "盡可能提高廣告觸及人數",
+    desc: "盡可能向更多受眾顯示廣告。",
+  },
+  {
+    objective: "OUTCOME_AWARENESS",
+    goal: "fb_video_views",
+    label: "盡可能提高 ThruPlay 觀看次數",
+    desc: "向影片少於 15 秒就會觀看整部影片的受眾顯示您的影片廣告。或者，向可能觀看至少 15 秒的受眾顯示較長的影片廣告。",
+  },
+  {
+    objective: "OUTCOME_TRAFFIC",
+    goal: "ig_followers",
+    label: "提高 Instagram 個人檔案瀏覽次數",
+    desc: "向最有可能瀏覽您的 Instagram 個人檔案的受眾顯示您的廣告。",
+  },
+  {
+    objective: "OUTCOME_ENGAGEMENT",
+    goal: "fb_post_engagement",
+    label: "盡可能提升貼文互動率",
+    desc: "向最有可能喜歡、分享貼文或在貼文留言的用戶顯示廣告。",
+  },
+  {
+    objective: "OUTCOME_ENGAGEMENT",
+    goal: "fb_video_views",
+    label: "盡可能提高 ThruPlay 觀看次數",
+    desc: "向影片少於 15 秒就會觀看整部影片的受眾顯示您的影片廣告。或者，向可能觀看至少 15 秒的受眾顯示較長的影片廣告。",
+  },
+];
+
+const OFFICIAL_PERFORMANCE_GOAL_LABEL = new Map(
+  OFFICIAL_PERFORMANCE_GOAL_OPTIONS.map((option) => [option.goal, option.label]),
 );
 
 const PRIMARY_METRIC_LABEL: Record<MetaKpiMetricKey, string> = {
@@ -334,6 +372,10 @@ function getObjectiveLabel(objective: MetaCampaignObjective): string {
   return OBJECTIVE_LABEL.get(objective) ?? objective;
 }
 
+function getOfficialPerformanceGoalLabel(goal: MetaAdGoalKey): string {
+  return OFFICIAL_PERFORMANCE_GOAL_LABEL.get(goal) ?? getGoalLabel(goal);
+}
+
 function getPrimaryMetricLabel(goal: MetaAdGoalKey): string {
   return PRIMARY_METRIC_LABEL[getGoalPrimaryMetricKey(goal)] ?? "目標數值";
 }
@@ -414,12 +456,16 @@ export function MetaAdsOrdersPage() {
   const customAudienceSummary = useMemo(() => summarizeIds(state.customAudienceIdsText), [state.customAudienceIdsText]);
   const excludedAudienceSummary = useMemo(() => summarizeIds(state.excludedAudienceIdsText), [state.excludedAudienceIdsText]);
   const availableGoalOptions = useMemo(
-    () => listMetaGoalsByObjective(state.campaignObjective).map((goalOption) => ({ key: goalOption.key, label: goalOption.label, platform: goalOption.platform })),
+    () => OFFICIAL_PERFORMANCE_GOAL_OPTIONS.filter((option) => option.objective === state.campaignObjective),
     [state.campaignObjective],
   );
   const selectedSavedAudience = useMemo(
     () => savedAudiences.find((row) => row.id === state.savedAudienceId) ?? null,
     [savedAudiences, state.savedAudienceId],
+  );
+  const selectedPerformanceGoal = useMemo(
+    () => availableGoalOptions.find((option) => option.goal === state.goal) ?? null,
+    [availableGoalOptions, state.goal],
   );
   
   const postValidated = !!resolvedPost?.trackingPostId;
@@ -453,16 +499,9 @@ export function MetaAdsOrdersPage() {
   }, []);
 
   useEffect(() => {
-    if (availableGoalOptions.length === 0) {
-      const fallbackObjective = SUPPORTED_OBJECTIVE_OPTIONS[0]?.value;
-      const fallbackGoal = fallbackObjective ? listMetaGoalsByObjective(fallbackObjective)[0]?.key : undefined;
-      if (fallbackObjective && fallbackGoal) {
-        setState((current) => applyGoalPreset({ ...current, campaignObjective: fallbackObjective }, fallbackGoal));
-      }
-      return;
-    }
-    if (!availableGoalOptions.some((item) => item.key === state.goal)) {
-      const fallback = availableGoalOptions[0]?.key;
+    if (availableGoalOptions.length === 0) return;
+    if (!availableGoalOptions.some((item) => item.goal === state.goal)) {
+      const fallback = availableGoalOptions[0]?.goal;
       if (fallback) {
         setState((current) => applyGoalPreset(current, fallback));
       }
@@ -623,6 +662,9 @@ export function MetaAdsOrdersPage() {
 
   const goConfirm = async () => {
     const nextErrors = validate(state, effectiveCfg);
+    if (!selectedPerformanceGoal) {
+      nextErrors.goal = "這個官方投放目標目前尚未完成對應的成效目標與送單設定。";
+    }
     setErrors(nextErrors);
     setSubmitMsg(null);
     if (Object.keys(nextErrors).length > 0) return;
@@ -758,25 +800,29 @@ export function MetaAdsOrdersPage() {
                     value={state.campaignObjective}
                     onChange={(e) => {
                       const nextObjective = e.target.value as MetaCampaignObjective;
-                      const nextGoal = listMetaGoalsByObjective(nextObjective)[0]?.key;
+                      const nextGoal = OFFICIAL_PERFORMANCE_GOAL_OPTIONS.find((option) => option.objective === nextObjective)?.goal;
                       setState((current) => {
                         const base = { ...current, campaignObjective: nextObjective };
                         return nextGoal ? applyGoalPreset(base, nextGoal) : base;
                       });
                     }}
                   >
-                    {SUPPORTED_OBJECTIVE_OPTIONS.map((option) => (
+                    {META_CAMPAIGN_OBJECTIVE_OPTIONS.map((option) => (
                       <option key={option.value} value={option.value}>{option.label}</option>
                     ))}
                   </select>
-                  <div className="hint">{SUPPORTED_OBJECTIVE_OPTIONS.find((option) => option.value === state.campaignObjective)?.desc}</div>
+                  <div className="hint">{META_CAMPAIGN_OBJECTIVE_OPTIONS.find((option) => option.value === state.campaignObjective)?.desc}</div>
                 </div>
                 <div className="field">
                   <div className="label">KPI 類型<span className="req">*</span></div>
                   <select value={state.goal} onChange={(e) => setState((current) => applyGoalPreset(current, e.target.value as MetaAdGoalKey))}>
-                    {availableGoalOptions.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
+                    {availableGoalOptions.length === 0 ? <option value="">目前尚未接上</option> : null}
+                    {availableGoalOptions.map((option) => <option key={option.goal} value={option.goal}>{option.label}</option>)}
                   </select>
-                  <div className="hint">這裡決定成效頁追蹤的主指標與自動停投判斷方式。</div>
+                  <div className="hint">
+                    {selectedPerformanceGoal?.desc || "這個官方投放目標目前尚未接上對應的送單欄位與 KPI 流程。"}
+                  </div>
+                  {errors.goal ? <div className="error">{errors.goal}</div> : null}
                 </div>
                 <div className="field"><div className="label">日預算 TWD<span className="req">*</span></div><input value={state.dailyBudget} inputMode="numeric" onChange={(e) => setState((current) => ({ ...current, dailyBudget: e.target.value }))} />{errors.dailyBudget ? <div className="error">{errors.dailyBudget}</div> : null}</div>
                 <div className="field"><div className="label">目標 {targetMetricLabel}</div><input value={state.targetValue} inputMode="numeric" onChange={(e) => setState((current) => ({ ...current, targetValue: e.target.value }))} placeholder="例如：300000" /><div className="hint">若填入目標值，成效頁會依據數據檢查是否已達標並自動停投。</div>{errors.targetValue ? <div className="error">{errors.targetValue}</div> : null}</div>
@@ -790,7 +836,7 @@ export function MetaAdsOrdersPage() {
                   <div className="meta-preview-card">
                     <div className="meta-preview-grid">
                       <div><div className="label">模板說明</div><div className="hint">{selectedIndustry.description || "此模板會帶入受眾與版位建議。"}</div></div>
-                      <div><div className="label">官方目標</div><div className="hint">{getObjectiveLabel(state.campaignObjective)} / {getGoalLabel(state.goal)}</div></div>
+                      <div><div className="label">官方目標</div><div className="hint">{getObjectiveLabel(state.campaignObjective)} / {getOfficialPerformanceGoalLabel(state.goal)}</div></div>
                       <div><div className="label">年齡 / 性別</div><div className="hint">{state.ageMin} - {state.ageMax} / {state.gender === "all" ? "不限" : state.gender === "male" ? "男性" : "女性"}</div></div>
                       <div><div className="label">興趣受眾</div><div className="hint">{audienceLabels.length > 0 ? audienceLabels.join("、") : "依模板自動帶入，無需手動輸入 ID。"}</div></div>
                       <div><div className="label">自訂受眾</div><div className="hint">{customAudienceSummary}</div></div>
@@ -903,7 +949,7 @@ export function MetaAdsOrdersPage() {
                 <div className="field"><div className="label">產業模板</div><input value={selectedIndustry?.label || "未套用"} readOnly /></div>
                 <div className="field"><div className="label">任務名稱</div><input value={previewInput.title || "-"} readOnly /></div>
                 <div className="field"><div className="label">Meta 官方投放目標</div><input value={getObjectiveLabel(state.campaignObjective)} readOnly /></div>
-                <div className="field"><div className="label">KPI 類型</div><input value={getGoalLabel(state.goal)} readOnly /></div>
+                <div className="field"><div className="label">KPI 類型</div><input value={getOfficialPerformanceGoalLabel(state.goal)} readOnly /></div>
                 <div className="field"><div className="label">行銷活動名稱</div><input value={previewInput.campaignName || "-"} readOnly /></div>
                 <div className="field"><div className="label">廣告組合名稱</div><input value={previewInput.adsetName || "-"} readOnly /></div>
                 <div className="field"><div className="label">廣告名稱</div><input value={previewInput.adName || "-"} readOnly /></div>
@@ -946,5 +992,3 @@ export function MetaAdsOrdersPage() {
     </div>
   );
 }
-
-
