@@ -1151,6 +1151,7 @@ export function MetaAdsOrdersPage() {
                 <div className="field"><div className="label">開始時間</div><input value={formatDateTime(state.startTime)} readOnly /></div>
                 <div className="field"><div className="label">結束時間</div><input value={state.endTime ? formatDateTime(state.endTime) : "不設定"} readOnly /></div>
                 <div className="field"><div className="label">目標 {targetMetricLabel}</div><input value={previewInput.targetValue == null ? "-" : previewInput.targetValue.toLocaleString("zh-TW")} readOnly /></div>
+                <div className="field"><div className="label">轉換位置</div><input value={state.conversionLocation || "-"} readOnly /></div>
                 {previewInput.destinationUrl ? <div className="field"><div className="label">導流網址</div><input value={previewInput.destinationUrl} readOnly /></div> : null}
                 {previewInput.pixelId ? <div className="field"><div className="label">Pixel ID</div><input value={previewInput.pixelId} readOnly /></div> : null}
                 {previewInput.conversionEvent ? <div className="field"><div className="label">轉換事件</div><input value={previewInput.conversionEvent} readOnly /></div> : null}

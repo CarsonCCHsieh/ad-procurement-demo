@@ -69,14 +69,14 @@ export const META_CAMPAIGN_OBJECTIVE_OPTIONS: MetaCampaignObjectiveOption[] = [
     desc: "提高曝光、觸及與品牌記憶。",
   },
   {
-    value: "OUTCOME_ENGAGEMENT",
-    label: "互動",
-    desc: "提高貼文互動、影片觀看或個人檔案相關互動。",
-  },
-  {
     value: "OUTCOME_TRAFFIC",
     label: "流量",
     desc: "導流到網站、貼文或其他可點擊目的地。",
+  },
+  {
+    value: "OUTCOME_ENGAGEMENT",
+    label: "互動",
+    desc: "提高貼文互動、影片觀看或個人檔案相關互動。",
   },
   {
     value: "OUTCOME_LEADS",
@@ -84,14 +84,14 @@ export const META_CAMPAIGN_OBJECTIVE_OPTIONS: MetaCampaignObjectiveOption[] = [
     desc: "蒐集表單名單、私訊線索或其他可回收名單。",
   },
   {
+    value: "OUTCOME_APP_PROMOTION",
+    label: "應用程式推廣",
+    desc: "以 App 安裝或 App 事件為投放目標。",
+  },
+  {
     value: "OUTCOME_SALES",
     label: "銷售業績",
     desc: "以轉換或購買為核心的投放目標。",
-  },
-  {
-    value: "OUTCOME_APP_PROMOTION",
-    label: "應用程式推廣",
-    desc: "以 App 安裝或 App 內行為為目標。",
   },
 ];
 
