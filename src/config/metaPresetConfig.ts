@@ -69,6 +69,29 @@ const ALLOWED_GOALS: MetaAdGoalKey[] = [
   "ig_followers",
 ];
 
+const INDUSTRY_DEFAULTS: Record<string, Pick<MetaIndustryPreset, "label" | "description" | "audienceNote">> = {
+  sneakers: {
+    label: "球鞋",
+    description: "偏潮流、街頭、球鞋文化相關受眾。",
+    audienceNote: "可放入球鞋、潮流、街頭文化、品牌粉絲相關受眾。",
+  },
+  movie: {
+    label: "電影",
+    description: "偏娛樂、預告片、上映宣傳類型。",
+    audienceNote: "可放入電影、串流平台、影劇新片、品牌粉絲受眾。",
+  },
+  food_beverage: {
+    label: "食品飲料",
+    description: "偏品牌曝光、檔期活動、新品推廣。",
+    audienceNote: "可放入美食、餐廳、手搖飲、便利商店等受眾。",
+  },
+  alcohol: {
+    label: "酒類",
+    description: "需注意法規與年齡限制。",
+    audienceNote: "建議放入成熟族群、餐酒館、品酒、生活風格受眾。",
+  },
+};
+
 export const DEFAULT_META_OPTIMIZATION_CONFIG: MetaOptimizationConfig = {
   enabled: true,
   minSpendForAdvice: 500,
@@ -97,14 +120,27 @@ function uniqueStrings(raw: unknown): string[] {
   return out;
 }
 
+function looksBrokenText(value: string) {
+  return /[鍕鐞闆诲獢甯寮嫊瑙€璨]/.test(value);
+}
+
+function getIndustryText(key: string, field: "label" | "description" | "audienceNote", currentValue: string, fallback: string) {
+  const defaultRow = INDUSTRY_DEFAULTS[key];
+  if (!currentValue) return defaultRow?.[field] ?? fallback;
+  if (looksBrokenText(currentValue) && defaultRow?.[field]) return defaultRow[field];
+  return currentValue;
+}
+
 function normalizeAccount(raw: unknown, index: number): MetaManagedAccount | null {
   if (!raw || typeof raw !== "object") return null;
   const row = raw as Partial<MetaManagedAccount>;
   const id = normalizeKey(String(row.id || `account_${index + 1}`)) || `account_${index + 1}`;
   const adAccountId = String(row.adAccountId || "").trim().replace(/^act_/i, "");
+  const defaultLabel = `帳號 ${index + 1}`;
+  const label = String(row.label || defaultLabel).trim() || defaultLabel;
   return {
     id,
-    label: String(row.label || `帳號 ${index + 1}`).trim() || `帳號 ${index + 1}`,
+    label: looksBrokenText(label) ? defaultLabel : label,
     adAccountId,
     pageId: String(row.pageId || "").trim(),
     pageName: String(row.pageName || "").trim(),
@@ -127,8 +163,8 @@ function normalizeIndustry(raw: unknown, index: number): MetaIndustryPreset | nu
 
   return {
     key,
-    label: String(row.label || `產業 ${index + 1}`).trim() || `產業 ${index + 1}`,
-    description: String(row.description || "").trim(),
+    label: getIndustryText(key, "label", String(row.label || "").trim(), `產業 ${index + 1}`),
+    description: getIndustryText(key, "description", String(row.description || "").trim(), ""),
     enabled: row.enabled !== false,
     recommendedGoals: goals,
     countriesCsv: String(row.countriesCsv || "TW").trim() || "TW",
@@ -141,7 +177,7 @@ function normalizeIndustry(raw: unknown, index: number): MetaIndustryPreset | nu
     detailedTargetingText: String(row.detailedTargetingText || "").trim(),
     customAudienceIdsText: String(row.customAudienceIdsText || "").trim(),
     excludedAudienceIdsText: String(row.excludedAudienceIdsText || "").trim(),
-    audienceNote: String(row.audienceNote || "").trim(),
+    audienceNote: getIndustryText(key, "audienceNote", String(row.audienceNote || "").trim(), ""),
     dailyBudget: Number.isFinite(dailyBudget) && dailyBudget > 0 ? Math.round(dailyBudget) : 1000,
     ctaType: String(row.ctaType || "LEARN_MORE").trim() || "LEARN_MORE",
     useExistingPost: row.useExistingPost !== false,

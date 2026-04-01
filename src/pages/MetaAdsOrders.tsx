@@ -669,7 +669,6 @@ export function MetaAdsOrdersPage() {
                 </>
               ) : null}
 
-              <div className="actions"><button className="btn primary" type="button" onClick={addAdsetSection}>新增廣告組合</button></div>
             </div>
           </div>
 
