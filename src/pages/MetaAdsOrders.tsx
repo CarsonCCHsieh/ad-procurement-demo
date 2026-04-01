@@ -371,7 +371,8 @@ export function MetaAdsOrdersPage() {
   const selectedAccountSummary = selectedAccount ? `${selectedAccount.label} / act_${selectedAccount.adAccountId}` : effectiveCfg.adAccountId ? `act_${effectiveCfg.adAccountId}` : "尚未設定";
   const audienceLabels = useMemo(() => summarizeAudience(state.detailedTargetingText), [state.detailedTargetingText]);
   const customAudienceSummary = useMemo(() => summarizeIds(state.customAudienceIdsText), [state.customAudienceIdsText]);
-  const excludedAudienceSummary = useMemo(() => summarizeIds(state.excludedAudienceIdsText), [state.excludedAudienceIdsText]);
+  
+  const postValidated = !!resolvedPost?.trackingPostId;
 
   const clearEditQuery = () => {
     if (!editId) return;
@@ -504,7 +505,7 @@ export function MetaAdsOrdersPage() {
       setResolvedPost(prepared);
       setState((current) => ({ ...current, trackingPostId: prepared.trackingPostId || current.trackingPostId, message: current.message || prepared.preview?.message || "" }));
       setErrors((current) => ({ ...current, existingPostSource: undefined, trackingPostId: undefined }));
-      setPostValidationMessage("已驗證成功，可確認貼文時間、文案與 ID。");
+      setPostValidationMessage(null);
     } catch (error) {
       setResolvedPost(null);
       setErrors((current) => ({ ...current, existingPostSource: error instanceof Error ? error.message : "貼文連結解析失敗。" }));
@@ -527,21 +528,20 @@ export function MetaAdsOrdersPage() {
       return;
     }
 
-    setResolvingPost(true);
-    try {
-      const prepared = await prepareResolvedPost();
-      if (!prepared?.trackingPostId && TARGET_RECOMMENDS_TRACKING.has(targetMetricKey) && state.targetValue.trim()) {
-        setErrors((current) => ({ ...current, trackingPostId: "這個目標需要可追蹤的貼文，達標後才能自動停投。" }));
-        return;
-      }
-      setResolvedPost(prepared);
-      setPostValidationMessage(prepared?.preview ? "已帶入最新驗證結果。" : null);
-      setStep("confirm");
-    } catch (error) {
-      setErrors((current) => ({ ...current, existingPostSource: error instanceof Error ? error.message : "貼文連結解析失敗。" }));
-    } finally {
-      setResolvingPost(false);
+    if (!postValidated) {
+      setErrors((current) => ({
+        ...current,
+        trackingPostId: "請先驗證貼文，確認貼文資訊後才能進入下一步。",
+      }));
+      return;
     }
+
+    if (!resolvedPost?.trackingPostId && TARGET_RECOMMENDS_TRACKING.has(targetMetricKey) && state.targetValue.trim()) {
+      setErrors((current) => ({ ...current, trackingPostId: "這個目標需要可追蹤的貼文，驗證完成後才能自動停投。" }));
+      return;
+    }
+
+    setStep("confirm");
   };
 
   const submit = async () => {
@@ -713,10 +713,8 @@ export function MetaAdsOrdersPage() {
                       <input value={state.existingPostSource} onChange={(e) => { const value = e.target.value; setState((current) => ({ ...current, existingPostSource: value })); setResolvedPost(null); setPostValidationMessage(null); }} placeholder="https://www.facebook.com/... 或 https://www.instagram.com/..." style={{ width: "100%" }} />
                       <button className="btn" type="button" onClick={() => void validatePostSource()} disabled={resolvingPost}>{resolvingPost ? "驗證中..." : "驗證貼文"}</button>
                     </div>
-                    <div className="hint">目前先使用貼文連結作為素材來源。驗證後會回傳貼文時間、文案與 ID。</div>
                     {errors.existingPostSource ? <div className="error">{errors.existingPostSource}</div> : null}
                     {errors.trackingPostId ? <div className="error">{errors.trackingPostId}</div> : null}
-                    {postValidationMessage ? <div className="hint">{postValidationMessage}</div> : null}
                   </div>
                   {resolvedPost?.preview ? (
                     <div className="meta-preview-card" style={{ gridColumn: "1 / -1" }}>
@@ -730,7 +728,7 @@ export function MetaAdsOrdersPage() {
                   ) : null}
                   <div className="field" style={{ gridColumn: "1 / -1" }}><div className="label">主要文案</div><textarea rows={5} value={state.message} onChange={(e) => setState((current) => ({ ...current, message: e.target.value }))} placeholder="若驗證成功後有抓到文案，系統會自動帶入。" /></div>
                 </div>
-                <div className="actions"><button className="btn primary" type="button" onClick={() => void goConfirm()} disabled={resolvingPost}>下一步</button></div>
+                <div className="actions"><button className="btn primary" type="button" onClick={() => void goConfirm()} disabled={resolvingPost || !postValidated}>下一步</button></div>
               </div>
             </div>
           ) : (
@@ -792,4 +790,5 @@ export function MetaAdsOrdersPage() {
     </div>
   );
 }
+
 
