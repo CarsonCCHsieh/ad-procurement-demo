@@ -15,8 +15,11 @@ export type MetaOrderInput = {
   adsetName: string;
   adName: string;
   campaignObjective?: MetaCampaignObjective;
+  performanceGoalCode?: string;
+  performanceGoalLabel?: string;
   goal: MetaAdGoalKey;
   landingUrl: string;
+  destinationUrl?: string;
   message: string;
   ctaType: string;
   useExistingPost: boolean;
@@ -35,6 +38,12 @@ export type MetaOrderInput = {
   savedAudienceName?: string;
   savedAudienceDescription?: string;
   savedAudienceTargeting?: Record<string, unknown>;
+  conversionLocation?: string;
+  pixelId?: string;
+  conversionEvent?: string;
+  appId?: string;
+  appStoreUrl?: string;
+  appEventType?: string;
   manualPlacements: {
     facebook: string[];
     instagram: string[];

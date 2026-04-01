@@ -32,6 +32,7 @@ type FormState = {
   adsetName: string;
   adName: string;
   campaignObjective: MetaCampaignObjective;
+  performanceGoalCode: string;
   goal: MetaAdGoalKey;
   message: string;
   ctaType: string;
@@ -49,6 +50,13 @@ type FormState = {
   customAudienceIdsText: string;
   excludedAudienceIdsText: string;
   savedAudienceId: string;
+  destinationUrl: string;
+  conversionLocation: string;
+  pixelId: string;
+  conversionEvent: string;
+  appId: string;
+  appStoreUrl: string;
+  appEventType: string;
   fbPositions: string[];
   igPositions: string[];
 };
@@ -62,6 +70,14 @@ type ResolvedPostSelection = {
   trackingRef?: MetaTrackingRef;
   postLabel?: string;
   preview?: MetaResolvedPostPreview;
+};
+
+type OfficialPerformanceGoalOption = {
+  value: string;
+  objective: MetaCampaignObjective;
+  goal: MetaAdGoalKey;
+  label: string;
+  desc: string;
 };
 
 const KPI_OPTIONS: Array<{ key: MetaAdGoalKey; label: string; platform: "facebook" | "instagram" }> = [
@@ -79,46 +95,61 @@ const KPI_OPTIONS: Array<{ key: MetaAdGoalKey; label: string; platform: "faceboo
 const GOAL_LABEL = new Map(KPI_OPTIONS.map((option) => [option.key, option.label]));
 const OBJECTIVE_LABEL = new Map(META_CAMPAIGN_OBJECTIVE_OPTIONS.map((option) => [option.value, option.label]));
 
-const OFFICIAL_PERFORMANCE_GOAL_OPTIONS: Array<{
-  objective: MetaCampaignObjective;
-  goal: MetaAdGoalKey;
-  label: string;
-  desc: string;
-}> = [
-  {
-    objective: "OUTCOME_AWARENESS",
-    goal: "fb_reach",
-    label: "盡可能提高廣告觸及人數",
-    desc: "盡可能向更多受眾顯示廣告。",
-  },
-  {
-    objective: "OUTCOME_AWARENESS",
-    goal: "fb_video_views",
-    label: "盡可能提高 ThruPlay 觀看次數",
-    desc: "向影片少於 15 秒就會觀看整部影片的受眾顯示您的影片廣告。或者，向可能觀看至少 15 秒的受眾顯示較長的影片廣告。",
-  },
-  {
-    objective: "OUTCOME_TRAFFIC",
-    goal: "ig_followers",
-    label: "提高 Instagram 個人檔案瀏覽次數",
-    desc: "向最有可能瀏覽您的 Instagram 個人檔案的受眾顯示您的廣告。",
-  },
-  {
-    objective: "OUTCOME_ENGAGEMENT",
-    goal: "fb_post_engagement",
-    label: "盡可能提升貼文互動率",
-    desc: "向最有可能喜歡、分享貼文或在貼文留言的用戶顯示廣告。",
-  },
-  {
-    objective: "OUTCOME_ENGAGEMENT",
-    goal: "fb_video_views",
-    label: "盡可能提高 ThruPlay 觀看次數",
-    desc: "向影片少於 15 秒就會觀看整部影片的受眾顯示您的影片廣告。或者，向可能觀看至少 15 秒的受眾顯示較長的影片廣告。",
-  },
+const OFFICIAL_PERFORMANCE_GOAL_OPTIONS: OfficialPerformanceGoalOption[] = [
+  { value: "AWARENESS_REACH", objective: "OUTCOME_AWARENESS", goal: "fb_reach", label: "盡可能提高廣告觸及人數", desc: "盡可能向更多受眾顯示廣告。" },
+  { value: "AWARENESS_IMPRESSIONS", objective: "OUTCOME_AWARENESS", goal: "fb_reach", label: "盡可能提高曝光次數", desc: "盡可能提高廣告向受眾顯示的次數。" },
+  { value: "AWARENESS_AD_RECALL", objective: "OUTCOME_AWARENESS", goal: "fb_reach", label: "盡可能提高廣告回想提升幅度", desc: "向可能會記得看過您廣告的受眾顯示廣告。" },
+  { value: "AWARENESS_THRUPLAY", objective: "OUTCOME_AWARENESS", goal: "fb_video_views", label: "盡可能提高 ThruPlay 觀看次數", desc: "向可能看完影片或至少看滿 15 秒的受眾顯示影片廣告。" },
+  { value: "AWARENESS_2S_CONTINUOUS_VIDEO_VIEWS", objective: "OUTCOME_AWARENESS", goal: "fb_video_views", label: "盡可能提高影片連續觀看 2 秒以上的次數", desc: "向可能連續觀看 2 秒以上的受眾顯示影片廣告。" },
+  { value: "TRAFFIC_LANDING_PAGE_VIEWS", objective: "OUTCOME_TRAFFIC", goal: "fb_post_engagement", label: "取得最多連結頁面瀏覽次數", desc: "向最有可能查看廣告中所連結網站的受眾顯示廣告。" },
+  { value: "TRAFFIC_LINK_CLICKS", objective: "OUTCOME_TRAFFIC", goal: "fb_post_engagement", label: "取得最多連結點擊次數", desc: "向最有可能點擊廣告的受眾顯示廣告。" },
+  { value: "TRAFFIC_DAILY_UNIQUE_REACH", objective: "OUTCOME_TRAFFIC", goal: "fb_reach", label: "盡可能增加單日不重複觸及人數", desc: "每天最多向受眾顯示一次廣告。" },
+  { value: "TRAFFIC_CONVERSATIONS", objective: "OUTCOME_TRAFFIC", goal: "fb_post_engagement", label: "盡可能增加對話數量", desc: "向最有可能透過訊息與您對話的受眾顯示廣告。" },
+  { value: "TRAFFIC_IMPRESSIONS", objective: "OUTCOME_TRAFFIC", goal: "fb_reach", label: "盡可能提高曝光次數", desc: "盡可能提高廣告向受眾顯示的次數。" },
+  { value: "TRAFFIC_INSTAGRAM_PROFILE_VISITS", objective: "OUTCOME_TRAFFIC", goal: "ig_followers", label: "提高 Instagram 個人檔案瀏覽次數", desc: "向最有可能瀏覽您的 Instagram 個人檔案的受眾顯示廣告。" },
+  { value: "TRAFFIC_CALLS", objective: "OUTCOME_TRAFFIC", goal: "fb_post_engagement", label: "盡可能增加通話次數", desc: "向最有可能向您致電的受眾顯示廣告。" },
+  { value: "ENGAGEMENT_CONVERSATIONS", objective: "OUTCOME_ENGAGEMENT", goal: "fb_post_engagement", label: "盡可能增加對話數量", desc: "向最有可能透過訊息與您對話的受眾顯示廣告。" },
+  { value: "ENGAGEMENT_LINK_CLICKS", objective: "OUTCOME_ENGAGEMENT", goal: "fb_post_engagement", label: "取得最多連結點擊次數", desc: "向最有可能點擊廣告的受眾顯示廣告。" },
+  { value: "ENGAGEMENT_IMPRESSIONS", objective: "OUTCOME_ENGAGEMENT", goal: "fb_reach", label: "盡可能提高曝光次數", desc: "盡可能提高廣告向受眾顯示的次數。" },
+  { value: "ENGAGEMENT_THRUPLAY", objective: "OUTCOME_ENGAGEMENT", goal: "fb_video_views", label: "盡可能提高 ThruPlay 觀看次數", desc: "向可能看完影片或至少看滿 15 秒的受眾顯示影片廣告。" },
+  { value: "ENGAGEMENT_2S_CONTINUOUS_VIDEO_VIEWS", objective: "OUTCOME_ENGAGEMENT", goal: "fb_video_views", label: "盡可能提高影片連續觀看 2 秒以上的次數", desc: "向可能連續觀看 2 秒以上的受眾顯示影片廣告。" },
+  { value: "ENGAGEMENT_POST_ENGAGEMENT", objective: "OUTCOME_ENGAGEMENT", goal: "fb_post_engagement", label: "盡可能提升貼文互動率", desc: "向最有可能喜歡、分享貼文或在貼文留言的用戶顯示廣告。" },
+  { value: "ENGAGEMENT_DAILY_UNIQUE_REACH", objective: "OUTCOME_ENGAGEMENT", goal: "fb_reach", label: "盡可能增加單日不重複觸及人數", desc: "每天最多向受眾顯示一次廣告。" },
+  { value: "ENGAGEMENT_EVENT_RESPONSES", objective: "OUTCOME_ENGAGEMENT", goal: "fb_post_engagement", label: "盡可能增加活動回覆數量", desc: "向最有可能回應活動的受眾顯示廣告。" },
+  { value: "ENGAGEMENT_CONVERSIONS", objective: "OUTCOME_ENGAGEMENT", goal: "fb_post_engagement", label: "取得最多轉換次數", desc: "向最有可能在您的網站上採取特定動作的受眾顯示廣告。" },
+  { value: "ENGAGEMENT_LANDING_PAGE_VIEWS", objective: "OUTCOME_ENGAGEMENT", goal: "fb_post_engagement", label: "取得最多連結頁面瀏覽次數", desc: "向最有可能查看廣告中所連結網站的受眾顯示廣告。" },
+  { value: "ENGAGEMENT_APP_EVENTS", objective: "OUTCOME_ENGAGEMENT", goal: "fb_post_engagement", label: "取得最多應用程式事件", desc: "向最有可能在您的應用程式中採取特定動作至少一次的受眾顯示廣告。" },
+  { value: "ENGAGEMENT_REMINDERS", objective: "OUTCOME_ENGAGEMENT", goal: "fb_post_engagement", label: "增加提醒設定數量", desc: "向最有可能針對您的近期活動設定提醒的受眾顯示廣告。" },
+  { value: "ENGAGEMENT_CALLS", objective: "OUTCOME_ENGAGEMENT", goal: "fb_post_engagement", label: "盡可能增加通話次數", desc: "向最有可能向您致電的受眾顯示廣告。" },
+  { value: "ENGAGEMENT_PAGE_LIKES", objective: "OUTCOME_ENGAGEMENT", goal: "fb_post_likes", label: "盡可能增加粉絲專頁按讚數", desc: "以最低成本向最有可能對您的粉絲專頁按讚的受眾顯示廣告。" },
+  { value: "LEADS_CONVERSIONS", objective: "OUTCOME_LEADS", goal: "fb_post_engagement", label: "取得最多轉換次數", desc: "向最有可能在您的網站上採取特定動作的受眾顯示廣告。" },
+  { value: "LEADS_LANDING_PAGE_VIEWS", objective: "OUTCOME_LEADS", goal: "fb_post_engagement", label: "取得最多連結頁面瀏覽次數", desc: "向最有可能查看廣告中所連結網站的受眾顯示廣告。" },
+  { value: "LEADS_LINK_CLICKS", objective: "OUTCOME_LEADS", goal: "fb_post_engagement", label: "取得最多連結點擊次數", desc: "向最有可能點擊廣告的受眾顯示廣告。" },
+  { value: "LEADS_DAILY_UNIQUE_REACH", objective: "OUTCOME_LEADS", goal: "fb_reach", label: "盡可能增加單日不重複觸及人數", desc: "每天最多向受眾顯示一次廣告。" },
+  { value: "LEADS_IMPRESSIONS", objective: "OUTCOME_LEADS", goal: "fb_reach", label: "盡可能提高曝光次數", desc: "盡可能提高廣告向受眾顯示的次數。" },
+  { value: "LEADS_MAXIMIZE_LEADS", objective: "OUTCOME_LEADS", goal: "fb_post_engagement", label: "盡可能提高潛在顧客人數", desc: "向最有可能與您分享聯絡資料的受眾顯示廣告。" },
+  { value: "LEADS_QUALIFIED_LEADS", objective: "OUTCOME_LEADS", goal: "fb_post_engagement", label: "增加採取轉換動作的潛在顧客人數", desc: "向在與您分享聯絡資料後最有可能轉換的受眾顯示廣告。" },
+  { value: "LEADS_MESSAGE_LEADS", objective: "OUTCOME_LEADS", goal: "fb_post_engagement", label: "盡可能增加透過訊息成為潛在顧客的人數", desc: "向最有可能透過訊息成為潛在顧客的受眾顯示廣告。" },
+  { value: "LEADS_CALLS", objective: "OUTCOME_LEADS", goal: "fb_post_engagement", label: "盡可能增加通話次數", desc: "向最有可能向您致電的受眾顯示廣告。" },
+  { value: "LEADS_APP_EVENTS", objective: "OUTCOME_LEADS", goal: "fb_post_engagement", label: "取得最多應用程式事件", desc: "向最有可能在您的應用程式中採取特定動作至少一次的受眾顯示廣告。" },
+  { value: "APP_APP_EVENTS", objective: "OUTCOME_APP_PROMOTION", goal: "fb_post_engagement", label: "取得最多應用程式事件", desc: "向最有可能在您的應用程式中採取特定動作至少一次的受眾顯示廣告。" },
+  { value: "APP_INSTALLS", objective: "OUTCOME_APP_PROMOTION", goal: "fb_post_engagement", label: "盡可能增加應用程式安裝次數", desc: "向最有可能安裝應用程式的受眾顯示廣告。" },
+  { value: "APP_VALUE", objective: "OUTCOME_APP_PROMOTION", goal: "fb_post_engagement", label: "獲得最高轉換價值", desc: "向最有可能透過特定動作產生較高價值的用戶顯示廣告。" },
+  { value: "APP_LINK_CLICKS", objective: "OUTCOME_APP_PROMOTION", goal: "fb_post_engagement", label: "取得最多連結點擊次數", desc: "向最有可能點擊廣告的受眾顯示廣告。" },
+  { value: "SALES_CONVERSIONS", objective: "OUTCOME_SALES", goal: "fb_post_engagement", label: "取得最多轉換次數", desc: "向最有可能在您的網站上採取特定動作的受眾顯示廣告。" },
+  { value: "SALES_VALUE", objective: "OUTCOME_SALES", goal: "fb_post_engagement", label: "獲得最高轉換價值", desc: "向最有可能進行較高額消費的受眾顯示廣告。" },
+  { value: "SALES_LANDING_PAGE_VIEWS", objective: "OUTCOME_SALES", goal: "fb_post_engagement", label: "取得最多連結頁面瀏覽次數", desc: "向最有可能查看廣告中所連結網站的受眾顯示廣告。" },
+  { value: "SALES_LINK_CLICKS", objective: "OUTCOME_SALES", goal: "fb_post_engagement", label: "盡可能提高連結點擊次數", desc: "向最有可能點擊廣告的受眾顯示廣告。" },
+  { value: "SALES_MESSAGE_PURCHASES", objective: "OUTCOME_SALES", goal: "fb_post_engagement", label: "盡可能增加透過訊息購買次數", desc: "向最有可能透過訊息購買的用戶顯示廣告。" },
+  { value: "SALES_DAILY_UNIQUE_REACH", objective: "OUTCOME_SALES", goal: "fb_reach", label: "盡可能增加單日不重複觸及人數", desc: "每天最多向受眾顯示一次廣告。" },
+  { value: "SALES_IMPRESSIONS", objective: "OUTCOME_SALES", goal: "fb_reach", label: "盡可能提高曝光次數", desc: "盡可能提高廣告向受眾顯示的次數。" },
+  { value: "SALES_CONVERSATIONS", objective: "OUTCOME_SALES", goal: "fb_post_engagement", label: "盡可能增加對話數量", desc: "向最有可能透過訊息與您對話的受眾顯示廣告。" },
+  { value: "SALES_CALLS", objective: "OUTCOME_SALES", goal: "fb_post_engagement", label: "盡可能增加通話次數", desc: "向最有可能向您致電的受眾顯示廣告。" },
+  { value: "SALES_APP_EVENTS", objective: "OUTCOME_SALES", goal: "fb_post_engagement", label: "取得最多應用程式事件", desc: "向最有可能在您的應用程式中採取特定動作至少一次的受眾顯示廣告。" },
 ];
 
 const OFFICIAL_PERFORMANCE_GOAL_LABEL = new Map(
-  OFFICIAL_PERFORMANCE_GOAL_OPTIONS.map((option) => [option.goal, option.label]),
+  OFFICIAL_PERFORMANCE_GOAL_OPTIONS.map((option) => [option.value, option.label]),
 );
 
 const PRIMARY_METRIC_LABEL: Record<MetaKpiMetricKey, string> = {
@@ -216,7 +247,6 @@ function applyGoalPreset(prev: FormState, goal: MetaAdGoalKey): FormState {
   return {
     ...prev,
     goal,
-    campaignObjective: getGoalObjective(goal),
     ctaType: preset.ctaType,
     dailyBudget: preset.dailyBudget,
     fbPositions: preset.fbPositions,
@@ -224,9 +254,38 @@ function applyGoalPreset(prev: FormState, goal: MetaAdGoalKey): FormState {
   };
 }
 
+function getDefaultPerformanceGoalCode(objective: MetaCampaignObjective, fallbackGoal?: MetaAdGoalKey): string {
+  const matchByGoal = fallbackGoal
+    ? OFFICIAL_PERFORMANCE_GOAL_OPTIONS.find((option) => option.objective === objective && option.goal === fallbackGoal)
+    : null;
+  return matchByGoal?.value ?? OFFICIAL_PERFORMANCE_GOAL_OPTIONS.find((option) => option.objective === objective)?.value ?? "";
+}
+
+function applyPerformanceGoal(prev: FormState, performanceGoalCode: string): FormState {
+  const option = OFFICIAL_PERFORMANCE_GOAL_OPTIONS.find((item) => item.value === performanceGoalCode);
+  if (!option) {
+    return { ...prev, performanceGoalCode };
+  }
+  const next = applyGoalPreset(prev, option.goal);
+  return {
+    ...next,
+    campaignObjective: option.objective,
+    performanceGoalCode: option.value,
+    conversionLocation: getRecommendedConversionLocation(option.objective, option.value),
+  };
+}
+
 function applyIndustryPreset(prev: FormState, industry: MetaIndustryPreset): FormState {
-  const nextGoal = industry.recommendedGoals.includes(prev.goal) ? prev.goal : industry.recommendedGoals[0] ?? prev.goal;
-  const next = applyGoalPreset(prev, nextGoal);
+  const fallbackOption =
+    OFFICIAL_PERFORMANCE_GOAL_OPTIONS.find(
+      (option) => option.objective === prev.campaignObjective && industry.recommendedGoals.includes(option.goal),
+    ) ??
+    OFFICIAL_PERFORMANCE_GOAL_OPTIONS.find((option) => industry.recommendedGoals.includes(option.goal));
+  const next = applyPerformanceGoal(
+    prev,
+    fallbackOption?.value ??
+      getDefaultPerformanceGoalCode(prev.campaignObjective, industry.recommendedGoals[0] ?? prev.goal),
+  );
   return {
     ...next,
     industryKey: industry.key,
@@ -255,6 +314,7 @@ function defaultState(): FormState {
     adsetName: "新廣告組合",
     adName: "新廣告",
     campaignObjective: "OUTCOME_ENGAGEMENT",
+    performanceGoalCode: "ENGAGEMENT_POST_ENGAGEMENT",
     goal: "fb_post_engagement",
     message: "",
     ctaType: "LEARN_MORE",
@@ -272,10 +332,17 @@ function defaultState(): FormState {
     customAudienceIdsText: "",
     excludedAudienceIdsText: "",
     savedAudienceId: "",
+    destinationUrl: "",
+    conversionLocation: "website",
+    pixelId: "",
+    conversionEvent: "",
+    appId: "",
+    appStoreUrl: "",
+    appEventType: "",
     fbPositions: [],
     igPositions: [],
   };
-  const next = applyGoalPreset(seed, seed.goal);
+  const next = applyPerformanceGoal(seed, seed.performanceGoalCode);
   const defaultIndustry = presetCfg.industries.find((industry) => industry.enabled);
   return defaultIndustry ? applyIndustryPreset(next, defaultIndustry) : next;
 }
@@ -287,6 +354,10 @@ function fromGenderCodes(genders: number[]): FormState["gender"] {
 }
 
 function formStateFromOrder(row: MetaOrder): FormState {
+  const performanceGoalCode =
+    row.performanceGoalCode ??
+    getDefaultPerformanceGoalCode(row.campaignObjective ?? getGoalObjective(row.goal), row.goal);
+
   return {
     industryKey: row.industryKey ?? "",
     title: row.title ?? "",
@@ -294,6 +365,7 @@ function formStateFromOrder(row: MetaOrder): FormState {
     adsetName: row.adsetName ?? "",
     adName: row.adName ?? "",
     campaignObjective: row.campaignObjective ?? getGoalObjective(row.goal),
+    performanceGoalCode,
     goal: row.goal,
     message: row.message ?? "",
     ctaType: row.ctaType ?? "LEARN_MORE",
@@ -311,6 +383,13 @@ function formStateFromOrder(row: MetaOrder): FormState {
     customAudienceIdsText: (row.customAudienceIds ?? []).join("\n"),
     excludedAudienceIdsText: (row.excludedAudienceIds ?? []).join("\n"),
     savedAudienceId: row.savedAudienceId ?? "",
+    destinationUrl: row.destinationUrl ?? "",
+    conversionLocation: row.conversionLocation ?? "website",
+    pixelId: row.pixelId ?? "",
+    conversionEvent: row.conversionEvent ?? "",
+    appId: row.appId ?? "",
+    appStoreUrl: row.appStoreUrl ?? "",
+    appEventType: row.appEventType ?? "",
     fbPositions: row.manualPlacements?.facebook ?? [],
     igPositions: row.manualPlacements?.instagram ?? [],
   };
@@ -372,12 +451,41 @@ function getObjectiveLabel(objective: MetaCampaignObjective): string {
   return OBJECTIVE_LABEL.get(objective) ?? objective;
 }
 
-function getOfficialPerformanceGoalLabel(goal: MetaAdGoalKey): string {
-  return OFFICIAL_PERFORMANCE_GOAL_LABEL.get(goal) ?? getGoalLabel(goal);
+function getOfficialPerformanceGoalLabel(performanceGoalCode: string, fallbackGoal?: MetaAdGoalKey): string {
+  return OFFICIAL_PERFORMANCE_GOAL_LABEL.get(performanceGoalCode) ?? (fallbackGoal ? getGoalLabel(fallbackGoal) : performanceGoalCode);
 }
 
 function getPrimaryMetricLabel(goal: MetaAdGoalKey): string {
   return PRIMARY_METRIC_LABEL[getGoalPrimaryMetricKey(goal)] ?? "目標數值";
+}
+
+function needsDestinationUrl(objective: MetaCampaignObjective, performanceGoalCode: string): boolean {
+  if (objective === "OUTCOME_APP_PROMOTION") return false;
+  if (objective === "OUTCOME_AWARENESS") return false;
+  if (performanceGoalCode.includes("CALLS")) return false;
+  if (performanceGoalCode.includes("CONVERSATIONS") || performanceGoalCode.includes("MESSAGE")) return false;
+  return true;
+}
+
+function needsPixelSetup(objective: MetaCampaignObjective, performanceGoalCode: string): boolean {
+  if (!(objective === "OUTCOME_LEADS" || objective === "OUTCOME_SALES")) return false;
+  return (
+    performanceGoalCode.includes("CONVERSIONS") ||
+    performanceGoalCode.includes("VALUE") ||
+    performanceGoalCode.includes("QUALIFIED_LEADS")
+  );
+}
+
+function needsAppSetup(objective: MetaCampaignObjective): boolean {
+  return objective === "OUTCOME_APP_PROMOTION";
+}
+
+function getRecommendedConversionLocation(objective: MetaCampaignObjective, performanceGoalCode: string): string {
+  if (objective === "OUTCOME_APP_PROMOTION") return "app";
+  if (performanceGoalCode.includes("INSTAGRAM_PROFILE")) return "instagram_profile";
+  if (performanceGoalCode.includes("CALLS")) return "on_ad";
+  if (performanceGoalCode.includes("CONVERSATIONS") || performanceGoalCode.includes("MESSAGE")) return "messenger";
+  return "website";
 }
 
 function validate(s: FormState, effectiveConfig: { adAccountId: string; pageId: string; instagramActorId: string }): Errors {
@@ -387,6 +495,7 @@ function validate(s: FormState, effectiveConfig: { adAccountId: string; pageId: 
   if (!s.campaignName.trim()) errors.campaignName = "請填寫行銷活動名稱。";
   if (!s.adsetName.trim()) errors.adsetName = "請填寫廣告組合名稱。";
   if (!s.adName.trim()) errors.adName = "請填寫廣告名稱。";
+  if (!s.performanceGoalCode.trim()) errors.performanceGoalCode = "請選擇 KPI 類型。";
   if (!s.existingPostSource.trim()) errors.existingPostSource = "請貼上貼文連結。";
   else if (!isValidUrl(s.existingPostSource.trim())) errors.existingPostSource = "貼文連結格式不正確。";
 
@@ -408,9 +517,27 @@ function validate(s: FormState, effectiveConfig: { adAccountId: string; pageId: 
   if (!Number.isFinite(ageMin) || ageMin < 13) errors.ageMin = "最小年齡需為 13 以上。";
   if (!Number.isFinite(ageMax) || ageMax < ageMin) errors.ageMax = "最大年齡需大於或等於最小年齡。";
 
-  if (s.fbPositions.length + s.igPositions.length === 0) errors.fbPositions = "請至少勾選 1 個版位。";
-  if (s.goal.startsWith("fb_") && !effectiveConfig.pageId.trim()) errors.industryKey = "目前未設定 Facebook 粉專資訊，請通知管理員。";
+  if (s.fbPositions.length + s.igPositions.length === 0) errors.fbPositions = "請至少選擇 1 個版位。";
+  if (s.goal.startsWith("fb_") && !effectiveConfig.pageId.trim()) errors.industryKey = "目前未設定 Facebook 粉絲專頁，請通知管理員。";
   if (s.goal.startsWith("ig_") && !effectiveConfig.instagramActorId.trim()) errors.industryKey = "目前未設定 Instagram Actor，請通知管理員。";
+
+  if (needsDestinationUrl(s.campaignObjective, s.performanceGoalCode)) {
+    if (!s.destinationUrl.trim()) errors.destinationUrl = "此投放目標需要網站或導流網址。";
+    else if (!isValidUrl(s.destinationUrl.trim())) errors.destinationUrl = "導流網址格式不正確。";
+  }
+
+  if (needsPixelSetup(s.campaignObjective, s.performanceGoalCode)) {
+    if (!s.pixelId.trim()) errors.pixelId = "此成效目標需要 Pixel ID。";
+    if (!s.conversionEvent.trim()) errors.conversionEvent = "此成效目標需要轉換事件。";
+  }
+
+  if (needsAppSetup(s.campaignObjective)) {
+    if (!s.appId.trim()) errors.appId = "應用程式推廣需要 App ID。";
+    if (!s.appStoreUrl.trim()) errors.appStoreUrl = "應用程式推廣需要商店連結。";
+    else if (!isValidUrl(s.appStoreUrl.trim())) errors.appStoreUrl = "商店連結格式不正確。";
+    if (!s.appEventType.trim()) errors.appEventType = "請選擇 App 成效事件。";
+  }
+
   return errors;
 }
 
@@ -464,8 +591,8 @@ export function MetaAdsOrdersPage() {
     [savedAudiences, state.savedAudienceId],
   );
   const selectedPerformanceGoal = useMemo(
-    () => availableGoalOptions.find((option) => option.goal === state.goal) ?? null,
-    [availableGoalOptions, state.goal],
+    () => availableGoalOptions.find((option) => option.value === state.performanceGoalCode) ?? null,
+    [availableGoalOptions, state.performanceGoalCode],
   );
   
   const postValidated = !!resolvedPost?.trackingPostId;
@@ -500,13 +627,13 @@ export function MetaAdsOrdersPage() {
 
   useEffect(() => {
     if (availableGoalOptions.length === 0) return;
-    if (!availableGoalOptions.some((item) => item.goal === state.goal)) {
-      const fallback = availableGoalOptions[0]?.goal;
+    if (!availableGoalOptions.some((item) => item.value === state.performanceGoalCode)) {
+      const fallback = availableGoalOptions[0]?.value;
       if (fallback) {
-        setState((current) => applyGoalPreset(current, fallback));
+        setState((current) => applyPerformanceGoal(current, fallback));
       }
     }
-  }, [availableGoalOptions, state.goal]);
+  }, [availableGoalOptions, state.performanceGoalCode]);
 
   const countries = useMemo(
     () => state.countriesCsv.split(/[,\s]+/g).map((item) => item.trim().toUpperCase()).filter(Boolean),
@@ -525,8 +652,11 @@ export function MetaAdsOrdersPage() {
       adsetName: state.adsetName.trim(),
       adName: state.adName.trim(),
       campaignObjective: state.campaignObjective,
+      performanceGoalCode: state.performanceGoalCode,
+      performanceGoalLabel: selectedPerformanceGoal?.label,
       goal: state.goal,
       landingUrl: state.existingPostSource.trim(),
+      destinationUrl: state.destinationUrl.trim() || undefined,
       message: state.message.trim(),
       ctaType: state.ctaType.trim() || "LEARN_MORE",
       useExistingPost: true,
@@ -550,6 +680,12 @@ export function MetaAdsOrdersPage() {
       savedAudienceName: selectedSavedAudience?.name,
       savedAudienceDescription: selectedSavedAudience?.description,
       savedAudienceTargeting: selectedSavedAudience?.targeting,
+      conversionLocation: state.conversionLocation.trim() || undefined,
+      pixelId: state.pixelId.trim() || undefined,
+      conversionEvent: state.conversionEvent.trim() || undefined,
+      appId: state.appId.trim() || undefined,
+      appStoreUrl: state.appStoreUrl.trim() || undefined,
+      appEventType: state.appEventType.trim() || undefined,
       manualPlacements: {
         facebook: state.fbPositions,
         instagram: state.igPositions,
@@ -557,7 +693,7 @@ export function MetaAdsOrdersPage() {
       detailedTargetingText: state.detailedTargetingText.trim() || undefined,
       mode: "live",
     }),
-    [applicant, countries, resolvedPost, selectedAccount?.id, selectedAccount?.label, selectedIndustry?.key, selectedIndustry?.label, selectedSavedAudience, state, targetMetricKey],
+    [applicant, countries, resolvedPost, selectedAccount?.id, selectedAccount?.label, selectedIndustry?.key, selectedIndustry?.label, selectedPerformanceGoal?.label, selectedSavedAudience, state, targetMetricKey],
   );
 
   const payloads = useMemo(() => buildMetaPayloads(effectiveCfg, previewInput), [effectiveCfg, previewInput]);
@@ -663,7 +799,7 @@ export function MetaAdsOrdersPage() {
   const goConfirm = async () => {
     const nextErrors = validate(state, effectiveCfg);
     if (!selectedPerformanceGoal) {
-      nextErrors.goal = "這個官方投放目標目前尚未完成對應的成效目標與送單設定。";
+      nextErrors.performanceGoalCode = "這個官方投放目標目前尚未接上對應的成效目標送單設定。";
     }
     setErrors(nextErrors);
     setSubmitMsg(null);
@@ -698,7 +834,7 @@ export function MetaAdsOrdersPage() {
     setSubmitMsg(null);
     try {
       const result = await submitMetaOrderToGraph({ cfg: effectiveCfg, input: previewInput, payloads });
-      const status = result.status === "submitted" ? "running" : "failed";
+      const status: MetaOrder["status"] = result.status === "submitted" ? "running" : "failed";
       const nextRow = {
         ...previewInput,
         targetCurrentValue: undefined,
@@ -800,10 +936,10 @@ export function MetaAdsOrdersPage() {
                     value={state.campaignObjective}
                     onChange={(e) => {
                       const nextObjective = e.target.value as MetaCampaignObjective;
-                      const nextGoal = OFFICIAL_PERFORMANCE_GOAL_OPTIONS.find((option) => option.objective === nextObjective)?.goal;
+                      const nextPerformanceGoalCode = getDefaultPerformanceGoalCode(nextObjective, state.goal);
                       setState((current) => {
                         const base = { ...current, campaignObjective: nextObjective };
-                        return nextGoal ? applyGoalPreset(base, nextGoal) : base;
+                        return nextPerformanceGoalCode ? applyPerformanceGoal(base, nextPerformanceGoalCode) : base;
                       });
                     }}
                   >
@@ -815,17 +951,75 @@ export function MetaAdsOrdersPage() {
                 </div>
                 <div className="field">
                   <div className="label">KPI 類型<span className="req">*</span></div>
-                  <select value={state.goal} onChange={(e) => setState((current) => applyGoalPreset(current, e.target.value as MetaAdGoalKey))}>
+                  <select value={state.performanceGoalCode} onChange={(e) => setState((current) => applyPerformanceGoal(current, e.target.value))}>
                     {availableGoalOptions.length === 0 ? <option value="">目前尚未接上</option> : null}
-                    {availableGoalOptions.map((option) => <option key={option.goal} value={option.goal}>{option.label}</option>)}
+                    {availableGoalOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                   </select>
                   <div className="hint">
                     {selectedPerformanceGoal?.desc || "這個官方投放目標目前尚未接上對應的送單欄位與 KPI 流程。"}
                   </div>
-                  {errors.goal ? <div className="error">{errors.goal}</div> : null}
+                  {errors.performanceGoalCode ? <div className="error">{errors.performanceGoalCode}</div> : null}
                 </div>
+                {state.campaignObjective !== "OUTCOME_AWARENESS" ? (
+                  <div className="field">
+                    <div className="label">轉換位置</div>
+                    <select value={state.conversionLocation} onChange={(e) => setState((current) => ({ ...current, conversionLocation: e.target.value }))}>
+                      <option value="website">網站</option>
+                      <option value="messenger">Messenger</option>
+                      <option value="instagram_profile">Instagram 個人檔案</option>
+                      <option value="on_ad">Meta 內表單 / 直接互動</option>
+                      {state.campaignObjective === "OUTCOME_APP_PROMOTION" ? <option value="app">應用程式</option> : null}
+                    </select>
+                    <div className="hint">系統會依照官方目標自動帶入建議位置，你也可以再調整。</div>
+                  </div>
+                ) : null}
                 <div className="field"><div className="label">日預算 TWD<span className="req">*</span></div><input value={state.dailyBudget} inputMode="numeric" onChange={(e) => setState((current) => ({ ...current, dailyBudget: e.target.value }))} />{errors.dailyBudget ? <div className="error">{errors.dailyBudget}</div> : null}</div>
                 <div className="field"><div className="label">目標 {targetMetricLabel}</div><input value={state.targetValue} inputMode="numeric" onChange={(e) => setState((current) => ({ ...current, targetValue: e.target.value }))} placeholder="例如：300000" /><div className="hint">若填入目標值，成效頁會依據數據檢查是否已達標並自動停投。</div>{errors.targetValue ? <div className="error">{errors.targetValue}</div> : null}</div>
+                {needsDestinationUrl(state.campaignObjective, state.performanceGoalCode) ? (
+                  <div className="field" style={{ gridColumn: "1 / -1" }}>
+                    <div className="label">導流網址<span className="req">*</span></div>
+                    <input
+                      value={state.destinationUrl}
+                      onChange={(e) => setState((current) => ({ ...current, destinationUrl: e.target.value }))}
+                      placeholder="https://..."
+                    />
+                    <div className="hint">這個官方目標會使用網站或導流頁作為最佳化目的地。</div>
+                    {errors.destinationUrl ? <div className="error">{errors.destinationUrl}</div> : null}
+                  </div>
+                ) : null}
+                {needsPixelSetup(state.campaignObjective, state.performanceGoalCode) ? (
+                  <>
+                    <div className="field">
+                      <div className="label">Pixel ID<span className="req">*</span></div>
+                      <input value={state.pixelId} onChange={(e) => setState((current) => ({ ...current, pixelId: e.target.value }))} placeholder="例如：123456789012345" />
+                      {errors.pixelId ? <div className="error">{errors.pixelId}</div> : null}
+                    </div>
+                    <div className="field">
+                      <div className="label">轉換事件<span className="req">*</span></div>
+                      <input value={state.conversionEvent} onChange={(e) => setState((current) => ({ ...current, conversionEvent: e.target.value }))} placeholder="例如：PURCHASE / LEAD / COMPLETE_REGISTRATION" />
+                      {errors.conversionEvent ? <div className="error">{errors.conversionEvent}</div> : null}
+                    </div>
+                  </>
+                ) : null}
+                {needsAppSetup(state.campaignObjective) ? (
+                  <>
+                    <div className="field">
+                      <div className="label">App ID<span className="req">*</span></div>
+                      <input value={state.appId} onChange={(e) => setState((current) => ({ ...current, appId: e.target.value }))} placeholder="例如：1234567890" />
+                      {errors.appId ? <div className="error">{errors.appId}</div> : null}
+                    </div>
+                    <div className="field">
+                      <div className="label">App 成效事件<span className="req">*</span></div>
+                      <input value={state.appEventType} onChange={(e) => setState((current) => ({ ...current, appEventType: e.target.value }))} placeholder="例如：MOBILE_APP_INSTALL / PURCHASE" />
+                      {errors.appEventType ? <div className="error">{errors.appEventType}</div> : null}
+                    </div>
+                    <div className="field" style={{ gridColumn: "1 / -1" }}>
+                      <div className="label">商店連結<span className="req">*</span></div>
+                      <input value={state.appStoreUrl} onChange={(e) => setState((current) => ({ ...current, appStoreUrl: e.target.value }))} placeholder="https://apps.apple.com/... 或 https://play.google.com/..." />
+                      {errors.appStoreUrl ? <div className="error">{errors.appStoreUrl}</div> : null}
+                    </div>
+                  </>
+                ) : null}
                 <div className="field"><div className="label">開始時間<span className="req">*</span></div><input type="datetime-local" value={state.startTime} onChange={(e) => setState((current) => ({ ...current, startTime: e.target.value }))} />{errors.startTime ? <div className="error">{errors.startTime}</div> : null}</div>
                 <div className="field"><div className="label">結束時間</div><input type="datetime-local" value={state.endTime} onChange={(e) => setState((current) => ({ ...current, endTime: e.target.value }))} />{errors.endTime ? <div className="error">{errors.endTime}</div> : null}</div>
               </div>
@@ -836,7 +1030,7 @@ export function MetaAdsOrdersPage() {
                   <div className="meta-preview-card">
                     <div className="meta-preview-grid">
                       <div><div className="label">模板說明</div><div className="hint">{selectedIndustry.description || "此模板會帶入受眾與版位建議。"}</div></div>
-                      <div><div className="label">官方目標</div><div className="hint">{getObjectiveLabel(state.campaignObjective)} / {getOfficialPerformanceGoalLabel(state.goal)}</div></div>
+                      <div><div className="label">官方目標</div><div className="hint">{getObjectiveLabel(state.campaignObjective)} / {getOfficialPerformanceGoalLabel(state.performanceGoalCode, state.goal)}</div></div>
                       <div><div className="label">年齡 / 性別</div><div className="hint">{state.ageMin} - {state.ageMax} / {state.gender === "all" ? "不限" : state.gender === "male" ? "男性" : "女性"}</div></div>
                       <div><div className="label">興趣受眾</div><div className="hint">{audienceLabels.length > 0 ? audienceLabels.join("、") : "依模板自動帶入，無需手動輸入 ID。"}</div></div>
                       <div><div className="label">自訂受眾</div><div className="hint">{customAudienceSummary}</div></div>
@@ -949,7 +1143,7 @@ export function MetaAdsOrdersPage() {
                 <div className="field"><div className="label">產業模板</div><input value={selectedIndustry?.label || "未套用"} readOnly /></div>
                 <div className="field"><div className="label">任務名稱</div><input value={previewInput.title || "-"} readOnly /></div>
                 <div className="field"><div className="label">Meta 官方投放目標</div><input value={getObjectiveLabel(state.campaignObjective)} readOnly /></div>
-                <div className="field"><div className="label">KPI 類型</div><input value={getOfficialPerformanceGoalLabel(state.goal)} readOnly /></div>
+                <div className="field"><div className="label">KPI 類型</div><input value={getOfficialPerformanceGoalLabel(state.performanceGoalCode, state.goal)} readOnly /></div>
                 <div className="field"><div className="label">行銷活動名稱</div><input value={previewInput.campaignName || "-"} readOnly /></div>
                 <div className="field"><div className="label">廣告組合名稱</div><input value={previewInput.adsetName || "-"} readOnly /></div>
                 <div className="field"><div className="label">廣告名稱</div><input value={previewInput.adName || "-"} readOnly /></div>
@@ -957,6 +1151,11 @@ export function MetaAdsOrdersPage() {
                 <div className="field"><div className="label">開始時間</div><input value={formatDateTime(state.startTime)} readOnly /></div>
                 <div className="field"><div className="label">結束時間</div><input value={state.endTime ? formatDateTime(state.endTime) : "不設定"} readOnly /></div>
                 <div className="field"><div className="label">目標 {targetMetricLabel}</div><input value={previewInput.targetValue == null ? "-" : previewInput.targetValue.toLocaleString("zh-TW")} readOnly /></div>
+                {previewInput.destinationUrl ? <div className="field"><div className="label">導流網址</div><input value={previewInput.destinationUrl} readOnly /></div> : null}
+                {previewInput.pixelId ? <div className="field"><div className="label">Pixel ID</div><input value={previewInput.pixelId} readOnly /></div> : null}
+                {previewInput.conversionEvent ? <div className="field"><div className="label">轉換事件</div><input value={previewInput.conversionEvent} readOnly /></div> : null}
+                {previewInput.appId ? <div className="field"><div className="label">App ID</div><input value={previewInput.appId} readOnly /></div> : null}
+                {previewInput.appStoreUrl ? <div className="field"><div className="label">商店連結</div><input value={previewInput.appStoreUrl} readOnly /></div> : null}
                 <div className="field"><div className="label">版位</div><input value={`Facebook：${fbPlacementLabels.join("、") || "未設定"} / Instagram：${igPlacementLabels.join("、") || "未設定"}`} readOnly /></div>
                 <div className="field"><div className="label">儲備廣告受眾</div><input value={selectedSavedAudience?.name || "不使用"} readOnly /></div>
               </div>

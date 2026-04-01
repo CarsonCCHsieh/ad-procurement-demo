@@ -68,6 +68,13 @@ function parseIdList(raw: string[] | undefined): Array<{ id: string }> {
   return out;
 }
 
+function normalizeDestinationType(raw?: string): string | undefined {
+  const value = String(raw ?? "").trim().toUpperCase();
+  if (!value) return undefined;
+  if (["WEBSITE", "APP", "MESSENGER", "ON_AD", "INSTAGRAM_PROFILE"].includes(value)) return value;
+  return undefined;
+}
+
 export function buildMetaPayloads(cfg: MetaConfigV1, input: MetaOrderInput): {
   campaign: Record<string, unknown>;
   adset: Record<string, unknown>;
@@ -113,6 +120,11 @@ export function buildMetaPayloads(cfg: MetaConfigV1, input: MetaOrderInput): {
   const promotedObject: Record<string, unknown> = {};
   if (cfg.pageId) promotedObject.page_id = cfg.pageId;
   if (cfg.instagramActorId) promotedObject.instagram_actor_id = cfg.instagramActorId;
+  if (input.pixelId) promotedObject.pixel_id = input.pixelId;
+  if (input.conversionEvent) promotedObject.custom_event_type = input.conversionEvent;
+  if (input.appId) promotedObject.application_id = input.appId;
+  if (input.appStoreUrl) promotedObject.object_store_url = input.appStoreUrl;
+  if (input.appEventType && !input.conversionEvent) promotedObject.custom_event_type = input.appEventType;
 
   const campaign: Record<string, unknown> = {
     name: input.campaignName || `${input.title}_campaign`,
@@ -134,7 +146,10 @@ export function buildMetaPayloads(cfg: MetaConfigV1, input: MetaOrderInput): {
     status: "PAUSED",
     targeting,
   };
-  if (goal.optimizationGoal === "POST_ENGAGEMENT") {
+  const destinationType = normalizeDestinationType(input.conversionLocation);
+  if (destinationType) {
+    adset.destination_type = destinationType;
+  } else if (goal.optimizationGoal === "POST_ENGAGEMENT") {
     adset.destination_type = "ON_AD";
   }
   if (input.endTime) adset.end_time = input.endTime;
@@ -151,12 +166,13 @@ export function buildMetaPayloads(cfg: MetaConfigV1, input: MetaOrderInput): {
       creative.object_story_id = toObjectStoryId(cfg.pageId, input.existingPostId);
     }
   } else {
+    const resolvedLink = input.destinationUrl || input.landingUrl;
     const linkData: Record<string, unknown> = {
       message: input.message,
-      link: input.landingUrl,
+      link: resolvedLink,
       call_to_action: {
         type: input.ctaType || "LEARN_MORE",
-        value: { link: input.landingUrl },
+        value: { link: resolvedLink },
       },
     };
     const objectStorySpec: Record<string, unknown> = {
