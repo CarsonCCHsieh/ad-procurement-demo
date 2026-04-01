@@ -371,6 +371,7 @@ export function MetaAdsOrdersPage() {
   const selectedAccountSummary = selectedAccount ? `${selectedAccount.label} / act_${selectedAccount.adAccountId}` : effectiveCfg.adAccountId ? `act_${effectiveCfg.adAccountId}` : "尚未設定";
   const audienceLabels = useMemo(() => summarizeAudience(state.detailedTargetingText), [state.detailedTargetingText]);
   const customAudienceSummary = useMemo(() => summarizeIds(state.customAudienceIdsText), [state.customAudienceIdsText]);
+  const excludedAudienceSummary = useMemo(() => summarizeIds(state.excludedAudienceIdsText), [state.excludedAudienceIdsText]);
   
   const postValidated = !!resolvedPost?.trackingPostId;
 
