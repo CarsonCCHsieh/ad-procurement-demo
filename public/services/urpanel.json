@@ -661,7 +661,7 @@
   },
   {
     "service": 35,
-    "name": "Instagram - Followers || China 🇨🇳 || 30 Days Refill || EMERGENCY SERVER",
+    "name": "Instagram - Followers || China 🇨🇳 || 30 Days Refill",
     "type": "Default",
     "rate": "8.50",
     "min": 10,
@@ -673,7 +673,7 @@
   },
   {
     "service": 36,
-    "name": "Instagram - Likes || China 🇨🇳 || 30 Days Refill || EMERGENCY SERVER",
+    "name": "Instagram - Likes || China 🇨🇳 || 30 Days Refill",
     "type": "Default",
     "rate": "7.50",
     "min": 10,
@@ -10573,7 +10573,7 @@
   },
   {
     "service": 5626,
-    "name": "Twitter Likes [Max: 10K] [Refill: No] [Start Time: 0 - 1 Hour] [Speed: 10K/Day]",
+    "name": "Twitter - Likes || 30 Days Refill",
     "type": "Default",
     "rate": "2.1808",
     "min": 100,
@@ -10585,12 +10585,24 @@
   },
   {
     "service": 4624,
-    "name": "Twitter Likes - (No Refill) (0-12H - 2.5K/Day)",
+    "name": "Twitter - Likes || No Refill || 0-12H",
     "type": "Default",
     "rate": "4.5814",
     "min": 10,
     "max": 10000,
     "dripfeed": true,
+    "refill": false,
+    "cancel": false,
+    "category": "Twitter - Likes"
+  },
+  {
+    "service": 12919,
+    "name": "Twitter - Likes || HQ || 30 Days Refill || Almost No Drop",
+    "type": "Default",
+    "rate": "21.00",
+    "min": 50,
+    "max": 30000,
+    "dripfeed": false,
     "refill": false,
     "cancel": false,
     "category": "Twitter - Likes"
@@ -22662,6 +22674,18 @@
     "rate": "0.90",
     "min": 10,
     "max": 50,
+    "dripfeed": false,
+    "refill": false,
+    "cancel": false,
+    "category": "T"
+  },
+  {
+    "service": 12920,
+    "name": "T10",
+    "type": "Default",
+    "rate": "0.90",
+    "min": 1,
+    "max": 10,
     "dripfeed": false,
     "refill": false,
     "cancel": false,
