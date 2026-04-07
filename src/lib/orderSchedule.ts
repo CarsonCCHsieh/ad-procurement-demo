@@ -22,7 +22,14 @@ function batchStatusFromSplits(splits: VendorSplitExec[]): DemoOrderBatchStatus 
 
   const statuses = splits.map((split) => String(split.vendorStatus ?? "").trim().toLowerCase());
   const hasTerminalSuccess = statuses.some((status) => status.includes("complete") || status.includes("done") || status.includes("success"));
-  const hasFailure = statuses.some((status) => status.includes("fail") || status.includes("error") || status.includes("cancel") || status.includes("refund"));
+  const hasFailure = statuses.some(
+    (status) =>
+      status.includes("partial") ||
+      status.includes("fail") ||
+      status.includes("error") ||
+      status.includes("cancel") ||
+      status.includes("refund"),
+  );
   const hasActiveOrder = splits.some((split) => !!split.vendorOrderId);
 
   if (hasFailure && !hasTerminalSuccess && !hasActiveOrder) return "failed";

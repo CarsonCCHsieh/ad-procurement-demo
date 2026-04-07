@@ -1973,7 +1973,14 @@ function normalizeBatchStatus(batch) {
   const hasOrder = splits.some((split) => !!split?.vendorOrderId);
   const hasFailure = splits.some((split) => {
     const status = String(split?.vendorStatus ?? "").toLowerCase();
-    return status.includes("fail") || status.includes("error") || status.includes("cancel") || status.includes("refund") || !!split?.error;
+    return (
+      status.includes("partial") ||
+      status.includes("fail") ||
+      status.includes("error") ||
+      status.includes("cancel") ||
+      status.includes("refund") ||
+      !!split?.error
+    );
   });
   const allDone = splits.every((split) => isVendorSplitDone(split));
 
@@ -2061,7 +2068,7 @@ function getFinalBatch(batches) {
 function isFailureStatus(status) {
   const s = String(status ?? "").trim().toLowerCase();
   if (!s) return false;
-  return s.includes("fail") || s.includes("error") || s.includes("cancel") || s.includes("refund");
+  return s.includes("partial") || s.includes("fail") || s.includes("error") || s.includes("cancel") || s.includes("refund");
 }
 
 function isAppendCompleted(exec) {

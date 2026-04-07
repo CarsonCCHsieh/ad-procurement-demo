@@ -55,6 +55,18 @@ function isVendorSplitDone(split: VendorSplitExec): boolean {
   return false;
 }
 
+function isVendorFailureLikeStatus(status: unknown): boolean {
+  const value = String(status ?? "").trim().toLowerCase();
+  if (!value) return false;
+  return (
+    value.includes("partial") ||
+    value.includes("fail") ||
+    value.includes("error") ||
+    value.includes("cancel") ||
+    value.includes("refund")
+  );
+}
+
 function formatVendorUserMessage(error?: string): string {
   const raw = String(error ?? "").trim();
   if (!raw) return "";
@@ -686,8 +698,10 @@ export function AdPerformancePage() {
               });
 
               const nextStatus = nextSplits.every((split) => isVendorSplitDone(split))
-                ? "completed"
-                : nextSplits.some((split) => split.error || String(split.vendorStatus ?? "").toLowerCase().includes("fail"))
+                ? nextSplits.some((split) => split.error || isVendorFailureLikeStatus(split.vendorStatus))
+                  ? "partial"
+                  : "completed"
+                : nextSplits.some((split) => split.error || isVendorFailureLikeStatus(split.vendorStatus))
                   ? "partial"
                   : nextSplits.some((split) => !!split.vendorOrderId)
                     ? "submitted"
