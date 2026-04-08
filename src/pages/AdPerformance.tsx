@@ -410,6 +410,7 @@ export function AdPerformancePage() {
   const [msg, setMsg] = useState<string | null>(null);
   const [syncing, setSyncing] = useState<Record<string, boolean>>({});
   const [vendorRefreshing, setVendorRefreshing] = useState(false);
+  const [metaSyncingAll, setMetaSyncingAll] = useState(false);
   const [retryingVendorRows, setRetryingVendorRows] = useState<Record<string, boolean>>({});
   const [vendorMetrics, setVendorMetrics] = useState<Record<string, VendorMetricState>>({});
   const [metaAutoEnabled, setMetaAutoEnabled] = useState(true);
@@ -900,7 +901,7 @@ export function AdPerformancePage() {
       let reachedAt = row.targetReachedAt;
 
       const shouldCheckTarget = !!row.autoStopByTarget && target > 0 && targetCurrent != null;
-      if (shouldCheckTarget && targetCurrent >= target) {
+      if (shouldCheckTarget && typeof targetCurrent === "number" && targetCurrent >= target) {
         const pauseResult = await updateMetaAdDelivery({ cfg: metaCfg, adId, status: "PAUSED" });
         if (pauseResult.ok) {
           pausedByTarget = true;
@@ -950,6 +951,9 @@ export function AdPerformancePage() {
   };
 
   const syncAllMeta = async (options?: { silent?: boolean; includePaused?: boolean }) => {
+    if (metaSyncingAll) return;
+    setMetaSyncingAll(true);
+    try {
     if (API_BASE) {
       try {
         const response = await fetch(apiUrl("/api/meta/sync-shared-orders"), {
@@ -962,6 +966,7 @@ export function AdPerformancePage() {
           syncedCount?: number;
           updatedCount?: number;
           pausedCount?: number;
+          deferredCount?: number;
           error?: string;
         };
         if (!response.ok || !data.ok) {
@@ -974,6 +979,8 @@ export function AdPerformancePage() {
             setMsg("目前沒有需要同步的 Meta 投放案件。");
           } else if (Number(data.pausedCount ?? 0) > 0) {
             setMsg(`已同步 ${Number(data.syncedCount ?? 0).toLocaleString("zh-TW")} 筆 Meta 案件，並自動暫停 ${Number(data.pausedCount ?? 0).toLocaleString("zh-TW")} 筆已達目標投放。`);
+          } else if (Number(data.deferredCount ?? 0) > 0) {
+            setMsg(`已同步 ${Number(data.syncedCount ?? 0).toLocaleString("zh-TW")} 筆 Meta 案件，另有 ${Number(data.deferredCount ?? 0).toLocaleString("zh-TW")} 筆會在下一輪自動同步。`);
           } else {
             setMsg(`已同步 ${Number(data.syncedCount ?? 0).toLocaleString("zh-TW")} 筆 Meta 案件。`);
           }
@@ -997,6 +1004,9 @@ export function AdPerformancePage() {
     for (const row of activeRows) {
       const result = await syncMetaOne(row, { silent: options?.silent });
       void result;
+    }
+    } finally {
+      setMetaSyncingAll(false);
     }
   };
 
@@ -1068,7 +1078,11 @@ export function AdPerformancePage() {
       setHourlyAutoRunning(true);
       try {
         await refreshVendorTracking({ silent: true });
-        await syncAllMeta({ silent: true });
+        if (!usesServerMetaAutomation) {
+          await syncAllMeta({ silent: true });
+        } else {
+          await pullLatestOrders();
+        }
         setHourlyAutoLastRunAt(new Date().toISOString());
         setRefresh((value) => value + 1);
       } finally {
@@ -1081,7 +1095,7 @@ export function AdPerformancePage() {
     }, HOURLY_AUTO_REFRESH_INTERVAL_MS);
 
     return () => window.clearInterval(timer);
-  }, [hourlyAutoRunning, orders.length, metaRows.length]);
+  }, [hourlyAutoRunning, orders.length, metaRows.length, usesServerMetaAutomation]);
 
   useEffect(() => {
     if (usesServerMetaAutomation) return;
@@ -1184,7 +1198,7 @@ export function AdPerformancePage() {
             <button className="btn" type="button" onClick={() => void pullLatestOrders()}>
               重新整理
             </button>
-            <button className="btn" type="button" onClick={refreshVendorTracking} disabled={vendorRefreshing}>
+            <button className="btn" type="button" onClick={() => void refreshVendorTracking()} disabled={vendorRefreshing}>
               {vendorRefreshing ? "同步中..." : "同步進行中案件"}
             </button>
             <button className="btn danger" type="button" onClick={() => { clearOrders(); setRefresh((value) => value + 1); }}>
@@ -1294,7 +1308,9 @@ export function AdPerformancePage() {
           <div className="card-bd">
             <div className="actions inline">
               <button className="btn" onClick={() => setRefresh((value) => value + 1)}>重新整理</button>
-              <button className="btn" onClick={() => void syncAllMeta()}>全部同步</button>
+              <button className="btn" onClick={() => void syncAllMeta()} disabled={metaSyncingAll}>
+                {metaSyncingAll ? "同步中..." : "全部同步"}
+              </button>
               {usesServerMetaAutomation ? (
                 <button className="btn" type="button" disabled>
                   自動停投：後端執行中

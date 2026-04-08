@@ -66,6 +66,10 @@ const upsertTrackingCacheStmt = db.prepare(`
 let metaPagesCache = null;
 let instagramAccountsCache = null;
 const instagramMediaCache = new Map();
+const metaPostMetricsCache = new Map();
+const metaPostMetricsInflight = new Map();
+const metaPostMetricsBackoff = new Map();
+const metaPostMetricsLastAttemptAt = new Map();
 let backgroundSyncRunning = false;
 let backgroundMetaSyncRunning = false;
 let trackingCachePrimed = false;
@@ -76,6 +80,12 @@ const ORDERS_KEY = "ad_demo_orders_v1";
 const META_ORDERS_KEY = "ad_demo_meta_orders_v1";
 const META_SYNC_STATUS_KEY = "ad_demo_meta_sync_status_v1";
 const META_BACKGROUND_SYNC_INTERVAL_MS = 5 * 60 * 1000;
+const META_POST_METRIC_CACHE_TTL_MS = Number(process.env.META_POST_METRIC_CACHE_TTL_MS || 2 * 60 * 1000);
+const META_POST_METRIC_BACKOFF_MS = Number(process.env.META_POST_METRIC_BACKOFF_MS || 90 * 1000);
+const META_POST_METRIC_MIN_GAP_MS = Number(process.env.META_POST_METRIC_MIN_GAP_MS || 1200);
+const META_SYNC_MAX_ROWS_PER_RUN = Number(process.env.META_SYNC_MAX_ROWS_PER_RUN || 8);
+const META_SYNC_ROW_GAP_MS = Number(process.env.META_SYNC_ROW_GAP_MS || 300);
+const META_SYNC_MIN_RECHECK_MS = Number(process.env.META_SYNC_MIN_RECHECK_MS || 60 * 1000);
 const DEFAULT_VENDOR_BASES = {
   smmraja: "https://www.smmraja.com/api/v3",
   urpanel: "https://urpanel.com/api/v2",
@@ -172,17 +182,32 @@ function loadMetaSecrets() {
   try {
     const raw = JSON.parse(readFileSync(META_SECRET_PATH, "utf-8"));
     if (!raw || typeof raw !== "object") return null;
-    const userAccessToken = typeof raw.userAccessToken === "string" ? raw.userAccessToken.trim() : "";
-    if (!userAccessToken) return null;
+    const facebookAccessToken = typeof raw.facebookAccessToken === "string" ? raw.facebookAccessToken.trim() : "";
+    const instagramAccessToken = typeof raw.instagramAccessToken === "string" ? raw.instagramAccessToken.trim() : "";
+    const userAccessToken =
+      (typeof raw.userAccessToken === "string" ? raw.userAccessToken.trim() : "") ||
+      facebookAccessToken ||
+      instagramAccessToken;
+    if (!userAccessToken && !facebookAccessToken && !instagramAccessToken) return null;
     return {
       apiVersion: typeof raw.apiVersion === "string" && raw.apiVersion.trim() ? raw.apiVersion.trim() : "v20.0",
       userAccessToken,
+      facebookAccessToken,
+      instagramAccessToken,
       preferredPageId: typeof raw.preferredPageId === "string" ? raw.preferredPageId.trim() : "",
       preferredPageName: typeof raw.preferredPageName === "string" ? raw.preferredPageName.trim() : "",
     };
   } catch {
     return null;
   }
+}
+
+function getMetaToken(metaSecrets, platform) {
+  if (!metaSecrets) return "";
+  if (platform === "instagram") {
+    return String(metaSecrets.instagramAccessToken || metaSecrets.userAccessToken || "").trim();
+  }
+  return String(metaSecrets.facebookAccessToken || metaSecrets.userAccessToken || "").trim();
 }
 
 function loadVendorSecrets() {
@@ -241,7 +266,9 @@ async function listAvailablePages(metaSecrets) {
   if (metaPagesCache && now - metaPagesCache.fetchedAt < 5 * 60 * 1000) {
     return metaPagesCache.pages;
   }
-  const raw = await graphApiGet(metaSecrets.apiVersion, metaSecrets.userAccessToken, "/me/accounts");
+  const pageToken = getMetaToken(metaSecrets, "facebook");
+  if (!pageToken) return [];
+  const raw = await graphApiGet(metaSecrets.apiVersion, pageToken, "/me/accounts");
   const pages = Array.isArray(raw.data) ? raw.data : [];
   metaPagesCache = { fetchedAt: now, pages };
   return pages;
@@ -327,6 +354,92 @@ function uniqueStrings(values) {
     .map((value) => String(value || "").trim())
     .filter(Boolean)
     .filter((value, index, list) => list.indexOf(value) === index);
+}
+
+function sleep(ms) {
+  const waitMs = Number(ms);
+  if (!Number.isFinite(waitMs) || waitMs <= 0) return Promise.resolve();
+  return new Promise((resolvePromise) => setTimeout(resolvePromise, waitMs));
+}
+
+function isRateLimitLikeError(detail) {
+  const text = String(detail || "").toLowerCase();
+  if (!text) return false;
+  return (
+    text.includes("rate limit") ||
+    text.includes("too many requests") ||
+    text.includes("user request limit") ||
+    text.includes("temporarily blocked") ||
+    text.includes("reduce the amount of data") ||
+    text.includes("code 4") ||
+    text.includes("code 17")
+  );
+}
+
+function buildMetaPostMetricCacheKey({ postId, platform, pageId, pageName, sourceUrl }) {
+  return [
+    String(platform || "").trim().toLowerCase() || "auto",
+    String(postId || "").trim(),
+    String(pageId || "").trim(),
+    String(pageName || "").trim().toLowerCase(),
+    normalizeComparableUrl(String(sourceUrl || "").trim()),
+  ].join("|");
+}
+
+function trimMetaPostMetricCaches() {
+  const now = Date.now();
+  for (const [key, value] of metaPostMetricsCache.entries()) {
+    if (!value || Number(value.expiresAt || 0) <= now) {
+      metaPostMetricsCache.delete(key);
+    }
+  }
+  for (const [key, value] of metaPostMetricsBackoff.entries()) {
+    if (!value || Number(value.until || 0) <= now) {
+      metaPostMetricsBackoff.delete(key);
+    }
+  }
+}
+
+function readMetaPostMetricCache(cacheKey) {
+  trimMetaPostMetricCaches();
+  const row = metaPostMetricsCache.get(cacheKey);
+  if (!row || Number(row.expiresAt || 0) <= Date.now()) {
+    metaPostMetricsCache.delete(cacheKey);
+    return null;
+  }
+  return row.result;
+}
+
+function writeMetaPostMetricCache(cacheKey, result) {
+  metaPostMetricsCache.set(cacheKey, {
+    expiresAt: Date.now() + META_POST_METRIC_CACHE_TTL_MS,
+    result,
+  });
+  if (metaPostMetricsCache.size > 500) {
+    const first = metaPostMetricsCache.keys().next().value;
+    if (first) metaPostMetricsCache.delete(first);
+  }
+}
+
+function readMetaPostMetricBackoff(cacheKey) {
+  trimMetaPostMetricCaches();
+  const row = metaPostMetricsBackoff.get(cacheKey);
+  if (!row || Number(row.until || 0) <= Date.now()) {
+    metaPostMetricsBackoff.delete(cacheKey);
+    return null;
+  }
+  return row;
+}
+
+function writeMetaPostMetricBackoff(cacheKey, detail) {
+  metaPostMetricsBackoff.set(cacheKey, {
+    until: Date.now() + META_POST_METRIC_BACKOFF_MS,
+    detail: String(detail || "").trim(),
+  });
+  if (metaPostMetricsBackoff.size > 500) {
+    const first = metaPostMetricsBackoff.keys().next().value;
+    if (first) metaPostMetricsBackoff.delete(first);
+  }
 }
 
 function buildTrackingCacheKeys(...urls) {
@@ -781,7 +894,7 @@ async function resolveFacebookTrackingFromUrl(metaSecrets, rawUrl) {
     pageId = await fetchFacebookProfileIdByUsername(info.username);
   }
   let pageName = info.username;
-  let feedToken = metaSecrets.userAccessToken;
+  let feedToken = getMetaToken(metaSecrets, "facebook");
 
   if (info.storyFbid && /^\d+$/.test(info.storyFbid)) {
     return buildMetaTrackingRef({
@@ -870,7 +983,7 @@ async function resolveFacebookTrackingFromUrl(metaSecrets, rawUrl) {
 
   for (const candidate of urlCandidates) {
     try {
-      const resolved = await graphApiGet(metaSecrets.apiVersion, metaSecrets.userAccessToken, "/", {
+      const resolved = await graphApiGet(metaSecrets.apiVersion, getMetaToken(metaSecrets, "facebook"), "/", {
         id: candidate,
         fields: "id",
       });
@@ -1012,7 +1125,12 @@ async function resolveTrackingFromUrl(metaSecrets, url) {
 }
 
 async function fetchInstagramMediaMetricsSecure(metaSecrets, rawUrl) {
-  const accounts = await listInstagramAccounts(metaSecrets);
+  let accounts = [];
+  try {
+    accounts = await listInstagramAccounts(metaSecrets);
+  } catch {
+    accounts = [];
+  }
   if (accounts.length === 0) {
     return { ok: false, detail: "No linked Instagram business account available for this token" };
   }
@@ -1110,25 +1228,35 @@ async function fetchInstagramMediaMetricsByIdSecure(metaSecrets, trackingRef, pa
     accounts.find((account) => String(account?.igUsername || "").toLowerCase() === String(ref.pageName || "").toLowerCase()) ||
     accounts[0];
 
-  const pageToken = pageTokenOverride || matchedAccount?.pageToken || "";
-  if (!pageToken) {
-    return { ok: false, detail: "Instagram page token is unavailable" };
+  const tokenCandidates = uniqueStrings([
+    pageTokenOverride,
+    matchedAccount?.pageToken,
+    getMetaToken(metaSecrets, "instagram"),
+  ]);
+  if (tokenCandidates.length === 0) {
+    return { ok: false, detail: "Instagram access token is unavailable" };
   }
 
+  let baseToken = "";
   let base = null;
-  try {
-    base = await graphApiGet(
-      metaSecrets.apiVersion,
-      pageToken,
-      `/${encodeURIComponent(ref.refId)}`,
-      { fields: "id,media_type,permalink,like_count,comments_count,timestamp" },
-    );
-  } catch {
-    base = null;
+  let baseError = "";
+  for (const token of tokenCandidates) {
+    try {
+      base = await graphApiGet(
+        metaSecrets.apiVersion,
+        token,
+        `/${encodeURIComponent(ref.refId)}`,
+        { fields: "id,media_type,permalink,like_count,comments_count,timestamp" },
+      );
+      baseToken = token;
+      break;
+    } catch (error) {
+      baseError = error instanceof Error ? error.message : "Instagram media fetch failed";
+    }
   }
 
   if (!base) {
-    return { ok: false, detail: "Instagram media fetch failed" };
+    return { ok: false, detail: baseError || "Instagram media fetch failed" };
   }
 
   const values = {
@@ -1153,20 +1281,29 @@ async function fetchInstagramMediaMetricsByIdSecure(metaSecrets, trackingRef, pa
   const invalidMetrics = [];
 
   for (const [key, metric] of Object.entries(metricMap)) {
-    try {
-      const insight = await graphApiGet(
-        metaSecrets.apiVersion,
-        pageToken,
-        `/${encodeURIComponent(ref.refId)}/insights`,
-        { metric },
-      );
-      const metricValue = readFirstInsightValue(insight);
-      values[key] = metricValue;
-      validMetrics.push(metric);
-    } catch (error) {
+    let fetched = false;
+    let lastError = "";
+    for (const token of uniqueStrings([baseToken, ...tokenCandidates])) {
+      try {
+        const insight = await graphApiGet(
+          metaSecrets.apiVersion,
+          token,
+          `/${encodeURIComponent(ref.refId)}/insights`,
+          { metric },
+        );
+        const metricValue = readFirstInsightValue(insight);
+        values[key] = metricValue;
+        validMetrics.push(metric);
+        fetched = true;
+        break;
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : "unknown error";
+      }
+    }
+    if (!fetched) {
       invalidMetrics.push({
         metric,
-        detail: error instanceof Error ? error.message : "unknown error",
+        detail: lastError || "unknown error",
       });
     }
   }
@@ -1384,17 +1521,21 @@ function mapMetaOrderStatus(statusText) {
 }
 
 async function fetchMetaAdSnapshotSecure(metaSecrets, adId, goal) {
+  const token = getMetaToken(metaSecrets, "facebook");
+  if (!token) {
+    return { ok: false, detail: "Meta access token is unavailable" };
+  }
   try {
     const statusRaw = await graphApiGet(
       metaSecrets.apiVersion,
-      metaSecrets.userAccessToken,
+      token,
       `/${encodeURIComponent(adId)}`,
       { fields: "id,name,status,effective_status,updated_time" },
     );
     const statusText = String(statusRaw.effective_status || statusRaw.status || "UNKNOWN");
     const insightsRaw = await graphApiGet(
       metaSecrets.apiVersion,
-      metaSecrets.userAccessToken,
+      token,
       `/${encodeURIComponent(adId)}/insights`,
       { fields: "impressions,reach,clicks,spend,actions,video_3_sec_watched_actions,video_thruplay_watched_actions" },
     );
@@ -1413,11 +1554,15 @@ async function fetchMetaAdSnapshotSecure(metaSecrets, adId, goal) {
 }
 
 async function updateMetaAdDeliverySecure(metaSecrets, adId, status) {
+  const token = getMetaToken(metaSecrets, "facebook");
+  if (!token) {
+    return { ok: false, detail: "Meta access token is unavailable" };
+  }
   try {
-    await graphApiPost(metaSecrets.apiVersion, metaSecrets.userAccessToken, `/${encodeURIComponent(adId)}`, { status });
+    await graphApiPost(metaSecrets.apiVersion, token, `/${encodeURIComponent(adId)}`, { status });
     const raw = await graphApiGet(
       metaSecrets.apiVersion,
-      metaSecrets.userAccessToken,
+      token,
       `/${encodeURIComponent(adId)}`,
       { fields: "id,name,status,effective_status,updated_time" },
     );
@@ -1441,7 +1586,62 @@ function findPageFromList(pages, targetPageId, targetPageName) {
   ) || null;
 }
 
-async function fetchMetaPostMetricsSecure({ postId, platform, pageId, pageName, sourceUrl }) {
+function buildFacebookPostIdCandidates({
+  normalizedPostId,
+  targetPageId,
+  trackingPageId,
+  preferredPageId,
+  pages,
+}) {
+  const postId = String(normalizedPostId || "").trim();
+  if (!postId) return [];
+  if (postId.includes("_")) return [postId];
+
+  const pageIds = uniqueStrings([
+    targetPageId,
+    trackingPageId,
+    preferredPageId,
+    ...(Array.isArray(pages) ? pages.map((row) => String(row?.id || "").trim()) : []),
+  ]).filter((row) => /^\d+$/.test(row));
+
+  const composed = pageIds.slice(0, 12).map((pageId) => `${pageId}_${postId}`);
+  return uniqueStrings([...composed, postId]);
+}
+
+async function fetchFirstInsightMetricValue({
+  metaSecrets,
+  postId,
+  tokens,
+  metricCandidates,
+}) {
+  let lastError = "";
+  for (const metric of metricCandidates) {
+    for (const token of tokens) {
+      try {
+        const insight = await graphApiGet(
+          metaSecrets.apiVersion,
+          token,
+          `/${encodeURIComponent(postId)}/insights`,
+          { metric },
+        );
+        return {
+          ok: true,
+          metric,
+          value: readFirstInsightValue(insight),
+        };
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : "unknown error";
+      }
+    }
+  }
+
+  return {
+    ok: false,
+    detail: lastError || "unknown error",
+  };
+}
+
+async function fetchMetaPostMetricsCoreSecure({ postId, platform, pageId, pageName, sourceUrl }) {
   const metaSecrets = loadMetaSecrets();
   if (!metaSecrets) {
     return { ok: false, detail: "Meta local credentials are not configured" };
@@ -1506,57 +1706,55 @@ async function fetchMetaPostMetricsSecure({ postId, platform, pageId, pageName, 
     derivePageIdFromPostId(normalizedPostId) ||
     metaSecrets.preferredPageId;
   const targetPageName = String(pageName || "").trim() || String(trackingRef?.pageName || "").trim() || metaSecrets.preferredPageName;
-  let page = findPageFromList(metaPagesCache?.pages, targetPageId, targetPageName);
-
-  const tokenCandidates = uniqueStrings([
-    metaSecrets.userAccessToken,
-    String(page?.access_token || ""),
-  ]);
-
-  let base = null;
-  let baseToken = "";
-  let lastBaseError = "";
-  for (const token of tokenCandidates) {
+  let pages = Array.isArray(metaPagesCache?.pages) ? metaPagesCache.pages : [];
+  if (targetPageId || targetPageName || !normalizedPostId.includes("_")) {
     try {
-      base = await graphApiGet(
-        metaSecrets.apiVersion,
-        token,
-        `/${encodeURIComponent(normalizedPostId)}`,
-        { fields: "id,created_time,permalink_url,shares,comments.summary(true),reactions.summary(true),attachments{media_type}" },
-      );
-      baseToken = token;
-      break;
-    } catch (error) {
-      lastBaseError = error instanceof Error ? error.message : "Facebook post fetch failed";
+      pages = await listAvailablePages(metaSecrets);
+    } catch {
+      // keep cached pages only
     }
   }
-  if ((!base || !baseToken) && (targetPageId || targetPageName)) {
-    try {
-      const pages = await listAvailablePages(metaSecrets);
-      page = findPageFromList(pages, targetPageId, targetPageName) || page;
-    } catch {
-      // ignore page list failure, keep direct token attempt result
-    }
+  let page = findPageFromList(pages, targetPageId, targetPageName);
+  const postIdCandidates = buildFacebookPostIdCandidates({
+    normalizedPostId,
+    targetPageId,
+    trackingPageId: trackingRef?.pageId,
+    preferredPageId: metaSecrets.preferredPageId,
+    pages,
+  });
 
-    const refreshedCandidates = uniqueStrings([
+  let base = null;
+  let resolvedPostId = "";
+  let baseToken = "";
+  let lastBaseError = "";
+  for (const candidatePostId of postIdCandidates) {
+    const candidatePageId = derivePageIdFromPostId(candidatePostId) || targetPageId;
+    const candidatePage = candidatePageId
+      ? (Array.isArray(pages) ? pages.find((item) => String(item?.id || "") === candidatePageId) : null)
+      : null;
+    const tokenCandidates = uniqueStrings([
+      String(candidatePage?.access_token || ""),
       String(page?.access_token || ""),
-      metaSecrets.userAccessToken,
+      getMetaToken(metaSecrets, "facebook"),
     ]);
-    for (const token of refreshedCandidates) {
-      if (tokenCandidates.includes(token)) continue;
+
+    for (const token of tokenCandidates) {
       try {
         base = await graphApiGet(
           metaSecrets.apiVersion,
           token,
-          `/${encodeURIComponent(normalizedPostId)}`,
+          `/${encodeURIComponent(candidatePostId)}`,
           { fields: "id,created_time,permalink_url,shares,comments.summary(true),reactions.summary(true),attachments{media_type}" },
         );
+        resolvedPostId = candidatePostId;
         baseToken = token;
+        page = candidatePage || page;
         break;
       } catch (error) {
         lastBaseError = error instanceof Error ? error.message : "Facebook post fetch failed";
       }
     }
+    if (base && baseToken) break;
   }
   if (!base || !baseToken) {
     return { ok: false, detail: lastBaseError || "Facebook post not found" };
@@ -1565,11 +1763,11 @@ async function fetchMetaPostMetricsSecure({ postId, platform, pageId, pageName, 
   const pageLabel = String(page?.name || targetPageName || targetPageId || "");
 
   const metricMap = {
-    impressions: "post_impressions",
-    reach: "post_impressions_unique",
-    all_clicks: "post_clicks",
-    likes: "post_reactions_like_total",
-    video_3s_views: "post_video_views",
+    impressions: ["post_impressions", "post_impressions_paid", "post_impressions_organic"],
+    reach: ["post_impressions_unique"],
+    all_clicks: ["post_clicks"],
+    likes: ["post_reactions_like_total"],
+    video_3s_views: ["post_video_views", "post_video_views_paid", "post_video_views_organic"],
   };
 
   const values = {
@@ -1587,49 +1785,33 @@ async function fetchMetaPostMetricsSecure({ postId, platform, pageId, pageName, 
   const validMetrics = [];
   const invalidMetrics = [];
 
-  for (const [key, metric] of Object.entries(metricMap)) {
-    try {
-      const insight = await graphApiGet(
-        metaSecrets.apiVersion,
-        baseToken,
-        `/${encodeURIComponent(normalizedPostId)}/insights`,
-        { metric },
-      );
-      const metricValue = readFirstInsightValue(insight);
-      values[key] = metricValue;
-      if (key === "video_3s_views") values.thruplays = metricValue;
-      validMetrics.push(metric);
-    } catch (error) {
+  const metricTokens = uniqueStrings([
+    String(page?.access_token || ""),
+    baseToken,
+    getMetaToken(metaSecrets, "facebook"),
+  ]);
+  const postIdForMetrics = resolvedPostId || normalizedPostId;
+  for (const [key, metricCandidates] of Object.entries(metricMap)) {
+    const result = await fetchFirstInsightMetricValue({
+      metaSecrets,
+      postId: postIdForMetrics,
+      tokens: metricTokens,
+      metricCandidates,
+    });
+    if (result.ok) {
+      values[key] = result.value;
+      if (key === "video_3s_views") values.thruplays = result.value;
+      validMetrics.push(result.metric);
+    } else {
       invalidMetrics.push({
-        metric,
-        detail: error instanceof Error ? error.message : "unknown error",
+        metric: metricCandidates[0],
+        detail: result.detail,
       });
     }
   }
-  if (invalidMetrics.length > 0 && page?.access_token && String(page.access_token) !== baseToken) {
-    const retryMetrics = [...invalidMetrics];
-    invalidMetrics.length = 0;
-    for (const item of retryMetrics) {
-      const key = Object.entries(metricMap).find((entry) => entry[1] === item.metric)?.[0];
-      if (!key) continue;
-      try {
-        const insight = await graphApiGet(
-          metaSecrets.apiVersion,
-          String(page.access_token),
-          `/${encodeURIComponent(normalizedPostId)}/insights`,
-          { metric: item.metric },
-        );
-        const metricValue = readFirstInsightValue(insight);
-        values[key] = metricValue;
-        if (key === "video_3s_views") values.thruplays = metricValue;
-        validMetrics.push(item.metric);
-      } catch (error) {
-        invalidMetrics.push({
-          metric: item.metric,
-          detail: error instanceof Error ? error.message : "unknown error",
-        });
-      }
-    }
+
+  if (values.impressions <= 0 && values.reach > 0) {
+    values.impressions = values.reach;
   }
 
   values.interactions_total = values.likes + values.comments + values.shares + values.all_clicks;
@@ -1643,11 +1825,67 @@ async function fetchMetaPostMetricsSecure({ postId, platform, pageId, pageName, 
     values,
     raw: {
       base,
+      resolvedPostId: postIdForMetrics,
       tracking: trackingRef,
       validMetrics,
       invalidMetrics,
     },
   };
+}
+
+async function fetchMetaPostMetricsSecure(args) {
+  const cacheKey = buildMetaPostMetricCacheKey(args);
+  const cached = readMetaPostMetricCache(cacheKey);
+  if (cached) {
+    return {
+      ...cached,
+      raw: {
+        ...(cached.raw || {}),
+        cacheHit: true,
+      },
+    };
+  }
+
+  const backoff = readMetaPostMetricBackoff(cacheKey);
+  if (backoff) {
+    const seconds = Math.max(1, Math.ceil((Number(backoff.until || 0) - Date.now()) / 1000));
+    return {
+      ok: false,
+      detail: `Meta API 指標讀取暫時節流中，請 ${seconds} 秒後再試`,
+    };
+  }
+
+  const inflight = metaPostMetricsInflight.get(cacheKey);
+  if (inflight) return inflight;
+
+  const runner = (async () => {
+    const lastAt = Number(metaPostMetricsLastAttemptAt.get(cacheKey) || 0);
+    const waitMs = Math.max(0, META_POST_METRIC_MIN_GAP_MS - (Date.now() - lastAt));
+    if (waitMs > 0) await sleep(waitMs);
+
+    metaPostMetricsLastAttemptAt.set(cacheKey, Date.now());
+    let result;
+    try {
+      result = await fetchMetaPostMetricsCoreSecure(args);
+    } catch (error) {
+      result = {
+        ok: false,
+        detail: error instanceof Error ? error.message : "Meta post metric fetch failed",
+      };
+    }
+    if (result?.ok) {
+      writeMetaPostMetricCache(cacheKey, result);
+      metaPostMetricsBackoff.delete(cacheKey);
+    } else if (isRateLimitLikeError(result?.detail)) {
+      writeMetaPostMetricBackoff(cacheKey, result?.detail);
+    }
+    return result;
+  })().finally(() => {
+    metaPostMetricsInflight.delete(cacheKey);
+  });
+
+  metaPostMetricsInflight.set(cacheKey, runner);
+  return runner;
 }
 
 async function resolveMetaPostSecure({ url, platform, pageId, pageName }) {
@@ -2544,10 +2782,13 @@ async function processScheduledOrdersInBackground() {
 
 async function syncSharedMetaOrders(options = {}) {
   const includePaused = !!options.includePaused;
+  const manual = !!options.manual;
+  const force = !!options.force;
   const metaSecrets = loadMetaSecrets();
   const rows = readSharedJson(META_ORDERS_KEY);
   const nextRows = Array.isArray(rows) ? rows.map((row) => ({ ...row })) : [];
   const nowIso = new Date().toISOString();
+  const nowTs = Date.now();
 
   if (!metaSecrets) {
     writeSharedJson(
@@ -2568,6 +2809,7 @@ async function syncSharedMetaOrders(options = {}) {
   let syncedCount = 0;
   let updatedCount = 0;
   let pausedCount = 0;
+  const eligibleIndexes = [];
 
   for (let index = 0; index < nextRows.length; index += 1) {
     const row = nextRows[index];
@@ -2576,6 +2818,30 @@ async function syncSharedMetaOrders(options = {}) {
     if (!(row?.status === "running" || row?.status === "submitted" || (includePaused && row?.status === "paused"))) {
       continue;
     }
+    if (!manual && !force) {
+      const lastCheckedAt = Date.parse(String(row?.targetLastCheckedAt || ""));
+      if (Number.isFinite(lastCheckedAt) && nowTs - lastCheckedAt < META_SYNC_MIN_RECHECK_MS) {
+        continue;
+      }
+    }
+    eligibleIndexes.push(index);
+  }
+
+  const sortedIndexes = eligibleIndexes
+    .sort((a, b) => {
+      const left = Date.parse(String(nextRows[a]?.targetLastCheckedAt || ""));
+      const right = Date.parse(String(nextRows[b]?.targetLastCheckedAt || ""));
+      const leftTs = Number.isFinite(left) ? left : 0;
+      const rightTs = Number.isFinite(right) ? right : 0;
+      return leftTs - rightTs;
+    })
+    .slice(0, Math.max(1, META_SYNC_MAX_ROWS_PER_RUN));
+
+  for (let cursor = 0; cursor < sortedIndexes.length; cursor += 1) {
+    const index = sortedIndexes[cursor];
+    const row = nextRows[index];
+    const adId = String(row?.submitResult?.adId || "").trim();
+    if (!adId) continue;
 
     syncedCount += 1;
     const snapshot = await fetchMetaAdSnapshotSecure(metaSecrets, adId, row.goal);
@@ -2641,6 +2907,10 @@ async function syncSharedMetaOrders(options = {}) {
       error: postError,
     };
     updatedCount += 1;
+
+    if (cursor < sortedIndexes.length - 1 && META_SYNC_ROW_GAP_MS > 0) {
+      await sleep(META_SYNC_ROW_GAP_MS);
+    }
   }
 
   writeSharedJson(META_ORDERS_KEY, nextRows, "server-meta-sync");
@@ -2652,11 +2922,18 @@ async function syncSharedMetaOrders(options = {}) {
       syncedCount,
       updatedCount,
       pausedCount,
+      deferredCount: Math.max(0, eligibleIndexes.length - sortedIndexes.length),
       error: "",
     },
     "server-meta-sync",
   );
-  return { syncedCount, updatedCount, pausedCount, skipped: syncedCount === 0 };
+  return {
+    syncedCount,
+    updatedCount,
+    pausedCount,
+    deferredCount: Math.max(0, eligibleIndexes.length - sortedIndexes.length),
+    skipped: syncedCount === 0,
+  };
 }
 
 async function processMetaOrdersInBackground() {
@@ -2741,6 +3018,8 @@ const server = http.createServer(async (req, res) => {
       const payload = JSON.parse(String(raw || "{}"));
       const result = await syncSharedMetaOrders({
         includePaused: !!payload?.includePaused,
+        manual: true,
+        force: !!payload?.force,
       });
       json(res, result.error ? 400 : 200, { ok: !result.error, ...result });
       return;
