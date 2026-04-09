@@ -1,4 +1,4 @@
-const FALLBACK_PUBLIC_API_BASE = "https://dependent-interact-postposted-carter.trycloudflare.com";
+const FALLBACK_PUBLIC_API_BASE = "https://nickname-toronto-followed-circles.trycloudflare.com";
 const DEFAULT_LOCAL_API_BASE = "http://127.0.0.1:8787";
 
 export function resolveApiBase() {
