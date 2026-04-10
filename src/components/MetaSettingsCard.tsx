@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { CollapsibleCard } from "./CollapsibleCard";
 import { getMetaConfig, resetMetaConfig, saveMetaConfig, type MetaConfigV1 } from "../config/metaConfig";
+import { verifyMetaApiKey } from "../lib/metaGraphApi";
 
 type MsgKind = "success" | "info" | "warn" | "error";
 
@@ -9,33 +10,64 @@ export function MetaSettingsCard(props: {
 }) {
   const { onNotice } = props;
   const [cfg, setCfg] = useState<MetaConfigV1>(() => getMetaConfig());
-  const [showToken, setShowToken] = useState(false);
+  const [show, setShow] = useState<Record<"ads" | "facebook" | "instagram", boolean>>({
+    ads: false,
+    facebook: false,
+    instagram: false,
+  });
+  const [verifying, setVerifying] = useState<Record<"ads" | "facebook" | "instagram", boolean>>({
+    ads: false,
+    facebook: false,
+    instagram: false,
+  });
 
   const save = () => {
     saveMetaConfig({ ...cfg, mode: "live" });
     setCfg(getMetaConfig());
-    onNotice("success", "Meta 基本設定已儲存。", 2800);
+    onNotice("success", "Meta API 設定已儲存。", 2800);
   };
 
   const reset = () => {
     resetMetaConfig();
     setCfg(getMetaConfig());
-    onNotice("info", "Meta 基本設定已重設。", 2800);
+    onNotice("info", "Meta API 設定已重設。", 2800);
   };
 
-  const isReady = !!cfg.accessToken.trim() && !!cfg.adAccountId.trim();
+  const verify = async (scope: "ads" | "facebook" | "instagram") => {
+    setVerifying((current) => ({ ...current, [scope]: true }));
+    try {
+      const result = await verifyMetaApiKey({ cfg, scope });
+      if (result.ok) {
+        onNotice("success", `${scope === "ads" ? "Meta Ads" : scope === "facebook" ? "Facebook" : "Instagram"} Key 驗證成功。`, 2400);
+      } else {
+        onNotice("error", `${scope === "ads" ? "Meta Ads" : scope === "facebook" ? "Facebook" : "Instagram"} Key 驗證失敗：${result.detail ?? "未知錯誤"}`, 4200);
+      }
+    } finally {
+      setVerifying((current) => ({ ...current, [scope]: false }));
+    }
+  };
+
+  const setToken = (scope: "ads" | "facebook" | "instagram", value: string) => {
+    setCfg((current) => {
+      if (scope === "ads") return { ...current, adsAccessToken: value };
+      if (scope === "facebook") return { ...current, facebookAccessToken: value };
+      return { ...current, instagramAccessToken: value };
+    });
+  };
+
+  const isReady = !!cfg.adAccountId.trim() && (!!cfg.adsAccessToken.trim() || !!cfg.accessToken.trim());
 
   return (
     <CollapsibleCard
       accent="blue"
       title="Meta 基本設定"
-      desc="管理 Graph API 版本、Access Token 與預設投放帳號。這裡只放必要憑證，不放投放策略。"
+      desc="管理 Graph API 版本、帳號與三組 API Key。前台會共用此處設定。"
       tag="Meta"
       storageKey="sec:meta-settings"
       defaultOpen={false}
     >
       <div className="hint" style={{ marginBottom: 12 }}>
-        Access Token 屬於敏感資料，請只由管理員維護。
+        請在這裡維護 Meta Ads、Facebook、Instagram API Key，儲存後立即生效。
       </div>
 
       <div className="row">
@@ -94,18 +126,56 @@ export function MetaSettingsCard(props: {
       </div>
 
       <div className="field">
-        <div className="label">Access Token</div>
+        <div className="label">Meta Ads API Key</div>
         <input
-          type={showToken ? "text" : "password"}
-          value={cfg.accessToken}
-          onChange={(event) => setCfg((state) => ({ ...state, accessToken: event.target.value.trim() }))}
-          placeholder="請貼上 Meta System User Access Token"
+          type={show.ads ? "text" : "password"}
+          value={cfg.adsAccessToken}
+          onChange={(event) => setToken("ads", event.target.value.trim())}
+          placeholder="請貼上 Meta Ads API Key"
         />
         <div className="actions inline" style={{ marginTop: 8 }}>
-          <button className="btn sm" type="button" onClick={() => setShowToken((value) => !value)}>
-            {showToken ? "隱藏 Token" : "顯示 Token"}
+          <button className="btn sm" type="button" onClick={() => setShow((state) => ({ ...state, ads: !state.ads }))}>
+            {show.ads ? "隱藏 Key" : "顯示 Key"}
           </button>
-          <span className="hint">{isReady ? "已具備基本連線條件" : "至少需填入 Access Token 與廣告帳號 ID"}</span>
+          <button className="btn sm" type="button" onClick={() => void verify("ads")} disabled={verifying.ads}>
+            {verifying.ads ? "驗證中..." : "驗證"}
+          </button>
+        </div>
+      </div>
+
+      <div className="field">
+        <div className="label">Facebook API Key</div>
+        <input
+          type={show.facebook ? "text" : "password"}
+          value={cfg.facebookAccessToken}
+          onChange={(event) => setToken("facebook", event.target.value.trim())}
+          placeholder="請貼上 Facebook API Key"
+        />
+        <div className="actions inline" style={{ marginTop: 8 }}>
+          <button className="btn sm" type="button" onClick={() => setShow((state) => ({ ...state, facebook: !state.facebook }))}>
+            {show.facebook ? "隱藏 Key" : "顯示 Key"}
+          </button>
+          <button className="btn sm" type="button" onClick={() => void verify("facebook")} disabled={verifying.facebook}>
+            {verifying.facebook ? "驗證中..." : "驗證"}
+          </button>
+        </div>
+      </div>
+
+      <div className="field">
+        <div className="label">Instagram API Key</div>
+        <input
+          type={show.instagram ? "text" : "password"}
+          value={cfg.instagramAccessToken}
+          onChange={(event) => setToken("instagram", event.target.value.trim())}
+          placeholder="請貼上 Instagram API Key"
+        />
+        <div className="actions inline" style={{ marginTop: 8 }}>
+          <button className="btn sm" type="button" onClick={() => setShow((state) => ({ ...state, instagram: !state.instagram }))}>
+            {show.instagram ? "隱藏 Key" : "顯示 Key"}
+          </button>
+          <button className="btn sm" type="button" onClick={() => void verify("instagram")} disabled={verifying.instagram}>
+            {verifying.instagram ? "驗證中..." : "驗證"}
+          </button>
         </div>
       </div>
 
@@ -115,9 +185,11 @@ export function MetaSettingsCard(props: {
           重設
         </button>
         <button className="btn primary" type="button" onClick={save}>
-          儲存 Meta 基本設定
+          儲存 Meta 設定
         </button>
+        <span className="hint">{isReady ? "設定完整，可開始投放" : "至少需填 Meta Ads API Key 與廣告帳號 ID"}</span>
       </div>
     </CollapsibleCard>
   );
 }
+

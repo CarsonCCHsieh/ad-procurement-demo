@@ -1,4 +1,4 @@
-import type { MetaConfigV1 } from "../config/metaConfig";
+import { pickMetaAccessToken, type MetaConfigV1 } from "../config/metaConfig";
 import { META_AD_GOALS, type MetaAdGoalKey, type MetaKpiMetricKey } from "./metaGoals";
 import type { MetaOrderInput, MetaPerformanceSnapshot, MetaSubmitResult } from "./metaOrdersStore";
 import { apiUrl } from "./apiBase";
@@ -339,13 +339,44 @@ function trimActPrefix(raw: string) {
   return raw.trim().replace(/^act_/i, "");
 }
 
+export async function verifyMetaApiKey(params: {
+  cfg: MetaConfigV1;
+  scope: "ads" | "facebook" | "instagram";
+}): Promise<{ ok: boolean; detail?: string }> {
+  const { cfg, scope } = params;
+  const token = pickMetaAccessToken(cfg, scope);
+  if (!token) {
+    return {
+      ok: false,
+      detail:
+        scope === "ads"
+          ? "請先填入 Meta Ads API Key"
+          : scope === "facebook"
+            ? "請先填入 Facebook API Key"
+            : "請先填入 Instagram API Key",
+    };
+  }
+  try {
+    if (scope === "ads") {
+      await graphGet(cfg, token, "/me/adaccounts", "id",);
+    } else if (scope === "facebook") {
+      await graphGet(cfg, token, "/me/accounts", "id");
+    } else {
+      await graphGet(cfg, token, "/me", "id");
+    }
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, detail: error instanceof Error ? error.message : "驗證失敗" };
+  }
+}
+
 export async function listMetaAdAccounts(params: {
   cfg: MetaConfigV1;
 }): Promise<{ ok: boolean; detail?: string; accounts?: MetaAdAccountOption[] }> {
   const { cfg } = params;
-  const token = cfg.accessToken.trim();
+  const token = pickMetaAccessToken(cfg, "ads");
   if (!token) {
-    return { ok: false, detail: "請先填入 Meta Access Token" };
+    return { ok: false, detail: "請先填入 Meta Ads API Key" };
   }
 
   try {
@@ -394,10 +425,10 @@ export async function listMetaSavedAudiences(params: {
   limit?: number;
 }): Promise<{ ok: boolean; detail?: string; audiences?: MetaSavedAudienceOption[] }> {
   const { cfg } = params;
-  const token = cfg.accessToken.trim();
+  const token = pickMetaAccessToken(cfg, "ads");
   const accountId = trimActPrefix(params.adAccountId || cfg.adAccountId || "");
   if (!token) {
-    return { ok: false, detail: "請先填入 Meta Access Token" };
+    return { ok: false, detail: "請先填入 Meta Ads API Key" };
   }
   if (!accountId) {
     return { ok: false, detail: "請先指定廣告帳號" };
@@ -444,9 +475,12 @@ export async function listMetaExistingPosts(params: {
   limit?: number;
 }): Promise<{ ok: boolean; detail?: string; posts?: MetaExistingPostOption[] }> {
   const { cfg, platform } = params;
-  const token = cfg.accessToken.trim();
+  const token = pickMetaAccessToken(cfg, platform === "instagram" ? "instagram" : "facebook");
   if (!token) {
-    return { ok: false, detail: "請先填入 Meta Access Token" };
+    return {
+      ok: false,
+      detail: platform === "instagram" ? "請先填入 Instagram API Key" : "請先填入 Facebook API Key",
+    };
   }
 
   try {
@@ -592,10 +626,10 @@ export async function submitMetaOrderToGraph(params: {
   const { cfg, payloads } = params;
   const logs: MetaSubmitResult["requestLogs"] = [];
 
-  const token = cfg.accessToken.trim();
+  const token = pickMetaAccessToken(cfg, "ads");
   const accountId = cfg.adAccountId.trim().replace(/^act_/, "");
   if (!token || !accountId) {
-    return { status: "failed", error: "請先完成 Meta Access Token 與廣告帳號 ID 設定" };
+    return { status: "failed", error: "請先完成 Meta Ads API Key 與廣告帳號 ID 設定" };
   }
 
   try {
@@ -634,9 +668,9 @@ export async function fetchMetaAdSnapshot(params: {
   goal: MetaAdGoalKey;
 }): Promise<{ ok: boolean; statusText?: string; detail?: string; performance?: MetaPerformanceSnapshot }> {
   const { cfg, adId, goal } = params;
-  const token = cfg.accessToken.trim();
+  const token = pickMetaAccessToken(cfg, "ads");
   if (!token) {
-    return { ok: false, detail: "請先在控制設定填入 Meta Access Token" };
+    return { ok: false, detail: "請先在控制設定填入 Meta Ads API Key" };
   }
 
   try {
@@ -664,9 +698,9 @@ export async function fetchMetaAdStatus(params: {
   adId: string;
 }): Promise<{ ok: boolean; statusText?: string; detail?: string; raw?: Record<string, unknown> }> {
   const { cfg, adId } = params;
-  const token = cfg.accessToken.trim();
+  const token = pickMetaAccessToken(cfg, "ads");
   if (!token) {
-    return { ok: false, detail: "請先在控制設定填入 Meta Access Token" };
+    return { ok: false, detail: "請先在控制設定填入 Meta Ads API Key" };
   }
 
   try {
@@ -693,7 +727,7 @@ export async function fetchMetaPostMetrics(params: {
   raw?: Record<string, unknown>;
 }> {
   const { cfg } = params;
-  const token = cfg.accessToken.trim();
+  const token = pickMetaAccessToken(cfg, params.platform === "instagram" ? "instagram" : "facebook");
   const postRef = params.postId.trim();
   const postId = postRef.replace(/^https?:\/\/[^/]+\//i, "");
   const proxied = await fetchLocalPostMetricsProxyByRef({
@@ -707,7 +741,10 @@ export async function fetchMetaPostMetrics(params: {
     return proxied;
   }
   if (!token) {
-    return proxied ?? { ok: false, detail: "請先在控制設定填入 Meta Access Token" };
+    return proxied ?? {
+      ok: false,
+      detail: params.platform === "instagram" ? "請先在控制設定填入 Instagram API Key" : "請先在控制設定填入 Facebook API Key",
+    };
   }
   if (!postId) {
     return { ok: false, detail: "缺少貼文 ID" };
@@ -825,9 +862,9 @@ export async function updateMetaAdDelivery(params: {
   status: "PAUSED" | "ACTIVE";
 }): Promise<{ ok: boolean; statusText?: string; detail?: string; raw?: Record<string, unknown> }> {
   const { cfg, adId, status } = params;
-  const token = cfg.accessToken.trim();
+  const token = pickMetaAccessToken(cfg, "ads");
   if (!token) {
-    return { ok: false, detail: "請先在控制設定填入 Meta Access Token" };
+    return { ok: false, detail: "請先在控制設定填入 Meta Ads API Key" };
   }
 
   try {
@@ -840,4 +877,3 @@ export async function updateMetaAdDelivery(params: {
     return { ok: false, detail: msg };
   }
 }
-

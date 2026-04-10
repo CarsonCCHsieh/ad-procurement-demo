@@ -7,7 +7,10 @@ export type MetaConfigV1 = {
   updatedAt: string; // ISO
   apiVersion: string; // e.g. v23.0
   mode: MetaRuntimeMode;
-  accessToken: string;
+  adsAccessToken: string;
+  facebookAccessToken: string;
+  instagramAccessToken: string;
+  accessToken: string; // legacy fallback
   adAccountId: string; // without act_ prefix
   pageId: string;
   instagramActorId: string;
@@ -26,6 +29,9 @@ export const DEFAULT_META_CONFIG: MetaConfigV1 = {
   updatedAt: isoNow(),
   apiVersion: "v23.0",
   mode: "live",
+  adsAccessToken: "",
+  facebookAccessToken: "",
+  instagramAccessToken: "",
   accessToken: "",
   adAccountId: "",
   pageId: "",
@@ -44,6 +50,9 @@ function normalize(raw: unknown): MetaConfigV1 | null {
     updatedAt: typeof r.updatedAt === "string" ? r.updatedAt : isoNow(),
     apiVersion: r.apiVersion.trim() || "v23.0",
     mode: "live",
+    adsAccessToken: typeof r.adsAccessToken === "string" ? r.adsAccessToken.trim() : "",
+    facebookAccessToken: typeof r.facebookAccessToken === "string" ? r.facebookAccessToken.trim() : "",
+    instagramAccessToken: typeof r.instagramAccessToken === "string" ? r.instagramAccessToken.trim() : "",
     accessToken: typeof r.accessToken === "string" ? r.accessToken.trim() : "",
     adAccountId: typeof r.adAccountId === "string" ? r.adAccountId.trim() : "",
     pageId: typeof r.pageId === "string" ? r.pageId.trim() : "",
@@ -82,5 +91,20 @@ export function patchMetaConfig(patch: Partial<MetaConfigV1>) {
 
 export function resetMetaConfig() {
   saveMetaConfig(DEFAULT_META_CONFIG);
+}
+
+export function pickMetaAccessToken(
+  cfg: MetaConfigV1,
+  scope: "ads" | "facebook" | "instagram" | "any" = "any",
+): string {
+  const ads = String(cfg.adsAccessToken || "").trim();
+  const fb = String(cfg.facebookAccessToken || "").trim();
+  const ig = String(cfg.instagramAccessToken || "").trim();
+  const legacy = String(cfg.accessToken || "").trim();
+
+  if (scope === "ads") return ads || fb || ig || legacy;
+  if (scope === "facebook") return fb || ads || legacy || ig;
+  if (scope === "instagram") return ig || ads || legacy || fb;
+  return ads || fb || ig || legacy;
 }
 
