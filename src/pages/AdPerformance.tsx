@@ -764,7 +764,7 @@ export function AdPerformancePage() {
   };
 
   const runLocalVendorSync = async (options?: { silent?: boolean }) => {
-    const vendors: VendorKey[] = ["smmraja", "urpanel", "justanotherpanel"];
+    const vendors = cfg.vendors.map((vendor) => vendor.key);
     let syncedCount = 0;
     const errors: string[] = [];
 

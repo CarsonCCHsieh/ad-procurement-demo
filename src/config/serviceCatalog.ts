@@ -81,7 +81,7 @@ function normalizeCatalog(raw: unknown): ServiceCatalogV1 | null {
   const catalogs = (r.catalogs ?? {}) as Partial<Record<VendorKey, unknown>>;
 
   const out: ServiceCatalogV1 = { version: 1, updatedAt: typeof r.updatedAt === "string" ? r.updatedAt : isoNow(), catalogs: {} };
-  for (const key of ["smmraja", "urpanel", "justanotherpanel"] as VendorKey[]) {
+  for (const key of ["smmraja", "urpanel", "justanotherpanel", "hdz"] as VendorKey[]) {
     const services = normalizeServices(catalogs[key]);
     if (services && services.length > 0) out.catalogs[key] = services;
   }

@@ -34,7 +34,15 @@ type VendorBalanceState = {
   error?: string;
 };
 
-const VENDORS: VendorKey[] = ["smmraja", "urpanel", "justanotherpanel"];
+const VENDORS: VendorKey[] = ["smmraja", "urpanel", "justanotherpanel", "hdz"];
+
+function buildVendorStringState(valueByVendor: (vendor: VendorKey) => string): Record<VendorKey, string> {
+  return Object.fromEntries(VENDORS.map((vendor) => [vendor, valueByVendor(vendor)])) as Record<VendorKey, string>;
+}
+
+function buildVendorBalanceState(): Record<VendorKey, VendorBalanceState> {
+  return Object.fromEntries(VENDORS.map((vendor) => [vendor, {}])) as Record<VendorKey, VendorBalanceState>;
+}
 
 function cloneConfig(cfg: AppConfigV1): AppConfigV1 {
   return {
@@ -88,18 +96,14 @@ export function SettingsPage() {
 
   const [cfg, setCfg] = useState<AppConfigV1>(() => cloneConfig(getConfig()));
   const [pricingCfg, setPricingCfg] = useState<PricingConfigV1>(() => getPricingConfig());
-  const [vendorKeys, setVendorKeys] = useState<Record<VendorKey, string>>({
-    smmraja: getVendorKey("smmraja"),
-    urpanel: getVendorKey("urpanel"),
-    justanotherpanel: getVendorKey("justanotherpanel"),
-  });
+  const [vendorKeys, setVendorKeys] = useState<Record<VendorKey, string>>(
+    () => buildVendorStringState((vendor) => getVendorKey(vendor)),
+  );
   const [sampleQty, setSampleQty] = useState("2000");
   const [showVendorKeys, setShowVendorKeys] = useState(false);
-  const [vendorBalances, setVendorBalances] = useState<Record<VendorKey, VendorBalanceState>>({
-    smmraja: {},
-    urpanel: {},
-    justanotherpanel: {},
-  });
+  const [vendorBalances, setVendorBalances] = useState<Record<VendorKey, VendorBalanceState>>(
+    () => buildVendorBalanceState(),
+  );
   const [newPlacementKey, setNewPlacementKey] = useState("");
   const [newPlacementLabel, setNewPlacementLabel] = useState("");
   const [metaCardKey, setMetaCardKey] = useState(0);
@@ -116,11 +120,7 @@ export function SettingsPage() {
   const refreshAll = () => {
     setCfg(cloneConfig(getConfig()));
     setPricingCfg(getPricingConfig());
-    setVendorKeys({
-      smmraja: getVendorKey("smmraja"),
-      urpanel: getVendorKey("urpanel"),
-      justanotherpanel: getVendorKey("justanotherpanel"),
-    });
+    setVendorKeys(buildVendorStringState((vendor) => getVendorKey(vendor)));
     setMetaCardKey((value) => value + 1);
   };
 

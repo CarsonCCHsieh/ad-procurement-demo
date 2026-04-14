@@ -90,6 +90,7 @@ const DEFAULT_VENDOR_BASES = {
   smmraja: "https://www.smmraja.com/api/v3",
   urpanel: "https://urpanel.com/api/v2",
   justanotherpanel: "https://justanotherpanel.com/api/v2",
+  hdz: "https://www.hdsrdmp.com/api/v2",
 };
 const VENDOR_TERMINAL_STATUS = [
   "complete",
@@ -109,7 +110,7 @@ const VENDOR_TERMINAL_STATUS = [
 ];
 
 function isVendorKey(value) {
-  return value === "smmraja" || value === "urpanel" || value === "justanotherpanel";
+  return value === "smmraja" || value === "urpanel" || value === "justanotherpanel" || value === "hdz";
 }
 
 function json(res, status, payload) {
@@ -177,10 +178,15 @@ function readBody(req) {
   });
 }
 
+function readJsonFileSafe(path) {
+  const raw = readFileSync(path, "utf-8").replace(/^\uFEFF/, "");
+  return JSON.parse(raw);
+}
+
 function loadMetaSecrets() {
   if (!existsSync(META_SECRET_PATH)) return null;
   try {
-    const raw = JSON.parse(readFileSync(META_SECRET_PATH, "utf-8"));
+    const raw = readJsonFileSafe(META_SECRET_PATH);
     if (!raw || typeof raw !== "object") return null;
     const facebookAccessToken = typeof raw.facebookAccessToken === "string" ? raw.facebookAccessToken.trim() : "";
     const instagramAccessToken = typeof raw.instagramAccessToken === "string" ? raw.instagramAccessToken.trim() : "";
@@ -213,7 +219,7 @@ function getMetaToken(metaSecrets, platform) {
 function loadVendorSecrets() {
   if (!existsSync(VENDOR_SECRET_PATH)) return null;
   try {
-    const raw = JSON.parse(readFileSync(VENDOR_SECRET_PATH, "utf-8"));
+    const raw = readJsonFileSafe(VENDOR_SECRET_PATH);
     return raw && typeof raw === "object" ? raw : null;
   } catch {
     return null;
@@ -2053,7 +2059,7 @@ function getVendorRuntime(vendor) {
 function statusParamFor(vendor, orderIds) {
   const joined = orderIds.join(",");
   if (orderIds.length <= 1) return { key: "order", value: joined };
-  if (vendor === "smmraja") return { key: "order", value: joined };
+  if (vendor === "smmraja" || vendor === "hdz") return { key: "order", value: joined };
   return { key: "orders", value: joined };
 }
 

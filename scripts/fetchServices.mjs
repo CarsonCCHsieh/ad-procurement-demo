@@ -26,6 +26,7 @@ const VENDORS = [
   { key: "smmraja", baseUrl: "https://www.smmraja.com/api/v3", envKey: "SMMRAJA_KEY" },
   { key: "urpanel", baseUrl: "https://urpanel.com/api/v2", envKey: "URPANEL_KEY" },
   { key: "justanotherpanel", baseUrl: "https://justanotherpanel.com/api/v2", envKey: "JAP_KEY" },
+  { key: "hdz", baseUrl: "https://www.hdsrdmp.com/api/v2", envKey: "HDZ_KEY" },
 ];
 
 const outDir = path.resolve(process.cwd(), "public", "services");
@@ -52,4 +53,3 @@ for (const v of VENDORS) {
 }
 
 console.log(`[done] wrote files: ${wrote}`);
-

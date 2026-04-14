@@ -34,6 +34,7 @@ jobs:
           SMMRAJA_KEY: ${{ secrets.SMMRAJA_KEY }}
           URPANEL_KEY: ${{ secrets.URPANEL_KEY }}
           JAP_KEY: ${{ secrets.JAP_KEY }}
+          HDZ_KEY: ${{ secrets.HDZ_KEY }}
         run: node scripts/fetchServices.mjs
 
       - name: Encoding & build

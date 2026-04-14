@@ -64,7 +64,7 @@ export function statusParamFor(vendor: VendorKey, orderIds: number[]): { key: st
   const joined = orderIds.join(",");
   if (orderIds.length <= 1) return { key: "order", value: joined };
   // SMM Raja docs show multi-status via "order=1,10,100".
-  if (vendor === "smmraja") return { key: "order", value: joined };
+  if (vendor === "smmraja" || vendor === "hdz") return { key: "order", value: joined };
   // Many others use "orders" for multi.
   return { key: "orders", value: joined };
 }

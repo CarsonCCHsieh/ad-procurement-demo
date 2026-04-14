@@ -2,7 +2,7 @@ import type { AdPlacement } from "./pricing";
 import type { PlannedSplit } from "./split";
 import { queueSharedWrite } from "./sharedSync";
 
-export type VendorKey = "smmraja" | "urpanel" | "justanotherpanel";
+export type VendorKey = "smmraja" | "urpanel" | "justanotherpanel" | "hdz";
 
 export type VendorSplitExec = PlannedSplit & {
   vendorOrderId?: number; // order id returned by vendor after "add"

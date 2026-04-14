@@ -1,7 +1,7 @@
 import { DEFAULT_PRICING_RULES, type AdPlacement } from "../lib/pricing";
 import { queueSharedWrite } from "../lib/sharedSync";
 
-export type VendorKey = "smmraja" | "urpanel" | "justanotherpanel";
+export type VendorKey = "smmraja" | "urpanel" | "justanotherpanel" | "hdz";
 
 export type VendorConfig = {
   key: VendorKey;
@@ -121,13 +121,14 @@ export const DEFAULT_CONFIG: AppConfigV1 = {
     { key: "smmraja", label: "SMM Raja", apiBaseUrl: "https://www.smmraja.com/api/v3", enabled: true },
     { key: "urpanel", label: "Urpanel", apiBaseUrl: "https://urpanel.com/api/v2", enabled: true },
     { key: "justanotherpanel", label: "JustAnotherPanel", apiBaseUrl: "https://justanotherpanel.com/api/v2", enabled: true },
+    { key: "hdz", label: "HDZ", apiBaseUrl: "https://www.hdsrdmp.com/api/v2", enabled: true },
   ],
   placements: defaultPlacements(),
   updatedAt: isoNow(),
 };
 
 function isVendorKey(value: unknown): value is VendorKey {
-  return value === "smmraja" || value === "urpanel" || value === "justanotherpanel";
+  return value === "smmraja" || value === "urpanel" || value === "justanotherpanel" || value === "hdz";
 }
 
 function looksCorruptedLabel(value: string) {
@@ -183,7 +184,7 @@ function normalizeConfig(raw: unknown): AppConfigV1 | null {
   if (data.version !== 1) return null;
   if (!Array.isArray(data.vendors) || !Array.isArray(data.placements)) return null;
 
-  const vendors: VendorConfig[] = data.vendors.flatMap((vendor) => {
+  const vendorsFromRaw: VendorConfig[] = data.vendors.flatMap((vendor) => {
     if (!vendor || typeof vendor !== "object") return [];
     const item = vendor as Partial<VendorConfig>;
     if (!isVendorKey(item.key)) return [];
@@ -191,6 +192,10 @@ function normalizeConfig(raw: unknown): AppConfigV1 | null {
     if (typeof item.apiBaseUrl !== "string") return [];
     return [{ key: item.key, label: item.label, apiBaseUrl: item.apiBaseUrl, enabled: item.enabled !== false }];
   });
+  const vendorMap = new Map<VendorKey, VendorConfig>();
+  for (const fallback of DEFAULT_CONFIG.vendors) vendorMap.set(fallback.key, fallback);
+  for (const item of vendorsFromRaw) vendorMap.set(item.key, item);
+  const vendors = Array.from(vendorMap.values());
 
   const placementsByKey = new Map<string, PlacementConfig>();
   for (const placement of data.placements) {
@@ -243,7 +248,7 @@ function normalizeConfig(raw: unknown): AppConfigV1 | null {
 
   return {
     version: 1,
-    vendors: vendors.length > 0 ? vendors : DEFAULT_CONFIG.vendors,
+    vendors,
     placements: Array.from(placementsByKey.values()),
     updatedAt: typeof data.updatedAt === "string" ? data.updatedAt : isoNow(),
   };
