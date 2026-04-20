@@ -2016,6 +2016,18 @@
     "category": "Instagram - France 🇫🇷 (Likes/Comments/Story Views)"
   },
   {
+    "service": 12922,
+    "name": "Instagram - Views | France 🇫🇷 | Fast",
+    "type": "Default",
+    "rate": "0.3166",
+    "min": 100,
+    "max": 1000000,
+    "dripfeed": false,
+    "refill": false,
+    "cancel": true,
+    "category": "Instagram - France 🇫🇷 (Likes/Comments/Story Views)"
+  },
+  {
     "service": 5053,
     "name": "Instagram - Followers | GERMANY 🇩🇪 || REAL || Refill 365 Days ⭐",
     "type": "Default",
@@ -4299,12 +4311,12 @@
     "service": 8911,
     "name": "Instagram - Views || All link || Fast",
     "type": "Default",
-    "rate": "0.0032",
+    "rate": "0.0024",
     "min": 100,
     "max": 1000000000,
     "dripfeed": true,
     "refill": false,
-    "cancel": false,
+    "cancel": true,
     "category": "Instagram - Views 📹"
   },
   {
@@ -8309,8 +8321,8 @@
     "type": "Default",
     "rate": "0.725",
     "min": 10,
-    "max": 100000,
-    "dripfeed": true,
+    "max": 300000,
+    "dripfeed": false,
     "refill": false,
     "cancel": false,
     "category": "Youtube - Likes || Dislikes"
@@ -8319,7 +8331,7 @@
     "service": 5471,
     "name": "YouTube - Likes || HQ || No Drop || 30 Days Refill || 10K/Day",
     "type": "Default",
-    "rate": "0.8361",
+    "rate": "0.7601",
     "min": 100,
     "max": 10000,
     "dripfeed": true,
@@ -10504,7 +10516,7 @@
     "name": "Twitter - Followers || Drop Possible || 30 Days Auto Refill || Super Fast || 150K/Day",
     "type": "Default",
     "rate": "36.25",
-    "min": 1,
+    "min": 100,
     "max": 100000,
     "dripfeed": true,
     "refill": false,
@@ -15608,7 +15620,7 @@
     "max": 200000,
     "dripfeed": true,
     "refill": false,
-    "cancel": true,
+    "cancel": false,
     "category": "Telegram - Reactions"
   },
   {
