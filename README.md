@@ -1,33 +1,76 @@
 # ad-procurement-demo
 
-鍏ч儴寤ｅ憡涓嬪柈鑸囨姇鏀炬垚鏁?Demo銆傛鐗堟湰浠?GitHub Pages 浣滅偤鍓嶇灞曠ず锛屾湰姗?Node API 鑸?SQLite 浣滅偤鏆檪鍙浜哄叡鐢ㄧ殑寰岀銆傛湭渚嗘寮忓寲鏅傦紝寰岀鑸囨帓绋嬪彲绉昏綁鑷?Supabase Functions / Cloud Functions锛岃硣鏂欒〃绉昏綁鑷抽洸绔硣鏂欏韩銆?
-## 绯荤当瀹氫綅
+內部廣告下單與投放成效 Demo。此版本以 GitHub Pages 作為前端展示，本機 Node API 與 SQLite 作為暫時可多人共用的後端。未來正式化時，後端與排程可移轉至 Supabase Functions / Cloud Functions，資料表移轉至雲端資料庫。
 
-- 鍓嶇锛歊eact + TypeScript + Vite銆?- 寰岀锛歂ode.js锛屼富瑕佸叆鍙ｇ偤 `server/shared-api.js`銆?- 璩囨枡搴細SQLite锛屾獢妗堢偤 `data/shared-demo.sqlite`銆?- 鍓嶅彴閮ㄧ讲锛欸itHub Pages锛屽彧鎻愪緵闈滄厠闋侀潰銆?- API 閫ｇ窔锛氬墠绔€忛亷 `VITE_SHARED_API_BASE` 鎴栧収寤?fallback 閫ｅ埌鏈 / tunnel API銆?- 瀹夊叏鍘熷墖锛氫緵鎳夊晢銆丮eta銆丗anpage銆両nstagram銆丄ds API Key 鍙斁寰岀锛屼笉鏀惧墠绔€佷笉閫?Git銆?
-## 涓昏鍔熻兘
+## 系統定位
 
-- 寤犲晢浜掑嫊涓嬪柈锛氭敮鎻翠竴娆℃€т笅鍠垏骞冲潎鎺掔▼涓嬪柈銆?- 寤犲晢鏈嶅嫏瑷畾锛氫緵鎳夊晢 API Key銆佹湇鍕欐竻鍠€佸搧闋呭皪鎳夈€佽拷鍔犺ō瀹氥€佹渶浣庝笅鍠柈浣嶈垏瀹氬児銆?- 鎶曟斁鎴愭晥锛氭暣鍚堝粻鍟嗚▊鍠垏 Meta 鎶曞唬妗堜欢锛屾敮鎻存墜鍕曞悓姝ヨ垏鎺掔▼鍚屾銆?- Meta 瀹樻柟鎶曞唬锛氫緷 Meta 瀹樻柟 Campaign Objective 鑸?Performance Goal 寤虹珛鎶曟斁娴佺▼銆?- Meta 鎴愭晥杩借工锛氫緷璨兼枃閫ｇ祼瑙ｆ瀽 Facebook / Instagram 璨兼枃锛屽緦绾屽彲杩借工鐩 KPI銆?- 閬旀鍋滄姇锛氱暥杩借工鎸囨閬旀垚瑷畾鐩鏅傦紝鑷嫊鏆仠鎶曢仦銆?- 鍎寲鎶曢仦娉曪細寤虹珛澶氬€?ad set / ad 璁婇珨锛屼緷 proxy ROAS 鑷嫊鍋滅敤浣庢晥璁婇珨銆?
-## Meta 瀹樻柟鎶曞唬瑷▓
+- 前端：React + TypeScript + Vite。
+- 後端：Node.js，主要入口為 `server/shared-api.js`。
+- 資料庫：SQLite，檔案為 `data/shared-demo.sqlite`。
+- 前台部署：GitHub Pages，只提供靜態頁面。
+- API 連線：前端透過 `VITE_SHARED_API_BASE` 或內建 fallback 連到本機 / tunnel API。
+- 安全原則：供應商、Meta、Fanpage、Instagram、Ads API Key 只放後端，不放前端、不進 Git。
 
-`Meta 瀹樻柟鎶曞唬` 涓嶅啀浣跨敤寤犲晢涓嬪柈鍝侀爡锛岃€屾槸浣跨敤 Meta 瀹樻柟鎶曟斁绲愭锛?
-- Campaign Objective锛氬搧鐗岃獚鐭ャ€佹祦閲忋€佷簰鍕曘€佹經鍦ㄩ¨瀹€佹噳鐢ㄧ▼寮忔帹寤ｃ€侀姺鍞キ绺俱€?- Performance Goal锛氫緷 Meta 瀹樻柟鏂囧瓧鏁寸悊锛屼甫渚?objective 绡╅伕鍙敤 KPI銆?- KPI tracking锛氫緷 goal 灏嶆噳 reach銆乮mpressions銆乧licks銆乸ost engagement銆乿ideo views銆乸rofile visits銆乴eads銆乧onversions銆乤pp events銆乧alls 绛夋瑒浣嶃€?- 鐩存姇娉曪細寤虹珛鍠竴鎶曟斁绲愭锛屽彧杩借工鑸囬仈妯欏仠鎶曘€?- 鍎寲鎶曢仦娉曪細寤虹珛鑷冲皯鍏╃祫璁婇珨锛岄爯瑷偤銆屾ā鏉垮彈鐪俱€嶈垏銆屽唬娉涘彈鐪俱€嶃€傚悓姝ユ檪浠?`鐩鎴愭晥 / spend` 浣滅偤 proxy ROAS锛屼綆鏂煎嫕鍑虹祫姣斾緥闁€妾荤殑璁婇珨鏈冭嚜鍕曟毇鍋溿€?
-## 鐢㈡キ妯℃澘
+## 主要功能
 
-鐩墠鍏у缓 29 鍊嬬敘妤ā鏉匡細
+- 廠商互動下單：支援一次性下單與平均排程下單。
+- 廠商服務設定：供應商 API Key、服務清單、品項對應、追加設定、最低下單單位與定價。
+- 投放成效：整合廠商訂單與 Meta 投廣案件，支援手動同步與排程同步。
+- Meta 官方投廣：依 Meta 官方 Campaign Objective 與 Performance Goal 建立投放流程。
+- Meta 成效追蹤：依貼文連結解析 Facebook / Instagram 貼文，後續可追蹤目標 KPI。
+- 達標停投：當追蹤指標達成設定目標時，自動暫停投遞。
+- 優化投遞法：建立多個 ad set / ad 變體，依 proxy ROAS 自動停用低效變體。
 
-閬嬪嫊銆侀瀷椤炪€佹湇椋俱€佺編濡濄€佺簿鍝併€侀悩閷堕＞鍝併€佸奖鍔囧妯傘€侀寤炽€侀鍝侀２鏂欍€侀厭椤炪€佹棩鐢ㄥ搧銆?C瀹堕浕銆佷氦閫氶亱杓搞€侀亰鎴查銆丄PP銆丒C骞冲彴銆佸寘鍖呴厤浠躲€佹梾閬婃キ銆侀噾铻嶄繚闅€侀浂鍞€氳矾銆佸厜瀛哥溂閺°€侀浕淇￠€氳▕銆佸仴搴烽啱钘ャ€佹斂搴滄斂榛ㄣ€佹枃鏁欍€佹埧鍦扮敘銆佸骞煎厭銆侀啱缇庛€佸叾浠栥€?
-绗竴鐗堟ā鏉挎帯瀹夊叏闋愯ō锛氬彴鐏ｃ€?8-49銆佹墜鍕曠増浣嶃€佷繚瀹堣垐瓒ｇ兢绲勩€傜鐞嗗摗鍙柤 `鎺у埗瑷畾` 瑾挎暣妯℃澘銆佸彈鐪俱€佺増浣嶈垏鍎寲闁€妾汇€?
-## 寰岀 API
+## Meta 官方投廣設計
 
-涓昏 API 鐨嗗湪 `server/shared-api.js`锛?
-- `GET /api/meta/settings`锛氳畝鍙?Meta 鎶曟斁瑷畾锛屼笉鍥炲偝瀹屾暣 token銆?- `POST /api/meta/settings`锛氬劜瀛?Ads / Facebook / Instagram token銆侀爯瑷唬鍛婂赋铏熴€丳age銆両nstagram actor銆佺敘妤ā鏉胯垏鍎寲闁€妾汇€?- `POST /api/meta/verify-token`锛氶璀?Ads / Facebook / Instagram token銆?- `POST /api/meta/resolve-post`锛氱敤 post link 瑙ｆ瀽 platform銆乸ost id銆乧anonical id銆佽布鏂囨檪闁撱€佹枃妗堛€乸ermalink銆?- `GET /api/meta/orders`锛氳畝鍙?Meta 鎶曟斁妗堜欢銆?- `POST /api/meta/orders`锛氬缓绔?campaign / ad set / creative / ad锛岄爯瑷媭鎱嬬偤 `PAUSED`锛屾垚鍔熷緦瀵叆 SQLite銆?- `POST /api/meta/orders/:id/sync`锛氬悓姝ュ柈绛嗘浠舵垚鏁堛€?- `POST /api/meta/sync-running`锛氭壒娆″悓姝ュ煼琛屼腑妗堜欢鑸?A/B 鍒ゆ柗銆?- `POST /api/meta/orders/:id/pause`锛氭毇鍋滄姇鏀俱€?- `POST /api/meta/orders/:id/resume`锛氶噸鏂板暉鐢ㄦ姇鏀俱€?
-## 璩囨枡鍎插瓨
+`Meta 官方投廣` 不再使用廠商下單品項，而是使用 Meta 官方投放結構：
 
-- `data/shared-demo.sqlite`锛氫富瑕佸叡浜硣鏂欏韩銆?- `data/meta-local-secrets.json`锛氬彲鏀炬湰姗熷緦绔?secrets锛屽繀闋堜繚鎸佷笉閫?Git銆?- `ad_demo_meta_settings_v2`锛歁eta 绠＄悊瑷畾锛屼笉鍥炲偝瀹屾暣 token 鍒板墠绔€?- `ad_demo_meta_orders_v1`锛歁eta 鎶曟斁妗堜欢銆佽畩楂斻€佸悓姝ョ祼鏋滆垏鍋滄姇鐙€鎱嬨€?- `ad_demo_orders_v1`锛氬粻鍟嗕簰鍕曚笅鍠浠躲€?- `ad_demo_config_v1`锛氫緵鎳夊晢銆佸搧闋呫€佹媶鍠€佽拷鍔犺ō瀹氥€?
-## Rate Limit 闃茶
+- Campaign Objective：品牌認知、流量、互動、潛在顧客、應用程式推廣、銷售業績。
+- Performance Goal：依 Meta 官方文字整理，並依 objective 篩選可用 KPI。
+- KPI tracking：依 goal 對應 reach、impressions、clicks、post engagement、video views、profile visits、leads、conversions、app events、calls 等欄位。
+- 直投法：建立單一投放結構，只追蹤與達標停投。
+- 優化投遞法：建立至少兩組變體，預設為「模板受眾」與「廣泛受眾」。同步時以 `目標成效 / spend` 作為 proxy ROAS，低於勝出組比例門檻的變體會自動暫停。
 
-- 鎴愭晥鍚屾闋愯ō姣?5 鍒嗛悩涓€杓€?- 姣忚吉闄愬埗铏曠悊妗堜欢鏁歌垏妗堜欢闁撻殧锛屽彲鐢辩挵澧冭畩鏁告垨鎺у埗瑷畾瑾挎暣銆?- 鍚屼竴 post / ad 鐨勬垚鏁堟渻蹇彇锛岄伩鍏嶇煭鏅傞枔閲嶈鍛煎彨銆?- 閬囧埌 Meta rate limit 椤為尟瑾ゆ檪涓嶆渻鐒￠檺閲嶈│锛屾渻淇濈暀閷鐙€鎱嬩緵 UI 椤ず銆?
-## 鏈鍟熷嫊
+## 產業模板
+
+目前內建 29 個產業模板：
+
+運動、鞋類、服飾、美妝、精品、鐘錶飾品、影劇娛樂、餐廳、食品飲料、酒類、日用品、3C家電、交通運輸、遊戲類、APP、EC平台、包包配件、旅遊業、金融保險、零售通路、光學眼鏡、電信通訊、健康醫藥、政府政黨、文教、房地產、嬰幼兒、醫美、其他。
+
+第一版模板採安全預設：台灣、18-49、手動版位、保守興趣群組。管理員可於 `控制設定` 調整模板、受眾、版位與優化門檻。
+
+## 後端 API
+
+主要 API 皆在 `server/shared-api.js`：
+
+- `GET /api/meta/settings`：讀取 Meta 投放設定，不回傳完整 token。
+- `POST /api/meta/settings`：儲存 Ads / Facebook / Instagram token、預設廣告帳號、Page、Instagram actor、產業模板與優化門檻。
+- `POST /api/meta/verify-token`：驗證 Ads / Facebook / Instagram token。
+- `POST /api/meta/resolve-post`：用 post link 解析 platform、post id、canonical id、貼文時間、文案、permalink。
+- `GET /api/meta/orders`：讀取 Meta 投放案件。
+- `POST /api/meta/orders`：建立 campaign / ad set / creative / ad，預設狀態為 `PAUSED`，成功後寫入 SQLite。
+- `POST /api/meta/orders/:id/sync`：同步單筆案件成效。
+- `POST /api/meta/sync-running`：批次同步執行中案件與 A/B 判斷。
+- `POST /api/meta/orders/:id/pause`：暫停投放。
+- `POST /api/meta/orders/:id/resume`：重新啟用投放。
+
+## 資料儲存
+
+- `data/shared-demo.sqlite`：主要共享資料庫。
+- `data/meta-local-secrets.json`：可放本機後端 secrets，必須保持不進 Git。
+- `ad_demo_meta_settings_v2`：Meta 管理設定，不回傳完整 token 到前端。
+- `ad_demo_meta_orders_v1`：Meta 投放案件、變體、同步結果與停投狀態。
+- `ad_demo_orders_v1`：廠商互動下單案件。
+- `ad_demo_config_v1`：供應商、品項、拆單、追加設定。
+
+## Rate Limit 防護
+
+- 成效同步預設每 5 分鐘一輪。
+- 每輪限制處理案件數與案件間隔，可由環境變數或控制設定調整。
+- 同一 post / ad 的成效會快取，避免短時間重複呼叫。
+- 遇到 Meta rate limit 類錯誤時不會無限重試，會保留錯誤狀態供 UI 顯示。
+
+## 本機啟動
 
 ```bash
 npm install
@@ -37,18 +80,34 @@ npm run build
 npm run shared-api
 ```
 
-鍓嶇闁嬬櫦妯″紡锛?
+前端開發模式：
+
 ```bash
 npm run dev
 ```
 
-鑻?GitHub Pages 瑕侀€ｅ埌鏈 API锛岄渶淇濇寔 shared-api 鑸?tunnel 閫ｇ窔涓紝涓︾⒑瑾嶅墠绔ō瀹氱殑 API base URL 鍙€ｅ埌 `http://127.0.0.1:8787` 灏嶅 tunnel銆?
-## 娓│閲嶉粸
+若 GitHub Pages 要連到本機 API，需保持 shared-api 與 tunnel 連線中，並確認前端設定的 API base URL 可連到 `http://127.0.0.1:8787` 對外 tunnel。
 
-- 鐒?API Key锛氳ō瀹氶爜鍙繚瀛樼┖鐙€鎱嬶紱璨兼枃椹楄瓑鑸囬€佸嚭鏈冩彁绀洪渶瑕佽ō瀹?API Key锛屼笉鍙┖鐧介爜銆?- 鏈?API Key锛欰ds token 鍙垪鍑?ad accounts锛汧acebook / Instagram token 鍙В鏋愯布鏂囦甫鍙栧緱 ID銆佹枃妗堛€佹檪闁撱€?- 寤虹珛鎶曟斁锛氶爯瑷缓绔?`PAUSED`锛岄伩鍏嶆脯瑭﹁鎶曘€?- 鍚屾鑸囧仠鎶曪細鍚屾 spend銆乺each銆乮mpressions銆乧licks銆乤ctions锛涢仈妯欏緦鑷嫊 pause锛涘劒鍖栨姇閬炴硶鏈冨仠鐢ㄤ綆鏁堣畩楂斻€?- UI锛氭姗熻垏鎵嬫鐗堜笉鍙窇鐗堬紝涓€鑸娇鐢ㄨ€呬笉鍙湅瑕?token銆乺aw payload 鎴?stack trace銆?
-## 鏂囦欢绱㈠紩
+## 測試重點
 
-- `docs/api_and_storage_map_zh.md`锛欰PI 鑸囪硣鏂欏劜瀛樺湴鍦栥€?- `docs/function_relationship_map_zh-TW.md`锛欶unction 闂滀總鑸囦慨鏀瑰奖闊裤€?- `docs/production_handoff_zh.md`锛氭寮忓寲绉昏綁瑾槑銆?- `docs/encoding_standard_zh-TW.md`锛氱法纰兼婧栥€?- `docs/deployment_topology_zh.md`锛氶儴缃叉嫇鎾层€?- `docs/status_zh-TW.md`锛氱洰鍓嶇媭鎱嬬磤閷勩€?
-## 瀹夊叏鍘熷墖
+- 無 API Key：設定頁可保存空狀態；貼文驗證與送出會提示需要設定 API Key，不可空白頁。
+- 有 API Key：Ads token 可列出 ad accounts；Facebook / Instagram token 可解析貼文並取得 ID、文案、時間。
+- 建立投放：預設建立 `PAUSED`，避免測試誤投。
+- 同步與停投：同步 spend、reach、impressions、clicks、actions；達標後自動 pause；優化投遞法會停用低效變體。
+- UI：桌機與手機版不可跑版，一般使用者不可看見 token、raw payload 或 stack trace。
 
-- 涓嶆妸瀹屾暣 API Key / token 瀵叆 repo銆乧ommit銆佸墠绔▼寮忕⒓鎴?localStorage銆?- 鍓嶇鍙’绀?token 鏄惁瀛樺湪鑸囬伄缃╁緦鐗囨銆?- 鎵€鏈夐渶瑕佹瑠闄愮殑 Meta / 渚涙噳鍟嗗懠鍙兘璧板緦绔唬鐞嗐€?- `.runtime/`銆乻ecrets銆丼QLite 鍌欎唤妾斾笉鍙彁浜ゃ€
+## 文件索引
+
+- `docs/api_and_storage_map_zh.md`：API 與資料儲存地圖。
+- `docs/function_relationship_map_zh-TW.md`：Function 關係與修改影響。
+- `docs/production_handoff_zh.md`：正式化移轉說明。
+- `docs/encoding_standard_zh-TW.md`：編碼標準。
+- `docs/deployment_topology_zh.md`：部署拓撲。
+- `docs/status_zh-TW.md`：目前狀態紀錄。
+
+## 安全原則
+
+- 不把完整 API Key / token 寫入 repo、commit、前端程式碼或 localStorage。
+- 前端只顯示 token 是否存在與遮罩後片段。
+- 所有需要權限的 Meta / 供應商呼叫都走後端代理。
+- `.runtime/`、secrets、SQLite 備份檔不可提交。
