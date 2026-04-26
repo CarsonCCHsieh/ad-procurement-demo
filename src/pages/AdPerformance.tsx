@@ -1130,10 +1130,10 @@ export function AdPerformancePage() {
     void tick();
     const timer = window.setInterval(() => {
       void tick();
-    }, Math.max(1, metaPresetCfg.autoStopCheckMinutes || 5) * 60 * 1000);
+    }, Math.max(1, metaPresetCfg.optimization.autoStopCheckMinutes || 5) * 60 * 1000);
 
     return () => window.clearInterval(timer);
-  }, [metaAutoEnabled, metaAutoRunning, metaPresetCfg.autoStopCheckMinutes, usesServerMetaAutomation]);
+  }, [metaAutoEnabled, metaAutoRunning, metaPresetCfg.optimization.autoStopCheckMinutes, usesServerMetaAutomation]);
 
   useEffect(() => {
     void pullLatestOrders();

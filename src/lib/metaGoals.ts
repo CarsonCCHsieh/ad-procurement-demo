@@ -1,3 +1,11 @@
+export type MetaCampaignObjective =
+  | "OUTCOME_AWARENESS"
+  | "OUTCOME_TRAFFIC"
+  | "OUTCOME_ENGAGEMENT"
+  | "OUTCOME_LEADS"
+  | "OUTCOME_APP_PROMOTION"
+  | "OUTCOME_SALES";
+
 export type MetaAdGoalKey =
   | "fb_post_likes"
   | "fb_post_engagement"
@@ -9,26 +17,21 @@ export type MetaAdGoalKey =
   | "ig_engagement"
   | "ig_followers";
 
-export type MetaCampaignObjective =
-  | "OUTCOME_AWARENESS"
-  | "OUTCOME_ENGAGEMENT"
-  | "OUTCOME_TRAFFIC"
-  | "OUTCOME_LEADS"
-  | "OUTCOME_SALES"
-  | "OUTCOME_APP_PROMOTION";
-
-export type MetaCampaignObjectiveOption = {
-  value: MetaCampaignObjective;
-  label: string;
-  desc: string;
-};
-
 export type MetaOptimizationGoal =
-  | "REACH"
+  | "AD_RECALL_LIFT"
+  | "APP_INSTALLS"
+  | "CONVERSATIONS"
+  | "IMPRESSIONS"
+  | "LANDING_PAGE_VIEWS"
+  | "LEAD_GENERATION"
+  | "LINK_CLICKS"
+  | "OFFSITE_CONVERSIONS"
   | "POST_ENGAGEMENT"
-  | "THRUPLAY"
   | "PROFILE_VISIT"
-  | "LINK_CLICKS";
+  | "REACH"
+  | "THRUPLAY"
+  | "VALUE"
+  | "VIDEO_VIEWS";
 
 export type MetaKpiMetricKey =
   | "likes"
@@ -42,7 +45,28 @@ export type MetaKpiMetricKey =
   | "thruplays"
   | "followers"
   | "profile_visits"
+  | "leads"
+  | "conversions"
+  | "app_events"
+  | "calls"
   | "spend";
+
+export type MetaCampaignObjectiveOption = {
+  value: MetaCampaignObjective;
+  label: string;
+  desc: string;
+};
+
+export type MetaPerformanceGoalOption = {
+  code: string;
+  objective: MetaCampaignObjective;
+  label: string;
+  desc: string;
+  optimizationGoal: MetaOptimizationGoal;
+  proxyMetricKey: MetaKpiMetricKey | null;
+  defaultGoal: MetaAdGoalKey;
+  conversionLocation: "website" | "on_ad" | "messenger" | "instagram_profile" | "app" | "none";
+};
 
 export type MetaKpiMetric = {
   key: MetaKpiMetricKey;
@@ -57,42 +81,17 @@ export type MetaAdGoalTemplate = {
   optimizationGoal: MetaOptimizationGoal;
   desc: string;
   recommendedPlacement: "feed" | "reels" | "mixed";
-  notes?: string;
   kpiDefinition: string;
   reportMetrics: MetaKpiMetric[];
 };
 
 export const META_CAMPAIGN_OBJECTIVE_OPTIONS: MetaCampaignObjectiveOption[] = [
-  {
-    value: "OUTCOME_AWARENESS",
-    label: "品牌認知",
-    desc: "提高曝光、觸及與品牌記憶。",
-  },
-  {
-    value: "OUTCOME_TRAFFIC",
-    label: "流量",
-    desc: "導流到網站、貼文或其他可點擊目的地。",
-  },
-  {
-    value: "OUTCOME_ENGAGEMENT",
-    label: "互動",
-    desc: "提高貼文互動、影片觀看或個人檔案相關互動。",
-  },
-  {
-    value: "OUTCOME_LEADS",
-    label: "潛在顧客",
-    desc: "蒐集表單名單、私訊線索或其他可回收名單。",
-  },
-  {
-    value: "OUTCOME_APP_PROMOTION",
-    label: "應用程式推廣",
-    desc: "以 App 安裝或 App 事件為投放目標。",
-  },
-  {
-    value: "OUTCOME_SALES",
-    label: "銷售業績",
-    desc: "以轉換或購買為核心的投放目標。",
-  },
+  { value: "OUTCOME_AWARENESS", label: "品牌認知", desc: "提高觸及、曝光、廣告回想與影片觀看。" },
+  { value: "OUTCOME_TRAFFIC", label: "流量", desc: "導流至網站、貼文、Instagram 個人檔案、訊息或通話。" },
+  { value: "OUTCOME_ENGAGEMENT", label: "互動", desc: "提高貼文互動、影片觀看、訊息、活動回覆或粉絲專頁讚。" },
+  { value: "OUTCOME_LEADS", label: "潛在顧客", desc: "取得名單、訊息名單、通話或網站轉換。" },
+  { value: "OUTCOME_APP_PROMOTION", label: "應用程式推廣", desc: "增加 App 安裝、App 事件或 App 內轉換價值。" },
+  { value: "OUTCOME_SALES", label: "銷售業績", desc: "取得購買、轉換、價值、訊息購買或導流成效。" },
 ];
 
 export const META_AD_GOALS: Record<MetaAdGoalKey, MetaAdGoalTemplate> = {
@@ -103,8 +102,8 @@ export const META_AD_GOALS: Record<MetaAdGoalKey, MetaAdGoalTemplate> = {
     objective: "OUTCOME_ENGAGEMENT",
     optimizationGoal: "POST_ENGAGEMENT",
     recommendedPlacement: "feed",
-    desc: "提升貼文按讚與基礎互動。",
-    kpiDefinition: "主要追蹤貼文按讚，並同步觀察點擊、留言、分享與總互動。",
+    desc: "以貼文讚與基礎互動為主要結果。",
+    kpiDefinition: "追蹤貼文讚、所有點擊、留言、分享與總互動。",
     reportMetrics: [
       { key: "likes", label: "貼文讚" },
       { key: "all_clicks", label: "所有點擊" },
@@ -120,9 +119,9 @@ export const META_AD_GOALS: Record<MetaAdGoalKey, MetaAdGoalTemplate> = {
     platform: "facebook",
     objective: "OUTCOME_ENGAGEMENT",
     optimizationGoal: "POST_ENGAGEMENT",
-    recommendedPlacement: "feed",
-    desc: "提升貼文互動，包含按讚、留言、分享與點擊。",
-    kpiDefinition: "互動定義為貼文按讚、所有點擊、留言、分享的總和。",
+    recommendedPlacement: "mixed",
+    desc: "提高貼文讚、點擊、留言、分享等互動。",
+    kpiDefinition: "互動定義為貼文讚、所有點擊、留言、分享的總和。",
     reportMetrics: [
       { key: "interactions_total", label: "總互動" },
       { key: "likes", label: "貼文讚" },
@@ -139,11 +138,11 @@ export const META_AD_GOALS: Record<MetaAdGoalKey, MetaAdGoalTemplate> = {
     objective: "OUTCOME_AWARENESS",
     optimizationGoal: "REACH",
     recommendedPlacement: "mixed",
-    desc: "放大曝光與觸及人數。",
-    kpiDefinition: "主要追蹤曝光數與觸及人數。",
+    desc: "提高觸及與曝光。",
+    kpiDefinition: "追蹤觸及人數與曝光次數。",
     reportMetrics: [
-      { key: "impressions", label: "曝光數" },
-      { key: "reach", label: "觸及人數" },
+      { key: "reach", label: "觸及" },
+      { key: "impressions", label: "曝光" },
       { key: "spend", label: "花費" },
     ],
   },
@@ -154,8 +153,8 @@ export const META_AD_GOALS: Record<MetaAdGoalKey, MetaAdGoalTemplate> = {
     objective: "OUTCOME_ENGAGEMENT",
     optimizationGoal: "THRUPLAY",
     recommendedPlacement: "reels",
-    desc: "提升影片觀看與完整播放表現。",
-    kpiDefinition: "主要追蹤 3 秒觀看與 ThruPlay。",
+    desc: "提高影片觀看與 ThruPlay。",
+    kpiDefinition: "追蹤 3 秒觀看與 ThruPlay。",
     reportMetrics: [
       { key: "video_3s_views", label: "3 秒觀看" },
       { key: "thruplays", label: "ThruPlay" },
@@ -170,13 +169,13 @@ export const META_AD_GOALS: Record<MetaAdGoalKey, MetaAdGoalTemplate> = {
     objective: "OUTCOME_AWARENESS",
     optimizationGoal: "REACH",
     recommendedPlacement: "feed",
-    desc: "提升 Instagram 貼文觸及與擴散。",
-    kpiDefinition: "主要觀察增粉、個人檔案瀏覽、觸及與曝光。",
+    desc: "提高 Instagram 貼文觸及與曝光。",
+    kpiDefinition: "追蹤觸及、曝光、個人檔案瀏覽與追蹤增長。",
     reportMetrics: [
-      { key: "followers", label: "增粉數" },
+      { key: "reach", label: "觸及" },
+      { key: "impressions", label: "曝光" },
       { key: "profile_visits", label: "個人檔案瀏覽" },
-      { key: "reach", label: "觸及人數" },
-      { key: "impressions", label: "曝光數" },
+      { key: "followers", label: "增粉" },
       { key: "spend", label: "花費" },
     ],
   },
@@ -187,13 +186,13 @@ export const META_AD_GOALS: Record<MetaAdGoalKey, MetaAdGoalTemplate> = {
     objective: "OUTCOME_AWARENESS",
     optimizationGoal: "REACH",
     recommendedPlacement: "reels",
-    desc: "提升 Reels 觸及與曝光。",
-    kpiDefinition: "主要觀察增粉、個人檔案瀏覽、觸及與曝光。",
+    desc: "提高 Reels 觸及與曝光。",
+    kpiDefinition: "追蹤觸及、曝光、個人檔案瀏覽與追蹤增長。",
     reportMetrics: [
-      { key: "followers", label: "增粉數" },
+      { key: "reach", label: "觸及" },
+      { key: "impressions", label: "曝光" },
       { key: "profile_visits", label: "個人檔案瀏覽" },
-      { key: "reach", label: "觸及人數" },
-      { key: "impressions", label: "曝光數" },
+      { key: "followers", label: "增粉" },
       { key: "spend", label: "花費" },
     ],
   },
@@ -204,8 +203,8 @@ export const META_AD_GOALS: Record<MetaAdGoalKey, MetaAdGoalTemplate> = {
     objective: "OUTCOME_ENGAGEMENT",
     optimizationGoal: "THRUPLAY",
     recommendedPlacement: "reels",
-    desc: "提升影片觀看與完整播放表現。",
-    kpiDefinition: "主要追蹤 3 秒觀看與 ThruPlay。",
+    desc: "提高 Reels 或影片觀看。",
+    kpiDefinition: "追蹤 3 秒觀看、影片觀看與 ThruPlay。",
     reportMetrics: [
       { key: "video_3s_views", label: "3 秒觀看" },
       { key: "thruplays", label: "ThruPlay" },
@@ -220,11 +219,11 @@ export const META_AD_GOALS: Record<MetaAdGoalKey, MetaAdGoalTemplate> = {
     objective: "OUTCOME_ENGAGEMENT",
     optimizationGoal: "POST_ENGAGEMENT",
     recommendedPlacement: "mixed",
-    desc: "提升貼文或影片互動。",
+    desc: "提高 Instagram 貼文或 Reels 互動。",
     kpiDefinition: "互動定義為按讚、所有點擊、留言、分享的總和。",
     reportMetrics: [
       { key: "interactions_total", label: "總互動" },
-      { key: "likes", label: "按讚數" },
+      { key: "likes", label: "按讚" },
       { key: "all_clicks", label: "所有點擊" },
       { key: "comments", label: "留言" },
       { key: "shares", label: "分享" },
@@ -235,14 +234,13 @@ export const META_AD_GOALS: Record<MetaAdGoalKey, MetaAdGoalTemplate> = {
     key: "ig_followers",
     label: "Instagram 帳號增粉",
     platform: "instagram",
-    objective: "OUTCOME_ENGAGEMENT",
+    objective: "OUTCOME_TRAFFIC",
     optimizationGoal: "PROFILE_VISIT",
     recommendedPlacement: "mixed",
-    desc: "導流至 Instagram 帳號，提升追蹤。",
-    notes: "Meta 通常以個人檔案瀏覽或相近行為做最佳化，並非保證直接新增追蹤。",
-    kpiDefinition: "主要追蹤增粉數，並搭配個人檔案瀏覽觀察。",
+    desc: "導流至 Instagram 個人檔案並觀察增粉。",
+    kpiDefinition: "追蹤增粉、個人檔案瀏覽與點擊。",
     reportMetrics: [
-      { key: "followers", label: "增粉數" },
+      { key: "followers", label: "增粉" },
       { key: "profile_visits", label: "個人檔案瀏覽" },
       { key: "all_clicks", label: "所有點擊" },
       { key: "spend", label: "花費" },
@@ -250,21 +248,75 @@ export const META_AD_GOALS: Record<MetaAdGoalKey, MetaAdGoalTemplate> = {
   },
 };
 
-export function listMetaGoals(): MetaAdGoalTemplate[] {
-  return (Object.keys(META_AD_GOALS) as MetaAdGoalKey[]).map((k) => META_AD_GOALS[k]);
-}
+export const META_PERFORMANCE_GOALS: MetaPerformanceGoalOption[] = [
+  { code: "AWARENESS_REACH", objective: "OUTCOME_AWARENESS", label: "盡可能提高廣告觸及人數", desc: "盡可能向更多受眾顯示廣告。", optimizationGoal: "REACH", proxyMetricKey: "reach", defaultGoal: "fb_reach", conversionLocation: "none" },
+  { code: "AWARENESS_IMPRESSIONS", objective: "OUTCOME_AWARENESS", label: "盡可能提高曝光次數", desc: "盡可能提高廣告向受眾顯示的次數。", optimizationGoal: "IMPRESSIONS", proxyMetricKey: "impressions", defaultGoal: "fb_reach", conversionLocation: "none" },
+  { code: "AWARENESS_AD_RECALL", objective: "OUTCOME_AWARENESS", label: "盡可能提高廣告回想提升幅度", desc: "向可能會記得看過您廣告的受眾顯示廣告。", optimizationGoal: "AD_RECALL_LIFT", proxyMetricKey: null, defaultGoal: "fb_reach", conversionLocation: "none" },
+  { code: "AWARENESS_THRUPLAY", objective: "OUTCOME_AWARENESS", label: "盡可能提高 ThruPlay 觀看次數", desc: "向可能觀看完整短影片或至少 15 秒影片的受眾顯示影片廣告。", optimizationGoal: "THRUPLAY", proxyMetricKey: "thruplays", defaultGoal: "fb_video_views", conversionLocation: "none" },
+  { code: "AWARENESS_2S_VIDEO", objective: "OUTCOME_AWARENESS", label: "盡可能提高影片連續觀看 2 秒以上的次數", desc: "向可能連續觀看 2 秒以上的受眾顯示影片廣告。", optimizationGoal: "VIDEO_VIEWS", proxyMetricKey: "video_3s_views", defaultGoal: "fb_video_views", conversionLocation: "none" },
+
+  { code: "TRAFFIC_LANDING_PAGE_VIEWS", objective: "OUTCOME_TRAFFIC", label: "取得最多連結頁面瀏覽次數", desc: "向最有可能查看廣告中所連結網站的受眾顯示廣告。", optimizationGoal: "LANDING_PAGE_VIEWS", proxyMetricKey: "all_clicks", defaultGoal: "fb_post_engagement", conversionLocation: "website" },
+  { code: "TRAFFIC_LINK_CLICKS", objective: "OUTCOME_TRAFFIC", label: "取得最多連結點擊次數", desc: "向最有可能點擊廣告的受眾顯示廣告。", optimizationGoal: "LINK_CLICKS", proxyMetricKey: "all_clicks", defaultGoal: "fb_post_engagement", conversionLocation: "website" },
+  { code: "TRAFFIC_DAILY_UNIQUE_REACH", objective: "OUTCOME_TRAFFIC", label: "盡可能增加單日不重複觸及人數", desc: "每天最多向受眾顯示一次廣告。", optimizationGoal: "REACH", proxyMetricKey: "reach", defaultGoal: "fb_reach", conversionLocation: "none" },
+  { code: "TRAFFIC_CONVERSATIONS", objective: "OUTCOME_TRAFFIC", label: "盡可能增加對話數量", desc: "向最有可能透過訊息與您對話的受眾顯示廣告。", optimizationGoal: "CONVERSATIONS", proxyMetricKey: null, defaultGoal: "fb_post_engagement", conversionLocation: "messenger" },
+  { code: "TRAFFIC_IMPRESSIONS", objective: "OUTCOME_TRAFFIC", label: "盡可能提高曝光次數", desc: "盡可能提高廣告向受眾顯示的次數。", optimizationGoal: "IMPRESSIONS", proxyMetricKey: "impressions", defaultGoal: "fb_reach", conversionLocation: "none" },
+  { code: "TRAFFIC_IG_PROFILE_VISITS", objective: "OUTCOME_TRAFFIC", label: "提高 Instagram 個人檔案瀏覽次數", desc: "向最有可能瀏覽 Instagram 個人檔案的受眾顯示廣告。", optimizationGoal: "PROFILE_VISIT", proxyMetricKey: "profile_visits", defaultGoal: "ig_followers", conversionLocation: "instagram_profile" },
+  { code: "TRAFFIC_CALLS", objective: "OUTCOME_TRAFFIC", label: "盡可能增加通話次數", desc: "向最有可能向您致電的受眾顯示廣告。", optimizationGoal: "LINK_CLICKS", proxyMetricKey: "calls", defaultGoal: "fb_post_engagement", conversionLocation: "on_ad" },
+
+  { code: "ENGAGEMENT_CONVERSATIONS", objective: "OUTCOME_ENGAGEMENT", label: "盡可能增加對話數量", desc: "向最有可能透過訊息與您對話的受眾顯示廣告。", optimizationGoal: "CONVERSATIONS", proxyMetricKey: null, defaultGoal: "fb_post_engagement", conversionLocation: "messenger" },
+  { code: "ENGAGEMENT_LINK_CLICKS", objective: "OUTCOME_ENGAGEMENT", label: "取得最多連結點擊次數", desc: "向最有可能點擊廣告的受眾顯示廣告。", optimizationGoal: "LINK_CLICKS", proxyMetricKey: "all_clicks", defaultGoal: "fb_post_engagement", conversionLocation: "website" },
+  { code: "ENGAGEMENT_IMPRESSIONS", objective: "OUTCOME_ENGAGEMENT", label: "盡可能提高曝光次數", desc: "盡可能提高廣告向受眾顯示的次數。", optimizationGoal: "IMPRESSIONS", proxyMetricKey: "impressions", defaultGoal: "fb_reach", conversionLocation: "none" },
+  { code: "ENGAGEMENT_THRUPLAY", objective: "OUTCOME_ENGAGEMENT", label: "盡可能提高 ThruPlay 觀看次數", desc: "向可能觀看完整短影片或至少 15 秒影片的受眾顯示影片廣告。", optimizationGoal: "THRUPLAY", proxyMetricKey: "thruplays", defaultGoal: "fb_video_views", conversionLocation: "none" },
+  { code: "ENGAGEMENT_2S_VIDEO", objective: "OUTCOME_ENGAGEMENT", label: "盡可能提高影片連續觀看 2 秒以上的次數", desc: "向可能連續觀看 2 秒以上的受眾顯示影片廣告。", optimizationGoal: "VIDEO_VIEWS", proxyMetricKey: "video_3s_views", defaultGoal: "fb_video_views", conversionLocation: "none" },
+  { code: "ENGAGEMENT_POST_ENGAGEMENT", objective: "OUTCOME_ENGAGEMENT", label: "盡可能提升貼文互動率", desc: "向最有可能喜歡、分享貼文或留言的用戶顯示廣告。", optimizationGoal: "POST_ENGAGEMENT", proxyMetricKey: "interactions_total", defaultGoal: "fb_post_engagement", conversionLocation: "on_ad" },
+  { code: "ENGAGEMENT_DAILY_UNIQUE_REACH", objective: "OUTCOME_ENGAGEMENT", label: "盡可能增加單日不重複觸及人數", desc: "每天最多向受眾顯示一次廣告。", optimizationGoal: "REACH", proxyMetricKey: "reach", defaultGoal: "fb_reach", conversionLocation: "none" },
+  { code: "ENGAGEMENT_PAGE_LIKES", objective: "OUTCOME_ENGAGEMENT", label: "盡可能增加粉絲專頁按讚數", desc: "以最低成本向最有可能對粉絲專頁按讚的受眾顯示廣告。", optimizationGoal: "POST_ENGAGEMENT", proxyMetricKey: "likes", defaultGoal: "fb_post_likes", conversionLocation: "on_ad" },
+
+  { code: "LEADS_CONVERSIONS", objective: "OUTCOME_LEADS", label: "取得最多轉換次數", desc: "向最有可能在網站上採取特定動作的受眾顯示廣告。", optimizationGoal: "OFFSITE_CONVERSIONS", proxyMetricKey: "conversions", defaultGoal: "fb_post_engagement", conversionLocation: "website" },
+  { code: "LEADS_LANDING_PAGE_VIEWS", objective: "OUTCOME_LEADS", label: "取得最多連結頁面瀏覽次數", desc: "向最有可能查看廣告中所連結網站的受眾顯示廣告。", optimizationGoal: "LANDING_PAGE_VIEWS", proxyMetricKey: "all_clicks", defaultGoal: "fb_post_engagement", conversionLocation: "website" },
+  { code: "LEADS_LINK_CLICKS", objective: "OUTCOME_LEADS", label: "取得最多連結點擊次數", desc: "向最有可能點擊廣告的受眾顯示廣告。", optimizationGoal: "LINK_CLICKS", proxyMetricKey: "all_clicks", defaultGoal: "fb_post_engagement", conversionLocation: "website" },
+  { code: "LEADS_DAILY_UNIQUE_REACH", objective: "OUTCOME_LEADS", label: "盡可能增加單日不重複觸及人數", desc: "每天最多向受眾顯示一次廣告。", optimizationGoal: "REACH", proxyMetricKey: "reach", defaultGoal: "fb_reach", conversionLocation: "none" },
+  { code: "LEADS_IMPRESSIONS", objective: "OUTCOME_LEADS", label: "盡可能提高曝光次數", desc: "盡可能提高廣告向受眾顯示的次數。", optimizationGoal: "IMPRESSIONS", proxyMetricKey: "impressions", defaultGoal: "fb_reach", conversionLocation: "none" },
+  { code: "LEADS_MAXIMIZE_LEADS", objective: "OUTCOME_LEADS", label: "盡可能提高潛在顧客人數", desc: "向最有可能分享聯絡資料的受眾顯示廣告。", optimizationGoal: "LEAD_GENERATION", proxyMetricKey: "leads", defaultGoal: "fb_post_engagement", conversionLocation: "on_ad" },
+  { code: "LEADS_CALLS", objective: "OUTCOME_LEADS", label: "盡可能增加通話次數", desc: "向最有可能向您致電的受眾顯示廣告。", optimizationGoal: "LINK_CLICKS", proxyMetricKey: "calls", defaultGoal: "fb_post_engagement", conversionLocation: "on_ad" },
+
+  { code: "APP_APP_EVENTS", objective: "OUTCOME_APP_PROMOTION", label: "取得最多應用程式事件", desc: "向最有可能在應用程式中採取特定動作的受眾顯示廣告。", optimizationGoal: "OFFSITE_CONVERSIONS", proxyMetricKey: "app_events", defaultGoal: "fb_post_engagement", conversionLocation: "app" },
+  { code: "APP_INSTALLS", objective: "OUTCOME_APP_PROMOTION", label: "盡可能增加應用程式安裝次數", desc: "向最有可能安裝應用程式的受眾顯示廣告。", optimizationGoal: "APP_INSTALLS", proxyMetricKey: "app_events", defaultGoal: "fb_post_engagement", conversionLocation: "app" },
+  { code: "APP_VALUE", objective: "OUTCOME_APP_PROMOTION", label: "獲得最高轉換價值", desc: "向最有可能透過特定動作產生較高價值的用戶顯示廣告。", optimizationGoal: "VALUE", proxyMetricKey: "conversions", defaultGoal: "fb_post_engagement", conversionLocation: "app" },
+  { code: "APP_LINK_CLICKS", objective: "OUTCOME_APP_PROMOTION", label: "取得最多連結點擊次數", desc: "向最有可能點擊廣告的受眾顯示廣告。", optimizationGoal: "LINK_CLICKS", proxyMetricKey: "all_clicks", defaultGoal: "fb_post_engagement", conversionLocation: "website" },
+
+  { code: "SALES_CONVERSIONS", objective: "OUTCOME_SALES", label: "取得最多轉換次數", desc: "向最有可能在網站上採取特定動作的受眾顯示廣告。", optimizationGoal: "OFFSITE_CONVERSIONS", proxyMetricKey: "conversions", defaultGoal: "fb_post_engagement", conversionLocation: "website" },
+  { code: "SALES_VALUE", objective: "OUTCOME_SALES", label: "獲得最高轉換價值", desc: "向最有可能進行較高額消費的受眾顯示廣告。", optimizationGoal: "VALUE", proxyMetricKey: "conversions", defaultGoal: "fb_post_engagement", conversionLocation: "website" },
+  { code: "SALES_LANDING_PAGE_VIEWS", objective: "OUTCOME_SALES", label: "取得最多連結頁面瀏覽次數", desc: "向最有可能查看廣告中所連結網站的受眾顯示廣告。", optimizationGoal: "LANDING_PAGE_VIEWS", proxyMetricKey: "all_clicks", defaultGoal: "fb_post_engagement", conversionLocation: "website" },
+  { code: "SALES_LINK_CLICKS", objective: "OUTCOME_SALES", label: "盡可能提高連結點擊次數", desc: "向最有可能點擊廣告的受眾顯示廣告。", optimizationGoal: "LINK_CLICKS", proxyMetricKey: "all_clicks", defaultGoal: "fb_post_engagement", conversionLocation: "website" },
+  { code: "SALES_DAILY_UNIQUE_REACH", objective: "OUTCOME_SALES", label: "盡可能增加單日不重複觸及人數", desc: "每天最多向受眾顯示一次廣告。", optimizationGoal: "REACH", proxyMetricKey: "reach", defaultGoal: "fb_reach", conversionLocation: "none" },
+  { code: "SALES_IMPRESSIONS", objective: "OUTCOME_SALES", label: "盡可能提高曝光次數", desc: "盡可能提高廣告向受眾顯示的次數。", optimizationGoal: "IMPRESSIONS", proxyMetricKey: "impressions", defaultGoal: "fb_reach", conversionLocation: "none" },
+  { code: "SALES_CONVERSATIONS", objective: "OUTCOME_SALES", label: "盡可能增加對話數量", desc: "向最有可能透過訊息與您對話的受眾顯示廣告。", optimizationGoal: "CONVERSATIONS", proxyMetricKey: null, defaultGoal: "fb_post_engagement", conversionLocation: "messenger" },
+];
 
 const GOAL_PRIMARY_METRIC: Record<MetaAdGoalKey, MetaKpiMetricKey> = {
   fb_post_likes: "likes",
   fb_post_engagement: "interactions_total",
   fb_reach: "reach",
   fb_video_views: "video_3s_views",
-  ig_post_spread: "followers",
-  ig_reels_spread: "followers",
+  ig_post_spread: "reach",
+  ig_reels_spread: "reach",
   ig_video_views: "video_3s_views",
   ig_engagement: "interactions_total",
-  ig_followers: "followers",
+  ig_followers: "profile_visits",
 };
+
+export function listMetaGoals(): MetaAdGoalTemplate[] {
+  return (Object.keys(META_AD_GOALS) as MetaAdGoalKey[]).map((key) => META_AD_GOALS[key]);
+}
+
+export function listPerformanceGoalsByObjective(objective: MetaCampaignObjective): MetaPerformanceGoalOption[] {
+  return META_PERFORMANCE_GOALS.filter((goal) => goal.objective === objective);
+}
+
+export function getPerformanceGoal(code: string): MetaPerformanceGoalOption {
+  return META_PERFORMANCE_GOALS.find((goal) => goal.code === code) ?? META_PERFORMANCE_GOALS[0];
+}
 
 export function getGoalPrimaryMetricKey(goal: MetaAdGoalKey): MetaKpiMetricKey {
   return GOAL_PRIMARY_METRIC[goal];
@@ -272,14 +324,13 @@ export function getGoalPrimaryMetricKey(goal: MetaAdGoalKey): MetaKpiMetricKey {
 
 export function getGoalPrimaryMetricLabel(goal: MetaAdGoalKey): string {
   const key = getGoalPrimaryMetricKey(goal);
-  const tpl = META_AD_GOALS[goal];
-  return tpl.reportMetrics.find((m) => m.key === key)?.label ?? key;
-}
-
-export function listMetaGoalsByObjective(objective: MetaCampaignObjective): MetaAdGoalTemplate[] {
-  return listMetaGoals().filter((goal) => goal.objective === objective);
+  return META_AD_GOALS[goal].reportMetrics.find((metric) => metric.key === key)?.label ?? key;
 }
 
 export function getGoalObjective(goal: MetaAdGoalKey): MetaCampaignObjective {
   return META_AD_GOALS[goal].objective;
+}
+
+export function listMetaGoalsByObjective(objective: MetaCampaignObjective): MetaAdGoalTemplate[] {
+  return listMetaGoals().filter((goal) => goal.objective === objective);
 }

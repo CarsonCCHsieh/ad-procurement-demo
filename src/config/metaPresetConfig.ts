@@ -10,7 +10,7 @@ export type MetaManagedAccount = {
   pageId: string;
   pageName: string;
   instagramActorId: string;
-  enabled: boolean;
+  isDefault: boolean;
 };
 
 export type MetaIndustryPreset = {
@@ -29,14 +29,18 @@ export type MetaIndustryPreset = {
   audienceNote: string;
   dailyBudget: number;
   ctaType: string;
-  useExistingPost: boolean;
   fbPositions: string[];
   igPositions: string[];
 };
 
 export type MetaOptimizationConfig = {
   enabled: boolean;
+  autoStopCheckMinutes: number;
+  maxRowsPerRun: number;
+  rowGapMs: number;
   minSpendForAdvice: number;
+  minResultForDecision: number;
+  losingRatioThreshold: number;
   lowCtrThreshold: number;
   highCpmThreshold: number;
   highCpcThreshold: number;
@@ -46,8 +50,6 @@ export type MetaOptimizationConfig = {
 export type MetaPresetConfigV1 = {
   version: 1;
   updatedAt: string;
-  defaultAccountId: string;
-  autoStopCheckMinutes: number;
   optimization: MetaOptimizationConfig;
   accounts: MetaManagedAccount[];
   industries: MetaIndustryPreset[];
@@ -55,253 +57,87 @@ export type MetaPresetConfigV1 = {
 
 const STORAGE_KEY = "ad_demo_meta_preset_config_v1";
 
-const DEFAULT_FB_POSITIONS = ["feed", "profile_feed", "story", "facebook_reels", "video_feeds", "search"];
-const DEFAULT_IG_POSITIONS = ["stream", "story", "reels", "explore"];
-const ALLOWED_GOALS: MetaAdGoalKey[] = [
-  "fb_post_likes",
-  "fb_post_engagement",
-  "fb_reach",
-  "fb_video_views",
-  "ig_post_spread",
-  "ig_reels_spread",
-  "ig_video_views",
-  "ig_engagement",
-  "ig_followers",
-];
-
-const INDUSTRY_DEFAULTS: Record<string, Pick<MetaIndustryPreset, "label" | "description" | "audienceNote">> = {
-  sneakers: {
-    label: "球鞋",
-    description: "偏潮流、街頭、球鞋文化相關受眾。",
-    audienceNote: "可放入球鞋、潮流、街頭文化、品牌粉絲相關受眾。",
-  },
-  movie: {
-    label: "電影",
-    description: "偏娛樂、預告片、上映宣傳類型。",
-    audienceNote: "可放入電影、串流平台、影劇新片、品牌粉絲受眾。",
-  },
-  food_beverage: {
-    label: "食品飲料",
-    description: "偏品牌曝光、檔期活動、新品推廣。",
-    audienceNote: "可放入美食、餐廳、手搖飲、便利商店等受眾。",
-  },
-  alcohol: {
-    label: "酒類",
-    description: "需注意法規與年齡限制。",
-    audienceNote: "建議放入成熟族群、餐酒館、品酒、生活風格受眾。",
-  },
-};
-
 export const DEFAULT_META_OPTIMIZATION_CONFIG: MetaOptimizationConfig = {
   enabled: true,
-  minSpendForAdvice: 500,
-  lowCtrThreshold: 0.8,
-  highCpmThreshold: 220,
-  highCpcThreshold: 18,
-  highCostPerResultThreshold: 45,
+  autoStopCheckMinutes: 5,
+  maxRowsPerRun: 8,
+  rowGapMs: 300,
+  minSpendForAdvice: 150,
+  minResultForDecision: 20,
+  losingRatioThreshold: 0.72,
+  lowCtrThreshold: 0.6,
+  highCpmThreshold: 250,
+  highCpcThreshold: 20,
+  highCostPerResultThreshold: 60,
 };
 
-function isoNow() {
+const DEFAULT_FB_POSITIONS = ["feed", "profile_feed", "story", "facebook_reels", "video_feeds", "search"];
+const DEFAULT_IG_POSITIONS = ["stream", "story", "reels", "explore", "profile_feed"];
+
+const INDUSTRIES: Array<{ key: string; label: string; interests: string; goals: MetaAdGoalKey[] }> = [
+  { key: "sports", label: "運動", interests: "運動, 健身, 跑步, 籃球, 棒球, 戶外活動", goals: ["fb_post_engagement", "ig_reels_spread"] },
+  { key: "shoes", label: "鞋類", interests: "球鞋, Sneakers, Nike, New Balance, Adidas, 街頭文化", goals: ["ig_post_spread", "fb_post_engagement"] },
+  { key: "apparel", label: "服飾", interests: "時尚, 穿搭, 潮流服飾, 街頭品牌, 服裝設計", goals: ["ig_post_spread", "ig_engagement"] },
+  { key: "beauty", label: "美妝", interests: "美妝, 保養, 彩妝, 香氛, 美容", goals: ["ig_engagement", "ig_reels_spread"] },
+  { key: "luxury", label: "精品", interests: "精品, 奢侈品, 精品購物, 時尚雜誌, 高端消費", goals: ["fb_reach", "ig_post_spread"] },
+  { key: "watch_jewelry", label: "鐘錶飾品", interests: "手錶, 珠寶, 飾品, 精品配件, 設計", goals: ["fb_reach", "ig_post_spread"] },
+  { key: "entertainment", label: "影劇娛樂", interests: "電影, 劇集, 音樂, 娛樂新聞, 追星", goals: ["fb_video_views", "ig_video_views"] },
+  { key: "restaurant", label: "餐廳", interests: "餐廳, 美食, 咖啡廳, 聚餐, 早午餐", goals: ["ig_post_spread", "fb_post_engagement"] },
+  { key: "food_beverage", label: "食品飲料", interests: "食品, 飲料, 零食, 咖啡, 便利商店", goals: ["fb_reach", "ig_reels_spread"] },
+  { key: "alcohol", label: "酒類", interests: "酒吧, 調酒, 威士忌, 啤酒, 葡萄酒", goals: ["fb_reach", "ig_post_spread"] },
+  { key: "daily_goods", label: "日用品", interests: "生活用品, 居家, 清潔, 家庭, 量販", goals: ["fb_reach", "fb_post_engagement"] },
+  { key: "consumer_electronics", label: "3C家電", interests: "3C, 手機, 家電, 科技, 數位產品", goals: ["fb_post_engagement", "ig_video_views"] },
+  { key: "transportation", label: "交通運輸", interests: "汽車, 機車, 大眾運輸, 旅遊交通, 租車", goals: ["fb_reach", "fb_post_engagement"] },
+  { key: "gaming", label: "遊戲類", interests: "電子遊戲, 手遊, 電競, Steam, PlayStation", goals: ["fb_video_views", "ig_reels_spread"] },
+  { key: "app", label: "APP", interests: "行動應用程式, 科技, 效率工具, 手機遊戲", goals: ["fb_post_engagement", "ig_engagement"] },
+  { key: "ecommerce", label: "EC平台", interests: "網路購物, 電商, 折扣, 免運, 購物平台", goals: ["fb_post_engagement", "ig_post_spread"] },
+  { key: "bags_accessories", label: "包包配件", interests: "包包, 配件, 飾品, 穿搭, 時尚", goals: ["ig_post_spread", "ig_engagement"] },
+  { key: "travel", label: "旅遊業", interests: "旅遊, 自由行, 飯店, 航空, 景點", goals: ["fb_reach", "ig_reels_spread"] },
+  { key: "finance_insurance", label: "金融保險", interests: "理財, 保險, 信用卡, 投資, 金融服務", goals: ["fb_reach", "fb_post_engagement"] },
+  { key: "retail", label: "零售通路", interests: "百貨, 量販, 超商, 購物, 門市", goals: ["fb_reach", "ig_post_spread"] },
+  { key: "eyewear", label: "光學眼鏡", interests: "眼鏡, 太陽眼鏡, 視力保健, 時尚配件", goals: ["ig_post_spread", "fb_post_engagement"] },
+  { key: "telecom", label: "電信通訊", interests: "電信, 5G, 手機方案, 網路服務, 科技", goals: ["fb_reach", "fb_post_engagement"] },
+  { key: "health_medicine", label: "健康醫藥", interests: "健康, 保健, 醫療, 藥局, 營養補充", goals: ["fb_reach", "ig_post_spread"] },
+  { key: "government_politics", label: "政府政黨", interests: "公共議題, 政策, 公民參與, 社會議題", goals: ["fb_reach", "fb_post_engagement"] },
+  { key: "education", label: "文教", interests: "教育, 學習, 語言學習, 課程, 親子教育", goals: ["fb_post_engagement", "ig_video_views"] },
+  { key: "real_estate", label: "房地產", interests: "房地產, 室內設計, 買房, 租屋, 居家", goals: ["fb_reach", "fb_post_engagement"] },
+  { key: "baby", label: "嬰幼兒", interests: "育兒, 嬰兒用品, 親子, 媽媽, 家庭", goals: ["fb_post_engagement", "ig_post_spread"] },
+  { key: "aesthetic_medicine", label: "醫美", interests: "醫美, 美容, 保養, 皮膚管理, 健康", goals: ["ig_engagement", "fb_reach"] },
+  { key: "other", label: "其他", interests: "生活風格, 流行文化, 娛樂, 購物, 社群媒體", goals: ["fb_post_engagement", "ig_post_spread"] },
+];
+
+function nowIso() {
   return new Date().toISOString();
 }
 
-function normalizeKey(raw: string) {
-  return raw.trim().toLowerCase().replace(/[^a-z0-9_]+/g, "_").replace(/^_+|_+$/g, "");
-}
-
-function uniqueStrings(raw: unknown): string[] {
-  if (!Array.isArray(raw)) return [];
-  const out: string[] = [];
-  for (const item of raw) {
-    const value = String(item ?? "").trim();
-    if (!value || out.includes(value)) continue;
-    out.push(value);
-  }
-  return out;
-}
-
-function looksBrokenText(value: string) {
-  return /[鍕鐞闆诲獢甯寮嫊瑙€璨]/.test(value);
-}
-
-function getIndustryText(key: string, field: "label" | "description" | "audienceNote", currentValue: string, fallback: string) {
-  const defaultRow = INDUSTRY_DEFAULTS[key];
-  if (!currentValue) return defaultRow?.[field] ?? fallback;
-  if (looksBrokenText(currentValue) && defaultRow?.[field]) return defaultRow[field];
-  return currentValue;
-}
-
-function normalizeAccount(raw: unknown, index: number): MetaManagedAccount | null {
-  if (!raw || typeof raw !== "object") return null;
-  const row = raw as Partial<MetaManagedAccount>;
-  const id = normalizeKey(String(row.id || `account_${index + 1}`)) || `account_${index + 1}`;
-  const adAccountId = String(row.adAccountId || "").trim().replace(/^act_/i, "");
-  const defaultLabel = `帳號 ${index + 1}`;
-  const label = String(row.label || defaultLabel).trim() || defaultLabel;
-  return {
-    id,
-    label: looksBrokenText(label) ? defaultLabel : label,
-    adAccountId,
-    pageId: String(row.pageId || "").trim(),
-    pageName: String(row.pageName || "").trim(),
-    instagramActorId: String(row.instagramActorId || "").trim(),
-    enabled: row.enabled !== false,
-  };
-}
-
-function normalizeIndustry(raw: unknown, index: number): MetaIndustryPreset | null {
-  if (!raw || typeof raw !== "object") return null;
-  const row = raw as Partial<MetaIndustryPreset>;
-  const key = normalizeKey(String(row.key || `industry_${index + 1}`)) || `industry_${index + 1}`;
-  const goals = uniqueStrings(row.recommendedGoals).filter((value): value is MetaAdGoalKey =>
-    ALLOWED_GOALS.includes(value as MetaAdGoalKey),
-  );
-  const ageMin = Number(row.ageMin);
-  const ageMax = Number(row.ageMax);
-  const dailyBudget = Number(row.dailyBudget);
-  const gender = row.gender === "male" || row.gender === "female" ? row.gender : "all";
-
-  return {
-    key,
-    label: getIndustryText(key, "label", String(row.label || "").trim(), `產業 ${index + 1}`),
-    description: getIndustryText(key, "description", String(row.description || "").trim(), ""),
-    enabled: row.enabled !== false,
-    recommendedGoals: goals,
-    countriesCsv: String(row.countriesCsv || "TW").trim() || "TW",
-    ageMin: Number.isFinite(ageMin) && ageMin >= 13 ? Math.floor(ageMin) : 18,
-    ageMax:
-      Number.isFinite(ageMax) && ageMax >= 13
-        ? Math.max(Math.floor(ageMax), Number.isFinite(ageMin) ? Math.floor(ageMin) : 18)
-        : 49,
-    gender,
-    detailedTargetingText: String(row.detailedTargetingText || "").trim(),
-    customAudienceIdsText: String(row.customAudienceIdsText || "").trim(),
-    excludedAudienceIdsText: String(row.excludedAudienceIdsText || "").trim(),
-    audienceNote: getIndustryText(key, "audienceNote", String(row.audienceNote || "").trim(), ""),
-    dailyBudget: Number.isFinite(dailyBudget) && dailyBudget > 0 ? Math.round(dailyBudget) : 1000,
-    ctaType: String(row.ctaType || "LEARN_MORE").trim() || "LEARN_MORE",
-    useExistingPost: row.useExistingPost !== false,
-    fbPositions: uniqueStrings(row.fbPositions).length > 0 ? uniqueStrings(row.fbPositions) : [...DEFAULT_FB_POSITIONS],
-    igPositions: uniqueStrings(row.igPositions).length > 0 ? uniqueStrings(row.igPositions) : [...DEFAULT_IG_POSITIONS],
-  };
-}
-
-function normalizeOptimization(raw: unknown): MetaOptimizationConfig {
-  if (!raw || typeof raw !== "object") return { ...DEFAULT_META_OPTIMIZATION_CONFIG };
-  const row = raw as Partial<MetaOptimizationConfig>;
-  const minSpendForAdvice = Number(row.minSpendForAdvice);
-  const lowCtrThreshold = Number(row.lowCtrThreshold);
-  const highCpmThreshold = Number(row.highCpmThreshold);
-  const highCpcThreshold = Number(row.highCpcThreshold);
-  const highCostPerResultThreshold = Number(row.highCostPerResultThreshold);
-
-  return {
-    enabled: row.enabled !== false,
-    minSpendForAdvice:
-      Number.isFinite(minSpendForAdvice) && minSpendForAdvice >= 0 ? Math.round(minSpendForAdvice) : DEFAULT_META_OPTIMIZATION_CONFIG.minSpendForAdvice,
-    lowCtrThreshold:
-      Number.isFinite(lowCtrThreshold) && lowCtrThreshold >= 0 ? Number(lowCtrThreshold.toFixed(2)) : DEFAULT_META_OPTIMIZATION_CONFIG.lowCtrThreshold,
-    highCpmThreshold:
-      Number.isFinite(highCpmThreshold) && highCpmThreshold >= 0 ? Number(highCpmThreshold.toFixed(2)) : DEFAULT_META_OPTIMIZATION_CONFIG.highCpmThreshold,
-    highCpcThreshold:
-      Number.isFinite(highCpcThreshold) && highCpcThreshold >= 0 ? Number(highCpcThreshold.toFixed(2)) : DEFAULT_META_OPTIMIZATION_CONFIG.highCpcThreshold,
-    highCostPerResultThreshold:
-      Number.isFinite(highCostPerResultThreshold) && highCostPerResultThreshold >= 0
-        ? Number(highCostPerResultThreshold.toFixed(2))
-        : DEFAULT_META_OPTIMIZATION_CONFIG.highCostPerResultThreshold,
-  };
-}
-
 function buildDefaultIndustries(): MetaIndustryPreset[] {
-  return [
-    {
-      key: "sneakers",
-      label: "球鞋",
-      description: "偏潮流、街頭、球鞋文化相關受眾。",
-      enabled: true,
-      recommendedGoals: ["fb_post_engagement", "ig_engagement", "ig_reels_spread"],
-      countriesCsv: "TW",
-      ageMin: 18,
-      ageMax: 39,
-      gender: "all",
-      detailedTargetingText: "",
-      customAudienceIdsText: "",
-      excludedAudienceIdsText: "",
-      audienceNote: "可放入球鞋、潮流、街頭文化、品牌粉絲相關受眾。",
-      dailyBudget: 1200,
-      ctaType: "VIEW_MORE",
-      useExistingPost: true,
-      fbPositions: ["feed", "profile_feed", "story", "facebook_reels"],
-      igPositions: ["stream", "story", "reels", "explore"],
-    },
-    {
-      key: "movie",
-      label: "電影",
-      description: "偏娛樂、預告片、上映宣傳類型。",
-      enabled: true,
-      recommendedGoals: ["fb_video_views", "fb_reach", "ig_video_views"],
-      countriesCsv: "TW",
-      ageMin: 18,
-      ageMax: 49,
-      gender: "all",
-      detailedTargetingText: "",
-      customAudienceIdsText: "",
-      excludedAudienceIdsText: "",
-      audienceNote: "可放入電影、串流平台、影劇新片、品牌粉絲受眾。",
-      dailyBudget: 1500,
-      ctaType: "VIEW_MORE",
-      useExistingPost: true,
-      fbPositions: ["video_feeds", "feed", "story", "facebook_reels"],
-      igPositions: ["reels", "story", "stream"],
-    },
-    {
-      key: "food_beverage",
-      label: "食品飲料",
-      description: "偏品牌曝光、檔期活動、新品推廣。",
-      enabled: true,
-      recommendedGoals: ["fb_reach", "fb_post_engagement", "ig_post_spread"],
-      countriesCsv: "TW",
-      ageMin: 18,
-      ageMax: 49,
-      gender: "all",
-      detailedTargetingText: "",
-      customAudienceIdsText: "",
-      excludedAudienceIdsText: "",
-      audienceNote: "可放入美食、餐廳、手搖飲、便利商店等受眾。",
-      dailyBudget: 1000,
-      ctaType: "LEARN_MORE",
-      useExistingPost: true,
-      fbPositions: ["feed", "story", "search", "marketplace"],
-      igPositions: ["stream", "story", "explore"],
-    },
-    {
-      key: "alcohol",
-      label: "酒類",
-      description: "需注意法規與年齡限制。",
-      enabled: true,
-      recommendedGoals: ["fb_reach", "ig_engagement", "ig_reels_spread"],
-      countriesCsv: "TW",
-      ageMin: 25,
-      ageMax: 49,
-      gender: "all",
-      detailedTargetingText: "",
-      customAudienceIdsText: "",
-      excludedAudienceIdsText: "",
-      audienceNote: "建議放入成熟族群、餐酒館、品酒、生活風格受眾。",
-      dailyBudget: 1200,
-      ctaType: "VIEW_MORE",
-      useExistingPost: true,
-      fbPositions: ["feed", "story", "facebook_reels"],
-      igPositions: ["stream", "story", "reels"],
-    },
-  ];
+  return INDUSTRIES.map((industry) => ({
+    key: industry.key,
+    label: industry.label,
+    description: `${industry.label}產業安全預設模板`,
+    enabled: true,
+    recommendedGoals: industry.goals,
+    countriesCsv: "TW",
+    ageMin: 18,
+    ageMax: 49,
+    gender: "all",
+    detailedTargetingText: industry.interests
+      .split(",")
+      .map((item, index) => `${100000 + index} | ${item.trim()}`)
+      .join("\n"),
+    customAudienceIdsText: "",
+    excludedAudienceIdsText: "",
+    audienceNote: industry.interests,
+    dailyBudget: 1000,
+    ctaType: "LEARN_MORE",
+    fbPositions: DEFAULT_FB_POSITIONS,
+    igPositions: DEFAULT_IG_POSITIONS,
+  }));
 }
 
 export const DEFAULT_META_PRESET_CONFIG: MetaPresetConfigV1 = {
   version: 1,
-  updatedAt: isoNow(),
-  defaultAccountId: "",
-  autoStopCheckMinutes: 5,
+  updatedAt: nowIso(),
   optimization: { ...DEFAULT_META_OPTIMIZATION_CONFIG },
   accounts: [],
   industries: buildDefaultIndustries(),
@@ -310,38 +146,40 @@ export const DEFAULT_META_PRESET_CONFIG: MetaPresetConfigV1 = {
 function normalize(raw: unknown): MetaPresetConfigV1 | null {
   if (!raw || typeof raw !== "object") return null;
   const row = raw as Partial<MetaPresetConfigV1>;
-  const accounts = Array.isArray(row.accounts)
-    ? row.accounts.map((item, index) => normalizeAccount(item, index)).filter((item): item is MetaManagedAccount => !!item)
-    : [];
-  const industries = Array.isArray(row.industries)
-    ? row.industries.map((item, index) => normalizeIndustry(item, index)).filter((item): item is MetaIndustryPreset => !!item)
-    : buildDefaultIndustries();
-  const defaultAccountId = String(row.defaultAccountId || "").trim();
-  const autoStopCheckMinutes = Number(row.autoStopCheckMinutes);
-  const optimization = normalizeOptimization(row.optimization);
-
   return {
     version: 1,
-    updatedAt: typeof row.updatedAt === "string" ? row.updatedAt : isoNow(),
-    defaultAccountId:
-      accounts.some((account) => account.id === defaultAccountId && account.enabled)
-        ? defaultAccountId
-        : accounts.find((account) => account.enabled)?.id || "",
-    autoStopCheckMinutes:
-      Number.isFinite(autoStopCheckMinutes) && autoStopCheckMinutes >= 1 && autoStopCheckMinutes <= 60
-        ? Math.floor(autoStopCheckMinutes)
-        : 5,
-    optimization,
-    accounts,
-    industries: industries.length > 0 ? industries : buildDefaultIndustries(),
+    updatedAt: typeof row.updatedAt === "string" ? row.updatedAt : nowIso(),
+    optimization: { ...DEFAULT_META_OPTIMIZATION_CONFIG, ...(row.optimization ?? {}) },
+    accounts: Array.isArray(row.accounts) ? row.accounts.map((account, index) => ({
+      id: String(account?.id || `account-${index + 1}`),
+      label: String(account?.label || account?.adAccountId || `廣告帳號 ${index + 1}`),
+      adAccountId: String(account?.adAccountId || "").replace(/^act_/i, ""),
+      pageId: String(account?.pageId || ""),
+      pageName: String(account?.pageName || ""),
+      instagramActorId: String(account?.instagramActorId || ""),
+      isDefault: !!account?.isDefault,
+    })) : [],
+    industries: Array.isArray(row.industries) && row.industries.length > 0
+      ? row.industries.map((industry, index) => ({
+          ...buildDefaultIndustries()[index % buildDefaultIndustries().length],
+          ...industry,
+          key: String(industry?.key || `industry-${index + 1}`),
+          label: String(industry?.label || `產業 ${index + 1}`),
+          recommendedGoals: Array.isArray(industry?.recommendedGoals) && industry.recommendedGoals.length > 0
+            ? industry.recommendedGoals as MetaAdGoalKey[]
+            : ["fb_post_engagement"],
+          fbPositions: Array.isArray(industry?.fbPositions) ? industry.fbPositions.map(String) : DEFAULT_FB_POSITIONS,
+          igPositions: Array.isArray(industry?.igPositions) ? industry.igPositions.map(String) : DEFAULT_IG_POSITIONS,
+        }))
+      : buildDefaultIndustries(),
   };
 }
 
 export function getMetaPresetConfig(): MetaPresetConfigV1 {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return DEFAULT_META_PRESET_CONFIG;
-    return normalize(JSON.parse(raw)) ?? DEFAULT_META_PRESET_CONFIG;
+    const parsed = raw ? normalize(JSON.parse(raw)) : null;
+    return parsed ?? DEFAULT_META_PRESET_CONFIG;
   } catch {
     return DEFAULT_META_PRESET_CONFIG;
   }
@@ -350,16 +188,10 @@ export function getMetaPresetConfig(): MetaPresetConfigV1 {
 export function saveMetaPresetConfig(next: MetaPresetConfigV1) {
   const normalized = normalize(next) ?? DEFAULT_META_PRESET_CONFIG;
   try {
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({
-        ...normalized,
-        updatedAt: isoNow(),
-      }),
-    );
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...normalized, updatedAt: nowIso() }));
     queueSharedWrite(STORAGE_KEY);
   } catch {
-    // ignore
+    // ignore cache write failures
   }
 }
 
@@ -368,12 +200,14 @@ export function resetMetaPresetConfig() {
 }
 
 export function getDefaultMetaIndustry(config = getMetaPresetConfig()): MetaIndustryPreset | null {
-  return config.industries.find((industry) => industry.enabled) ?? null;
+  return config.industries.find((industry) => industry.enabled) ?? config.industries[0] ?? null;
 }
 
 export function getManagedMetaAccount(config: MetaPresetConfigV1, accountId?: string): MetaManagedAccount | null {
-  const selectedId = String(accountId || "").trim() || config.defaultAccountId;
-  const selected = config.accounts.find((account) => account.id === selectedId && account.enabled);
-  if (selected) return selected;
-  return config.accounts.find((account) => account.enabled) ?? null;
+  return (
+    config.accounts.find((account) => account.id === accountId) ??
+    config.accounts.find((account) => account.isDefault) ??
+    config.accounts[0] ??
+    null
+  );
 }

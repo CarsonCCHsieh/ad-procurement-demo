@@ -278,6 +278,10 @@ function extractMetricValues(row: Record<string, unknown>): Record<MetaKpiMetric
     thruplays,
     followers,
     profile_visits: profileVisits,
+    leads: sumAcrossActionTypes(row.actions, ["lead", "onsite_conversion.lead_grouped"]),
+    conversions: sumAcrossActionTypes(row.actions, ["offsite_conversion", "onsite_conversion.purchase", "purchase"]),
+    app_events: sumAcrossActionTypes(row.actions, ["app_custom_event", "mobile_app_install"]),
+    calls: sumAcrossActionTypes(row.actions, ["phone_call", "onsite_conversion.call"]),
     spend: toNumber(row.spend),
   };
 }

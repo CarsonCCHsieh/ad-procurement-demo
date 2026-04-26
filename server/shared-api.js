@@ -1,5 +1,5 @@
 import http from "node:http";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, extname, resolve } from "node:path";
 import { networkInterfaces } from "node:os";
 import { DatabaseSync } from "node:sqlite";
@@ -78,6 +78,7 @@ const APP_CONFIG_KEY = "ad_demo_config_v1";
 const VENDOR_KEYS_KEY = "ad_demo_vendor_keys_v1";
 const ORDERS_KEY = "ad_demo_orders_v1";
 const META_ORDERS_KEY = "ad_demo_meta_orders_v1";
+const META_SETTINGS_KEY = "ad_demo_meta_settings_v2";
 const META_SYNC_STATUS_KEY = "ad_demo_meta_sync_status_v1";
 const META_BACKGROUND_SYNC_INTERVAL_MS = 5 * 60 * 1000;
 const META_POST_METRIC_CACHE_TTL_MS = Number(process.env.META_POST_METRIC_CACHE_TTL_MS || 2 * 60 * 1000);
@@ -188,16 +189,19 @@ function loadMetaSecrets() {
   try {
     const raw = readJsonFileSafe(META_SECRET_PATH);
     if (!raw || typeof raw !== "object") return null;
+    const adsAccessToken = typeof raw.adsAccessToken === "string" ? raw.adsAccessToken.trim() : "";
     const facebookAccessToken = typeof raw.facebookAccessToken === "string" ? raw.facebookAccessToken.trim() : "";
     const instagramAccessToken = typeof raw.instagramAccessToken === "string" ? raw.instagramAccessToken.trim() : "";
     const userAccessToken =
       (typeof raw.userAccessToken === "string" ? raw.userAccessToken.trim() : "") ||
+      adsAccessToken ||
       facebookAccessToken ||
       instagramAccessToken;
-    if (!userAccessToken && !facebookAccessToken && !instagramAccessToken) return null;
+    if (!userAccessToken && !adsAccessToken && !facebookAccessToken && !instagramAccessToken) return null;
     return {
       apiVersion: typeof raw.apiVersion === "string" && raw.apiVersion.trim() ? raw.apiVersion.trim() : "v20.0",
       userAccessToken,
+      adsAccessToken,
       facebookAccessToken,
       instagramAccessToken,
       preferredPageId: typeof raw.preferredPageId === "string" ? raw.preferredPageId.trim() : "",
@@ -210,6 +214,9 @@ function loadMetaSecrets() {
 
 function getMetaToken(metaSecrets, platform) {
   if (!metaSecrets) return "";
+  if (platform === "ads") {
+    return String(metaSecrets.adsAccessToken || metaSecrets.userAccessToken || "").trim();
+  }
   if (platform === "instagram") {
     return String(metaSecrets.instagramAccessToken || metaSecrets.userAccessToken || "").trim();
   }
@@ -1447,7 +1454,6 @@ const META_REPORT_METRICS = {
     { key: "spend", label: "花費" },
   ],
 };
-
 const META_PRIMARY_METRIC = {
   fb_post_likes: "likes",
   fb_post_engagement: "interactions_total",
@@ -1527,7 +1533,7 @@ function mapMetaOrderStatus(statusText) {
 }
 
 async function fetchMetaAdSnapshotSecure(metaSecrets, adId, goal) {
-  const token = getMetaToken(metaSecrets, "facebook");
+  const token = getMetaToken(metaSecrets, "ads");
   if (!token) {
     return { ok: false, detail: "Meta access token is unavailable" };
   }
@@ -1560,7 +1566,7 @@ async function fetchMetaAdSnapshotSecure(metaSecrets, adId, goal) {
 }
 
 async function updateMetaAdDeliverySecure(metaSecrets, adId, status) {
-  const token = getMetaToken(metaSecrets, "facebook");
+  const token = getMetaToken(metaSecrets, "ads");
   if (!token) {
     return { ok: false, detail: "Meta access token is unavailable" };
   }
@@ -1655,7 +1661,7 @@ async function fetchMetaPostMetricsCoreSecure({ postId, platform, pageId, pageNa
 
   const postRef = String(postId || "").trim();
   if (!postRef) {
-    return { ok: false, detail: "缺少貼文 ID" };
+    return { ok: false, detail: "缂哄皯璨兼枃 ID" };
   }
 
   const hintedPlatform = platform === "instagram" || platform === "facebook" ? platform : "";
@@ -1703,7 +1709,7 @@ async function fetchMetaPostMetricsCoreSecure({ postId, platform, pageId, pageNa
     .split("#")[0]
     .trim();
   if (!normalizedPostId) {
-    return { ok: false, detail: "缺少貼文 ID" };
+    return { ok: false, detail: "缂哄皯璨兼枃 ID" };
   }
 
   const targetPageId =
@@ -1857,7 +1863,7 @@ async function fetchMetaPostMetricsSecure(args) {
     const seconds = Math.max(1, Math.ceil((Number(backoff.until || 0) - Date.now()) / 1000));
     return {
       ok: false,
-      detail: `Meta API 指標讀取暫時節流中，請 ${seconds} 秒後再試`,
+      detail: `Meta API 鎸囨璁€鍙栨毇鏅傜瘈娴佷腑锛岃珛 ${seconds} 绉掑緦鍐嶈│`,
     };
   }
 
@@ -2004,6 +2010,332 @@ function writeSharedJson(key, value, updatedBy = "server") {
     db.exec("ROLLBACK");
     throw error;
   }
+}
+
+function maskToken(token) {
+  const text = String(token || "").trim();
+  if (!text) return "";
+  if (text.length <= 12) return "********";
+  return `${text.slice(0, 6)}...${text.slice(-4)}`;
+}
+
+function defaultMetaSettings() {
+  return {
+    version: 2,
+    updatedAt: new Date().toISOString(),
+    apiVersion: "v20.0",
+    adAccountId: "",
+    pageId: "",
+    pageName: "",
+    instagramActorId: "",
+    optimization: {
+      enabled: true,
+      autoStopCheckMinutes: 5,
+      maxRowsPerRun: META_SYNC_MAX_ROWS_PER_RUN,
+      rowGapMs: META_SYNC_ROW_GAP_MS,
+      minSpendForDecision: 150,
+      minResultForDecision: 20,
+      losingRatioThreshold: 0.72,
+    },
+    industries: [],
+  };
+}
+
+function readMetaSettings() {
+  const stored = readSharedJson(META_SETTINGS_KEY);
+  const base = defaultMetaSettings();
+  if (!stored || typeof stored !== "object") return base;
+  return {
+    ...base,
+    ...stored,
+    apiVersion: String(stored.apiVersion || base.apiVersion),
+    adAccountId: String(stored.adAccountId || "").replace(/^act_/i, ""),
+    pageId: String(stored.pageId || ""),
+    pageName: String(stored.pageName || ""),
+    instagramActorId: String(stored.instagramActorId || ""),
+    optimization: { ...base.optimization, ...(stored.optimization || {}) },
+    industries: Array.isArray(stored.industries) ? stored.industries : [],
+  };
+}
+
+function publicMetaSettings() {
+  const settings = readMetaSettings();
+  const secrets = loadMetaSecrets();
+  return {
+    ...settings,
+    tokenStatus: {
+      ads: !!String(secrets?.adsAccessToken || secrets?.userAccessToken || "").trim(),
+      facebook: !!String(secrets?.facebookAccessToken || secrets?.userAccessToken || "").trim(),
+      instagram: !!String(secrets?.instagramAccessToken || secrets?.userAccessToken || "").trim(),
+    },
+    tokenPreview: {
+      ads: maskToken(secrets?.adsAccessToken || ""),
+      facebook: maskToken(secrets?.facebookAccessToken || ""),
+      instagram: maskToken(secrets?.instagramAccessToken || ""),
+    },
+  };
+}
+
+function saveMetaSecretsPatch(patch) {
+  const current = existsSync(META_SECRET_PATH) ? (loadMetaSecrets() || {}) : {};
+  const next = {
+    apiVersion: String(patch.apiVersion || current.apiVersion || "v20.0"),
+    userAccessToken: String(current.userAccessToken || ""),
+    adsAccessToken: String(current.adsAccessToken || ""),
+    facebookAccessToken: String(current.facebookAccessToken || ""),
+    instagramAccessToken: String(current.instagramAccessToken || ""),
+    preferredPageId: String(patch.pageId || current.preferredPageId || ""),
+    preferredPageName: String(patch.pageName || current.preferredPageName || ""),
+  };
+  for (const key of ["adsAccessToken", "facebookAccessToken", "instagramAccessToken"]) {
+    if (typeof patch[key] === "string" && patch[key].trim()) {
+      next[key] = patch[key].trim();
+    }
+  }
+  next.userAccessToken = next.adsAccessToken || next.facebookAccessToken || next.instagramAccessToken || next.userAccessToken;
+  mkdirSync(dirname(META_SECRET_PATH), { recursive: true });
+  writeFileSync(META_SECRET_PATH, `${JSON.stringify(next, null, 2)}\n`, "utf-8");
+  metaPagesCache = null;
+  instagramAccountsCache = null;
+}
+
+async function verifyMetaToken({ scope, token, apiVersion }) {
+  const resolvedToken = String(token || "").trim();
+  if (!resolvedToken) return { ok: false, error: "請先輸入 API Key" };
+  const version = String(apiVersion || "v20.0");
+  try {
+    if (scope === "ads") {
+      const raw = await graphApiGet(version, resolvedToken, "/me/adaccounts", { fields: "id,account_id,name,account_status" });
+      return { ok: true, sample: Array.isArray(raw.data) ? raw.data.slice(0, 5) : [] };
+    }
+    if (scope === "facebook") {
+      const raw = await graphApiGet(version, resolvedToken, "/me/accounts", { fields: "id,name,instagram_business_account{id,username}" });
+      return { ok: true, sample: Array.isArray(raw.data) ? raw.data.slice(0, 5) : [] };
+    }
+    const raw = await graphApiGet(version, resolvedToken, "/me", { fields: "id,name" });
+    return { ok: true, sample: raw };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Meta API 椹楄瓑澶辨晽" };
+  }
+}
+
+function metaObjectiveFromInput(input) {
+  const value = String(input?.campaignObjective || "OUTCOME_ENGAGEMENT");
+  return [
+    "OUTCOME_AWARENESS",
+    "OUTCOME_TRAFFIC",
+    "OUTCOME_ENGAGEMENT",
+    "OUTCOME_LEADS",
+    "OUTCOME_APP_PROMOTION",
+    "OUTCOME_SALES",
+  ].includes(value) ? value : "OUTCOME_ENGAGEMENT";
+}
+
+function metaOptimizationGoalFromInput(input) {
+  const value = String(input?.optimizationGoal || "POST_ENGAGEMENT");
+  return value || "POST_ENGAGEMENT";
+}
+
+function buildMetaTargeting(input, settings, variantIndex) {
+  const countries = Array.isArray(input?.countries) && input.countries.length ? input.countries : ["TW"];
+  const facebookPositions = Array.isArray(input?.manualPlacements?.facebook) ? input.manualPlacements.facebook.filter(Boolean) : [];
+  const instagramPositions = Array.isArray(input?.manualPlacements?.instagram) ? input.manualPlacements.instagram.filter(Boolean) : [];
+  const publisherPlatforms = [];
+  if (facebookPositions.length) publisherPlatforms.push("facebook");
+  if (instagramPositions.length) publisherPlatforms.push("instagram");
+  const targeting = {
+    geo_locations: { countries },
+    age_min: Number(input?.ageMin || 18),
+    age_max: Number(input?.ageMax || 49),
+    publisher_platforms: publisherPlatforms.length ? publisherPlatforms : ["facebook", "instagram"],
+    device_platforms: ["mobile", "desktop"],
+  };
+  if (facebookPositions.length) targeting.facebook_positions = facebookPositions;
+  if (instagramPositions.length) targeting.instagram_positions = instagramPositions;
+  if (Array.isArray(input?.genders) && input.genders.length) targeting.genders = input.genders;
+  if (Array.isArray(input?.customAudienceIds) && input.customAudienceIds.length) {
+    targeting.custom_audiences = input.customAudienceIds.map((id) => ({ id: String(id) }));
+  }
+  if (Array.isArray(input?.excludedAudienceIds) && input.excludedAudienceIds.length) {
+    targeting.excluded_custom_audiences = input.excludedAudienceIds.map((id) => ({ id: String(id) }));
+  }
+  if (variantIndex === 0 && Array.isArray(input?.interestObjects) && input.interestObjects.length) {
+    targeting.flexible_spec = [{ interests: input.interestObjects }];
+  }
+  return targeting;
+}
+
+function buildPromotedObject(input, settings) {
+  const out = {};
+  const pageId = String(settings.pageId || input?.pageId || "").trim();
+  const instagramActorId = String(settings.instagramActorId || input?.instagramActorId || "").trim();
+  if (pageId) out.page_id = pageId;
+  if (instagramActorId) out.instagram_actor_id = instagramActorId;
+  if (input?.pixelId) out.pixel_id = String(input.pixelId);
+  if (input?.conversionEvent) out.custom_event_type = String(input.conversionEvent);
+  if (input?.appId) out.application_id = String(input.appId);
+  if (input?.appStoreUrl) out.object_store_url = String(input.appStoreUrl);
+  return out;
+}
+
+async function createMetaOrderSecure(input) {
+  const settings = readMetaSettings();
+  const metaSecrets = loadMetaSecrets();
+  const token = getMetaToken(metaSecrets, "ads");
+  const apiVersion = settings.apiVersion || metaSecrets?.apiVersion || "v20.0";
+  const adAccountId = String(input?.adAccountId || settings.adAccountId || "").replace(/^act_/i, "");
+  if (!token) return { ok: false, error: "尚未設定 Meta Ads API Key" };
+  if (!adAccountId) return { ok: false, error: "尚未設定預設廣告帳號" };
+  if (!String(input?.postUrl || "").trim()) return { ok: false, error: "請先填入並驗證貼文連結" };
+
+  const mode = input?.deliveryMode === "optimized" ? "optimized" : "direct";
+  const objective = metaObjectiveFromInput(input);
+  const optimizationGoal = metaOptimizationGoalFromInput(input);
+  const dailyBudget = Math.max(1, Number(input?.dailyBudget || 0));
+  const campaignName = String(input?.campaignName || input?.title || "Meta 投放任務").trim();
+  const goal = String(input?.goal || "fb_post_engagement");
+  const nowIso = new Date().toISOString();
+  const trackingRef = normalizeTrackingRef(input?.trackingRef) ||
+    (String(input?.postUrl || "").trim()
+      ? await resolveTrackingFromUrl(metaSecrets, String(input.postUrl)).catch(() => null)
+      : null);
+
+  const requestLogs = [];
+  const campaign = await graphApiPost(apiVersion, token, `/act_${adAccountId}/campaigns`, {
+    name: campaignName,
+    buying_type: "AUCTION",
+    objective,
+    special_ad_categories: [],
+    status: "PAUSED",
+  });
+  requestLogs.push({ step: "campaign", ok: true, detail: String(campaign.id || "") });
+
+  const variantCount = mode === "optimized" ? 2 : 1;
+  const variants = [];
+  const totalBudgetCents = Math.round(dailyBudget * 100);
+  const variantBudgetCents = Math.max(100, Math.floor(totalBudgetCents / variantCount));
+  const promotedObject = buildPromotedObject(input, settings);
+  const pageId = String(settings.pageId || input?.pageId || trackingRef?.pageId || "").trim();
+  const instagramActorId = String(settings.instagramActorId || input?.instagramActorId || "").trim();
+  const postRef = String(input?.existingPostId || trackingRef?.refId || "").trim();
+
+  for (let index = 0; index < variantCount; index += 1) {
+    const suffix = variantCount > 1 ? (index === 0 ? "模板受眾" : "廣泛受眾") : "直投";
+    const adset = await graphApiPost(apiVersion, token, `/act_${adAccountId}/adsets`, {
+      name: `${String(input?.adsetName || campaignName).trim()} - ${suffix}`,
+      campaign_id: campaign.id,
+      daily_budget: String(variantBudgetCents),
+      billing_event: "IMPRESSIONS",
+      optimization_goal: optimizationGoal,
+      bid_strategy: "LOWEST_COST_WITHOUT_CAP",
+      start_time: input?.startTime || nowIso,
+      end_time: input?.endTime || undefined,
+      targeting: buildMetaTargeting(input, settings, index),
+      promoted_object: Object.keys(promotedObject).length ? promotedObject : undefined,
+      status: "PAUSED",
+    });
+    requestLogs.push({ step: `adset_${index + 1}`, ok: true, detail: String(adset.id || "") });
+
+    const creativePayload = { name: `${String(input?.adName || campaignName).trim()} - ${suffix}` };
+    if (String(trackingRef?.platform || input?.platform || "").toLowerCase() === "instagram") {
+      creativePayload.source_instagram_media_id = postRef;
+    } else if (pageId && postRef) {
+      creativePayload.object_story_id = postRef.includes("_") ? postRef : `${pageId}_${postRef}`;
+    } else if (pageId) {
+      creativePayload.object_story_spec = {
+        page_id: pageId,
+        instagram_actor_id: instagramActorId || undefined,
+        link_data: {
+          message: input?.message || "",
+          link: input?.destinationUrl || input?.postUrl,
+          call_to_action: { type: input?.ctaType || "LEARN_MORE", value: { link: input?.destinationUrl || input?.postUrl } },
+        },
+      };
+    }
+
+    const creative = await graphApiPost(apiVersion, token, `/act_${adAccountId}/adcreatives`, creativePayload);
+    requestLogs.push({ step: `creative_${index + 1}`, ok: true, detail: String(creative.id || "") });
+
+    const ad = await graphApiPost(apiVersion, token, `/act_${adAccountId}/ads`, {
+      name: `${String(input?.adName || campaignName).trim()} - ${suffix}`,
+      adset_id: adset.id,
+      creative: { creative_id: creative.id },
+      status: "PAUSED",
+    });
+    requestLogs.push({ step: `ad_${index + 1}`, ok: true, detail: String(ad.id || "") });
+
+    variants.push({
+      id: `${Date.now()}_${index}`,
+      label: suffix,
+      campaignId: String(campaign.id || ""),
+      adsetId: String(adset.id || ""),
+      creativeId: String(creative.id || ""),
+      adId: String(ad.id || ""),
+      budget: variantBudgetCents / 100,
+      status: "submitted",
+      performance: null,
+      proxyRoas: null,
+    });
+  }
+
+  const submitResult = {
+    campaignId: String(campaign.id || ""),
+    adsetId: variants[0]?.adsetId,
+    creativeId: variants[0]?.creativeId,
+    adId: variants[0]?.adId,
+    variants,
+    requestLogs,
+  };
+
+  const order = {
+    id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    createdAt: nowIso,
+    applicant: String(input?.applicant || ""),
+    title: String(input?.title || campaignName),
+    accountId: adAccountId,
+    accountLabel: String(input?.accountLabel || settings.accountLabel || adAccountId),
+    industryKey: String(input?.industryKey || ""),
+    industryLabel: String(input?.industryLabel || ""),
+    campaignName,
+    adsetName: String(input?.adsetName || campaignName),
+    adName: String(input?.adName || campaignName),
+    campaignObjective: objective,
+    performanceGoalCode: String(input?.performanceGoalCode || ""),
+    performanceGoalLabel: String(input?.performanceGoalLabel || ""),
+    goal,
+    deliveryMode: mode,
+    landingUrl: String(input?.postUrl || input?.destinationUrl || ""),
+    destinationUrl: String(input?.destinationUrl || ""),
+    message: String(input?.message || ""),
+    ctaType: String(input?.ctaType || "LEARN_MORE"),
+    useExistingPost: true,
+    existingPostId: postRef,
+    existingPostSource: String(input?.postUrl || ""),
+    dailyBudget,
+    startTime: input?.startTime || nowIso,
+    endTime: input?.endTime || "",
+    countries: Array.isArray(input?.countries) ? input.countries : ["TW"],
+    ageMin: Number(input?.ageMin || 18),
+    ageMax: Number(input?.ageMax || 49),
+    genders: Array.isArray(input?.genders) ? input.genders : [],
+    manualPlacements: input?.manualPlacements || { facebook: [], instagram: [] },
+    detailedTargetingText: String(input?.detailedTargetingText || ""),
+    trackingPostId: postRef,
+    trackingRef,
+    targetMetricKey: input?.targetMetricKey || "",
+    targetValue: Number(input?.targetValue || 0) || undefined,
+    autoStopByTarget: !!input?.autoStopByTarget,
+    mode: "live",
+    status: "submitted",
+    apiStatusText: "PAUSED",
+    error: "",
+    payloads: {},
+    submitResult,
+  };
+
+  const rows = readSharedJson(META_ORDERS_KEY);
+  writeSharedJson(META_ORDERS_KEY, [...(Array.isArray(rows) ? rows : []), order], "server-meta-submit");
+  return { ok: true, order };
 }
 
 function formEncode(params) {
@@ -2791,6 +3123,11 @@ async function syncSharedMetaOrders(options = {}) {
   const manual = !!options.manual;
   const force = !!options.force;
   const metaSecrets = loadMetaSecrets();
+  const settings = readMetaSettings();
+  const optimization = settings.optimization || {};
+  const minSpendForDecision = Number(optimization.minSpendForDecision ?? 150);
+  const minResultForDecision = Number(optimization.minResultForDecision ?? 20);
+  const losingRatioThreshold = Number(optimization.losingRatioThreshold ?? 0.72);
   const rows = readSharedJson(META_ORDERS_KEY);
   const nextRows = Array.isArray(rows) ? rows.map((row) => ({ ...row })) : [];
   const nowIso = new Date().toISOString();
@@ -2805,11 +3142,11 @@ async function syncSharedMetaOrders(options = {}) {
         syncedCount: 0,
         updatedCount: 0,
         pausedCount: 0,
-        error: "Meta local credentials are not configured",
+        error: "尚未設定 Meta 後端憑證",
       },
       "server-meta-sync",
     );
-    return { syncedCount: 0, updatedCount: 0, pausedCount: 0, skipped: true, error: "Meta local credentials are not configured" };
+    return { syncedCount: 0, updatedCount: 0, pausedCount: 0, skipped: true, error: "尚未設定 Meta 後端憑證" };
   }
 
   let syncedCount = 0;
@@ -2817,10 +3154,26 @@ async function syncSharedMetaOrders(options = {}) {
   let pausedCount = 0;
   const eligibleIndexes = [];
 
+  const getVariants = (row) => {
+    const variants = Array.isArray(row?.submitResult?.variants) ? row.submitResult.variants : [];
+    if (variants.length > 0) {
+      return variants
+        .map((variant, variantIndex) => ({
+          ...variant,
+          id: variant.id || `variant_${variantIndex + 1}`,
+          label: variant.label || `變體 ${variantIndex + 1}`,
+          adId: String(variant.adId || "").trim(),
+        }))
+        .filter((variant) => variant.adId);
+    }
+    const adId = String(row?.submitResult?.adId || "").trim();
+    return adId ? [{ id: "single", label: "主廣告", adId }] : [];
+  };
+
   for (let index = 0; index < nextRows.length; index += 1) {
     const row = nextRows[index];
-    const adId = String(row?.submitResult?.adId || "").trim();
-    if (!adId) continue;
+    const variants = getVariants(row);
+    if (variants.length === 0) continue;
     if (!(row?.status === "running" || row?.status === "submitted" || (includePaused && row?.status === "paused"))) {
       continue;
     }
@@ -2843,28 +3196,58 @@ async function syncSharedMetaOrders(options = {}) {
     })
     .slice(0, Math.max(1, META_SYNC_MAX_ROWS_PER_RUN));
 
+  const mergePerformance = (goal, snapshots) => {
+    const totals = new Map();
+    for (const snapshot of snapshots) {
+      for (const metric of snapshot?.performance?.metrics || []) {
+        totals.set(metric.key, (totals.get(metric.key) || 0) + toNumber(metric.value));
+      }
+    }
+    return buildMetaPerformance(goal, Object.fromEntries(totals), { variants: snapshots.map((snapshot) => snapshot.performance?.raw || {}) });
+  };
+
   for (let cursor = 0; cursor < sortedIndexes.length; cursor += 1) {
     const index = sortedIndexes[cursor];
     const row = nextRows[index];
-    const adId = String(row?.submitResult?.adId || "").trim();
-    if (!adId) continue;
+    const variants = getVariants(row);
+    if (variants.length === 0) continue;
 
     syncedCount += 1;
-    const snapshot = await fetchMetaAdSnapshotSecure(metaSecrets, adId, row.goal);
-    if (!snapshot.ok) {
-      nextRows[index] = {
-        ...row,
-        error: snapshot.detail || "同步失敗",
-        targetLastCheckedAt: nowIso,
-      };
-      updatedCount += 1;
-      continue;
+    const metricKey = row.targetMetricKey || getGoalPrimaryMetricKey(row.goal);
+    const targetValue = Number(row.targetValue || 0);
+    const shouldAutoStop = !!row.autoStopByTarget && targetValue > 0;
+    const snapshots = [];
+    const errors = [];
+    let rowPausedCount = 0;
+
+    for (let variantIndex = 0; variantIndex < variants.length; variantIndex += 1) {
+      const variant = variants[variantIndex];
+      const snapshot = await fetchMetaAdSnapshotSecure(metaSecrets, variant.adId, row.goal);
+      if (!snapshot.ok) {
+        errors.push(`${variant.label}：${snapshot.detail || "同步失敗"}`);
+        snapshots.push({ ...variant, ok: false, status: "error", error: snapshot.detail || "同步失敗" });
+      } else {
+        const metricValue = snapshot.performance?.metrics?.find((metric) => metric.key === metricKey)?.value ?? 0;
+        const spend = snapshot.performance?.metrics?.find((metric) => metric.key === "spend")?.value ?? 0;
+        snapshots.push({
+          ...variant,
+          ok: true,
+          status: mapMetaOrderStatus(snapshot.statusText),
+          apiStatusText: snapshot.statusText,
+          performance: snapshot.performance,
+          currentValue: toNumber(metricValue),
+          spend: toNumber(spend),
+          score: toNumber(spend) > 0 ? toNumber(metricValue) / toNumber(spend) : 0,
+          lastCheckedAt: nowIso,
+        });
+      }
+      if (variantIndex < variants.length - 1 && META_SYNC_ROW_GAP_MS > 0) {
+        await sleep(META_SYNC_ROW_GAP_MS);
+      }
     }
 
-    const metricKey = row.targetMetricKey || getGoalPrimaryMetricKey(row.goal);
-    let targetCurrent = snapshot.performance?.metrics?.find((metric) => metric.key === metricKey)?.value;
+    let targetCurrent = undefined;
     let postError = "";
-
     const trackingPostId = String(row.trackingPostId || row.trackingRef?.refId || "").trim();
     if (trackingPostId) {
       const postMetrics = await fetchMetaPostMetricsSecure({
@@ -2880,37 +3263,100 @@ async function syncSharedMetaOrders(options = {}) {
         postError = postMetrics.detail || "";
       }
     }
+    if (typeof targetCurrent !== "number") {
+      targetCurrent = snapshots.reduce((sum, snapshot) => sum + toNumber(snapshot.currentValue), 0);
+    }
 
-    let nextStatus = mapMetaOrderStatus(snapshot.statusText);
-    let nextApiStatus = snapshot.statusText || "UNKNOWN";
     let targetReachedAt = row.targetReachedAt;
-    const targetValue = Number(row.targetValue || 0);
-    const shouldAutoStop = !!row.autoStopByTarget && targetValue > 0 && typeof targetCurrent === "number";
+    let nextStatus = snapshots.some((snapshot) => snapshot.status === "running") ? "running" : "submitted";
+    let nextApiStatus = snapshots.map((snapshot) => snapshot.apiStatusText || snapshot.status).filter(Boolean).join(" / ") || "UNKNOWN";
 
-    if (shouldAutoStop && targetCurrent >= targetValue && nextStatus !== "paused") {
-      const pauseResult = await updateMetaAdDeliverySecure(metaSecrets, adId, "PAUSED");
-      if (pauseResult.ok) {
-        nextStatus = "paused";
-        nextApiStatus = pauseResult.statusText || "PAUSED";
-        targetReachedAt = nowIso;
-        pausedCount += 1;
-      } else if (!postError) {
-        postError = pauseResult.detail || "達標停投失敗";
+    if (shouldAutoStop && typeof targetCurrent === "number" && targetCurrent >= targetValue) {
+      for (const snapshot of snapshots) {
+        if (!snapshot.adId || snapshot.status === "paused") continue;
+        const pauseResult = await updateMetaAdDeliverySecure(metaSecrets, snapshot.adId, "PAUSED");
+        if (pauseResult.ok) {
+          snapshot.status = "paused";
+          snapshot.apiStatusText = pauseResult.statusText || "PAUSED";
+          snapshot.pausedReason = "target_reached";
+          rowPausedCount += 1;
+        } else {
+          errors.push(`${snapshot.label}：${pauseResult.detail || "達標停投失敗"}`);
+        }
       }
-    } else if (!shouldAutoStop || targetCurrent < targetValue) {
+      if (rowPausedCount > 0) {
+        nextStatus = "paused";
+        nextApiStatus = "PAUSED";
+        targetReachedAt = nowIso;
+        pausedCount += rowPausedCount;
+      }
+    } else {
       targetReachedAt = undefined;
     }
 
+    const activeSnapshots = snapshots.filter((snapshot) => snapshot.ok && snapshot.status !== "paused");
+    const shouldOptimize = row.deliveryMode === "optimized" && activeSnapshots.length >= 2 && !(shouldAutoStop && targetReachedAt);
+    if (shouldOptimize) {
+      const qualified = activeSnapshots.filter((snapshot) => snapshot.spend >= minSpendForDecision && snapshot.currentValue >= minResultForDecision);
+      if (qualified.length >= 2) {
+        const best = qualified.reduce((winner, item) => (item.score > winner.score ? item : winner), qualified[0]);
+        for (const snapshot of qualified) {
+          if (snapshot.adId === best.adId) continue;
+          if (snapshot.score < best.score * losingRatioThreshold) {
+            const pauseResult = await updateMetaAdDeliverySecure(metaSecrets, snapshot.adId, "PAUSED");
+            if (pauseResult.ok) {
+              snapshot.status = "paused";
+              snapshot.apiStatusText = pauseResult.statusText || "PAUSED";
+              snapshot.pausedReason = "ab_loser";
+              snapshot.abWinnerAdId = best.adId;
+              pausedCount += 1;
+            } else {
+              errors.push(`${snapshot.label}：${pauseResult.detail || "低效變體停用失敗"}`);
+            }
+          }
+        }
+      }
+    }
+
+    const successfulSnapshots = snapshots.filter((snapshot) => snapshot.ok);
+    if (successfulSnapshots.length > 0) {
+      const stillRunning = successfulSnapshots.some((snapshot) => snapshot.status === "running");
+      const allPaused = successfulSnapshots.every((snapshot) => snapshot.status === "paused");
+      nextStatus = allPaused ? "paused" : stillRunning ? "running" : nextStatus;
+      nextApiStatus = successfulSnapshots.map((snapshot) => snapshot.apiStatusText || snapshot.status).filter(Boolean).join(" / ") || nextApiStatus;
+    }
+
+    const nextSubmitResult = {
+      ...(row.submitResult || {}),
+      variants: variants.length > 1 ? snapshots.map((snapshot) => ({
+        id: snapshot.id,
+        label: snapshot.label,
+        adSetId: snapshot.adSetId,
+        creativeId: snapshot.creativeId,
+        adId: snapshot.adId,
+        status: snapshot.status,
+        apiStatusText: snapshot.apiStatusText,
+        currentValue: snapshot.currentValue,
+        spend: snapshot.spend,
+        score: snapshot.score,
+        pausedReason: snapshot.pausedReason,
+        abWinnerAdId: snapshot.abWinnerAdId,
+        lastCheckedAt: snapshot.lastCheckedAt,
+        error: snapshot.error,
+      })) : row.submitResult?.variants,
+    };
+
     nextRows[index] = {
       ...row,
+      submitResult: nextSubmitResult,
       status: nextStatus,
       apiStatusText: nextApiStatus,
-      performance: snapshot.performance,
+      performance: successfulSnapshots.length > 0 ? mergePerformance(row.goal, successfulSnapshots) : row.performance,
       targetMetricKey: metricKey,
       targetCurrentValue: typeof targetCurrent === "number" ? targetCurrent : undefined,
       targetLastCheckedAt: nowIso,
       targetReachedAt,
-      error: postError,
+      error: [postError, ...errors].filter(Boolean).join("；"),
     };
     updatedCount += 1;
 
@@ -2994,6 +3440,114 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (req.method === "GET" && req.url === "/api/meta/settings") {
+      json(res, 200, { ok: true, config: publicMetaSettings() });
+      return;
+    }
+
+    if (req.method === "POST" && req.url === "/api/meta/settings") {
+      const raw = await readBody(req);
+      const payload = JSON.parse(String(raw || "{}"));
+      const current = readMetaSettings();
+      const next = {
+        ...current,
+        apiVersion: String(payload.apiVersion || current.apiVersion || "v20.0"),
+        adAccountId: String(payload.adAccountId || current.adAccountId || "").replace(/^act_/i, ""),
+        pageId: String(payload.pageId || current.pageId || ""),
+        pageName: String(payload.pageName || current.pageName || ""),
+        instagramActorId: String(payload.instagramActorId || current.instagramActorId || ""),
+        optimization: { ...current.optimization, ...(payload.optimization || {}) },
+        industries: Array.isArray(payload.industries) ? payload.industries : current.industries,
+        updatedAt: new Date().toISOString(),
+      };
+      saveMetaSecretsPatch({
+        apiVersion: next.apiVersion,
+        pageId: next.pageId,
+        pageName: next.pageName,
+        adsAccessToken: payload.adsAccessToken,
+        facebookAccessToken: payload.facebookAccessToken,
+        instagramAccessToken: payload.instagramAccessToken,
+      });
+      writeSharedJson(META_SETTINGS_KEY, next, "server-meta-settings");
+      json(res, 200, { ok: true, config: publicMetaSettings() });
+      return;
+    }
+
+    if (req.method === "POST" && req.url === "/api/meta/verify-token") {
+      const raw = await readBody(req);
+      const payload = JSON.parse(String(raw || "{}"));
+      const result = await verifyMetaToken({
+        scope: String(payload.scope || "ads"),
+        token: String(payload.token || ""),
+        apiVersion: String(payload.apiVersion || readMetaSettings().apiVersion || "v20.0"),
+      });
+      json(res, result.ok ? 200 : 400, result);
+      return;
+    }
+
+    if (req.method === "POST" && req.url === "/api/meta/resolve-post") {
+      const raw = await readBody(req);
+      const payload = JSON.parse(String(raw || "{}"));
+      const result = await resolveMetaPostSecure({
+        url: payload.url || payload.postUrl || "",
+        platform: payload.platform || "",
+        pageId: payload.pageId || "",
+        pageName: payload.pageName || "",
+      });
+      json(res, result.ok ? 200 : 400, result);
+      return;
+    }
+
+    if (req.method === "GET" && req.url === "/api/meta/orders") {
+      const rows = readSharedJson(META_ORDERS_KEY);
+      json(res, 200, { ok: true, orders: Array.isArray(rows) ? rows : [] });
+      return;
+    }
+
+    if (req.method === "POST" && req.url === "/api/meta/orders") {
+      const raw = await readBody(req);
+      const payload = JSON.parse(String(raw || "{}"));
+      const result = await createMetaOrderSecure(payload);
+      json(res, result.ok ? 200 : 400, result);
+      return;
+    }
+
+    if (req.method === "POST" && /^\/api\/meta\/orders\/[^/]+\/(sync|pause|resume)$/.test(req.url)) {
+      const [, orderId, action] = req.url.match(/^\/api\/meta\/orders\/([^/]+)\/(sync|pause|resume)$/) || [];
+      const rows = readSharedJson(META_ORDERS_KEY);
+      const list = Array.isArray(rows) ? rows : [];
+      const row = list.find((item) => String(item?.id) === decodeURIComponent(orderId || ""));
+      if (!row) {
+        json(res, 404, { ok: false, error: "找不到 Meta 投放案件" });
+        return;
+      }
+      if (action === "sync") {
+        const result = await syncSharedMetaOrders({ manual: true, force: true, includePaused: true });
+        json(res, result.error ? 400 : 200, { ok: !result.error, ...result });
+        return;
+      }
+      const adIds = Array.isArray(row?.submitResult?.variants)
+        ? row.submitResult.variants.map((variant) => String(variant?.adId || "")).filter(Boolean)
+        : [String(row?.submitResult?.adId || "")].filter(Boolean);
+      const metaSecrets = loadMetaSecrets();
+      const status = action === "pause" ? "PAUSED" : "ACTIVE";
+      const errors = [];
+      for (const adId of adIds) {
+        const result = await updateMetaAdDeliverySecure(metaSecrets, adId, status);
+        if (!result.ok) errors.push(result.detail || `鏇存柊 ${adId} 澶辨晽`);
+      }
+      if (errors.length) {
+        json(res, 400, { ok: false, error: errors.join("; ") });
+        return;
+      }
+      const next = list.map((item) => String(item?.id) === String(row.id)
+        ? { ...item, status: action === "pause" ? "paused" : "running", apiStatusText: status, error: "" }
+        : item);
+      writeSharedJson(META_ORDERS_KEY, next, "server-meta-delivery");
+      json(res, 200, { ok: true });
+      return;
+    }
+
     if (req.method === "GET" && req.url.startsWith("/api/meta/post-metrics")) {
       const url = new URL(req.url, `http://${req.headers.host || "127.0.0.1"}`);
       const result = await fetchMetaPostMetricsSecure({
@@ -3035,7 +3589,7 @@ const server = http.createServer(async (req, res) => {
       const url = new URL(req.url, `http://${req.headers.host || "127.0.0.1"}`);
       const vendor = String(url.searchParams.get("vendor") || "").trim();
       if (!vendor) {
-        json(res, 400, { ok: false, error: "缺少 vendor 參數" });
+        json(res, 400, { ok: false, error: "缂哄皯 vendor 鍙冩暩" });
         return;
       }
       const result = await fetchVendorBalance(vendor);

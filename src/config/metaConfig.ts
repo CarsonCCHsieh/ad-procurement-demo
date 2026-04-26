@@ -1,110 +1,118 @@
+import { apiUrl } from "../lib/apiBase";
 import { queueSharedWrite } from "../lib/sharedSync";
 
 export type MetaRuntimeMode = "live";
 
 export type MetaConfigV1 = {
   version: 1;
-  updatedAt: string; // ISO
-  apiVersion: string; // e.g. v23.0
+  updatedAt: string;
   mode: MetaRuntimeMode;
+  apiVersion: string;
+  adAccountId: string;
+  pageId: string;
+  pageName: string;
+  instagramActorId: string;
+  accessToken: string;
   adsAccessToken: string;
   facebookAccessToken: string;
   instagramAccessToken: string;
-  accessToken: string; // legacy fallback
-  adAccountId: string; // without act_ prefix
-  pageId: string;
-  instagramActorId: string;
-  currency: "TWD"; // fixed per requirement
-  timezone: string; // Asia/Taipei
+  tokenStatus?: {
+    ads?: boolean;
+    facebook?: boolean;
+    instagram?: boolean;
+  };
 };
 
 const STORAGE_KEY = "ad_demo_meta_config_v1";
 
-function isoNow() {
-  return new Date().toISOString();
-}
-
 export const DEFAULT_META_CONFIG: MetaConfigV1 = {
   version: 1,
-  updatedAt: isoNow(),
-  apiVersion: "v23.0",
+  updatedAt: new Date().toISOString(),
   mode: "live",
+  apiVersion: "v20.0",
+  adAccountId: "",
+  pageId: "",
+  pageName: "",
+  instagramActorId: "",
+  accessToken: "",
   adsAccessToken: "",
   facebookAccessToken: "",
   instagramAccessToken: "",
-  accessToken: "",
-  adAccountId: "",
-  pageId: "",
-  instagramActorId: "",
-  currency: "TWD",
-  timezone: "Asia/Taipei",
 };
 
 function normalize(raw: unknown): MetaConfigV1 | null {
   if (!raw || typeof raw !== "object") return null;
-  const r = raw as Partial<MetaConfigV1>;
-  if (r.version !== 1) return null;
-  if (typeof r.apiVersion !== "string") return null;
+  const row = raw as Partial<MetaConfigV1>;
   return {
-    version: 1,
-    updatedAt: typeof r.updatedAt === "string" ? r.updatedAt : isoNow(),
-    apiVersion: r.apiVersion.trim() || "v23.0",
-    mode: "live",
-    adsAccessToken: typeof r.adsAccessToken === "string" ? r.adsAccessToken.trim() : "",
-    facebookAccessToken: typeof r.facebookAccessToken === "string" ? r.facebookAccessToken.trim() : "",
-    instagramAccessToken: typeof r.instagramAccessToken === "string" ? r.instagramAccessToken.trim() : "",
-    accessToken: typeof r.accessToken === "string" ? r.accessToken.trim() : "",
-    adAccountId: typeof r.adAccountId === "string" ? r.adAccountId.trim() : "",
-    pageId: typeof r.pageId === "string" ? r.pageId.trim() : "",
-    instagramActorId: typeof r.instagramActorId === "string" ? r.instagramActorId.trim() : "",
-    currency: "TWD",
-    timezone: typeof r.timezone === "string" && r.timezone.trim() ? r.timezone.trim() : "Asia/Taipei",
+    ...DEFAULT_META_CONFIG,
+    updatedAt: typeof row.updatedAt === "string" ? row.updatedAt : new Date().toISOString(),
+    apiVersion: typeof row.apiVersion === "string" && row.apiVersion.trim() ? row.apiVersion.trim() : "v20.0",
+    adAccountId: String(row.adAccountId || "").replace(/^act_/i, ""),
+    pageId: String(row.pageId || ""),
+    pageName: String(row.pageName || ""),
+    instagramActorId: String(row.instagramActorId || ""),
+    // Tokens are intentionally not persisted in browser storage. Backend secrets are the source of truth.
+    accessToken: "",
+    adsAccessToken: "",
+    facebookAccessToken: "",
+    instagramAccessToken: "",
+    tokenStatus: row.tokenStatus,
   };
 }
 
 export function getMetaConfig(): MetaConfigV1 {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return DEFAULT_META_CONFIG;
-    const parsed = JSON.parse(raw);
-    return normalize(parsed) ?? DEFAULT_META_CONFIG;
+    return normalize(raw ? JSON.parse(raw) : null) ?? DEFAULT_META_CONFIG;
   } catch {
     return DEFAULT_META_CONFIG;
   }
 }
 
 export function saveMetaConfig(next: MetaConfigV1) {
+  const normalized = normalize(next) ?? DEFAULT_META_CONFIG;
   try {
-    const normalized = normalize(next) ?? DEFAULT_META_CONFIG;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...normalized, updatedAt: isoNow() }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...normalized, updatedAt: new Date().toISOString() }));
     queueSharedWrite(STORAGE_KEY);
   } catch {
-    // ignore
+    // ignore cache write failures
   }
 }
 
 export function patchMetaConfig(patch: Partial<MetaConfigV1>) {
-  const current = getMetaConfig();
-  const next = { ...current, ...patch };
-  saveMetaConfig(next);
+  saveMetaConfig({ ...getMetaConfig(), ...patch });
 }
 
 export function resetMetaConfig() {
   saveMetaConfig(DEFAULT_META_CONFIG);
 }
 
-export function pickMetaAccessToken(
-  cfg: MetaConfigV1,
-  scope: "ads" | "facebook" | "instagram" | "any" = "any",
-): string {
-  const ads = String(cfg.adsAccessToken || "").trim();
-  const fb = String(cfg.facebookAccessToken || "").trim();
-  const ig = String(cfg.instagramAccessToken || "").trim();
-  const legacy = String(cfg.accessToken || "").trim();
-
-  if (scope === "ads") return ads || fb || ig || legacy;
-  if (scope === "facebook") return fb || ads || legacy || ig;
-  if (scope === "instagram") return ig || ads || legacy || fb;
-  return ads || fb || ig || legacy;
+export function pickMetaAccessToken(_cfg: MetaConfigV1, _scope: "ads" | "facebook" | "instagram" | "any" = "any") {
+  return "";
 }
 
+export async function fetchMetaConfigFromServer(): Promise<MetaConfigV1> {
+  const res = await fetch(apiUrl("/api/meta/settings"), { headers: { "Cache-Control": "no-store" } });
+  const json = await res.json();
+  if (!res.ok || !json.ok) throw new Error(json.error || `HTTP ${res.status}`);
+  const cfg = normalize(json.config) ?? DEFAULT_META_CONFIG;
+  saveMetaConfig(cfg);
+  return cfg;
+}
+
+export async function saveMetaConfigToServer(input: MetaConfigV1 & {
+  adsAccessToken?: string;
+  facebookAccessToken?: string;
+  instagramAccessToken?: string;
+}) {
+  const res = await fetch(apiUrl("/api/meta/settings"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  const json = await res.json();
+  if (!res.ok || !json.ok) throw new Error(json.error || `HTTP ${res.status}`);
+  const cfg = normalize(json.config) ?? DEFAULT_META_CONFIG;
+  saveMetaConfig(cfg);
+  return cfg;
+}

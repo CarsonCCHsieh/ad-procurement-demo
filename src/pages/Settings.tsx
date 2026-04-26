@@ -300,7 +300,7 @@ export function SettingsPage() {
       label,
       enabled: true,
       splitStrategy: "random" as const,
-      appendOnComplete: { enabled: false, vendor: "justanotherpanel", serviceId: 0, quantity: 0 },
+      appendOnComplete: { enabled: false, vendor: "justanotherpanel" as VendorKey, serviceId: 0, quantity: 0 },
       suppliers: [],
     };
     const nextCfg = {

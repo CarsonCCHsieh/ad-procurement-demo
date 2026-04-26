@@ -203,7 +203,7 @@ export function AdOrdersPage() {
     try {
       let created = 0; let successCount = 0; let failureCount = 0;
       if (window.location.origin.startsWith("http")) {
-        for (const payload of payloads) { const data = await submitViaBackend(payload); insertOrder(data.order); created += 1; successCount += Number(data.summary?.successCount ?? 0); failureCount += Number(data.summary?.failureCount ?? 0); }
+        for (const payload of payloads) { const data = await submitViaBackend(payload); const createdOrder = data.order; if (!createdOrder) throw new Error("後端未回傳訂單資料"); insertOrder(createdOrder); created += 1; successCount += Number(data.summary?.successCount ?? 0); failureCount += Number(data.summary?.failureCount ?? 0); }
       } else {
         for (const payload of payloads) { addOrder({ ...payload, status: "planned" }); created += 1; }
       }

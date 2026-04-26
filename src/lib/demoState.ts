@@ -30,7 +30,7 @@ export function createDemoSnapshot(options?: { includeSecrets?: boolean }): Demo
   return {
     version: 1,
     exportedAt: isoNow(),
-    includesSecrets,
+    includesSecrets: includeSecrets,
     appConfig: getConfig(),
     pricingConfig: getPricingConfig(),
     serviceCatalog: getServiceCatalog(),
