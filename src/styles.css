@@ -1834,6 +1834,29 @@ textarea:focus {
   background: hsl(var(--card));
 }
 
+.meta-template-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.meta-template-tag {
+  border: 1px solid hsl(var(--meta-blue) / 0.24);
+  border-radius: 999px;
+  padding: 7px 10px;
+  background: hsl(var(--meta-blue) / 0.08);
+  color: hsl(var(--foreground));
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.meta-template-tag.is-id {
+  border-color: hsl(var(--meta-green) / 0.28);
+  background: hsl(var(--meta-green) / 0.1);
+  color: hsl(var(--meta-green));
+}
+
 .meta-summary {
   border: 1px solid hsl(var(--border));
   border-radius: 16px;

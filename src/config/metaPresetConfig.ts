@@ -55,7 +55,7 @@ export type MetaPresetConfigV1 = {
   industries: MetaIndustryPreset[];
 };
 
-const STORAGE_KEY = "ad_demo_meta_preset_config_v1";
+const STORAGE_KEY = "ad_demo_meta_preset_config_v2";
 
 export const DEFAULT_META_OPTIMIZATION_CONFIG: MetaOptimizationConfig = {
   enabled: true,
@@ -126,7 +126,7 @@ function buildDefaultIndustries(): MetaIndustryPreset[] {
   return INDUSTRIES.map((industry) => ({
     key: industry.key,
     label: industry.label,
-    description: `${industry.label}產業安全預設模板`,
+    description: `${industry.label}產業預設模板`,
     enabled: true,
     recommendedGoals: industry.goals,
     countriesCsv: "TW",
@@ -152,36 +152,70 @@ export const DEFAULT_META_PRESET_CONFIG: MetaPresetConfigV1 = {
   industries: buildDefaultIndustries(),
 };
 
+function normalizeAccount(account: Partial<MetaManagedAccount> | undefined, index: number): MetaManagedAccount {
+  return {
+    id: String(account?.id || `account-${index + 1}`),
+    label: String(account?.label || account?.adAccountId || `廣告帳號 ${index + 1}`),
+    adAccountId: String(account?.adAccountId || "").replace(/^act_/i, ""),
+    pageId: String(account?.pageId || ""),
+    pageName: String(account?.pageName || ""),
+    instagramActorId: String(account?.instagramActorId || ""),
+    isDefault: !!account?.isDefault,
+  };
+}
+
+function normalizeIndustry(industry: Partial<MetaIndustryPreset> | undefined, fallback: MetaIndustryPreset): MetaIndustryPreset {
+  return {
+    ...fallback,
+    ...industry,
+    key: String(industry?.key || fallback.key),
+    label: String(industry?.label || fallback.label),
+    description: String(industry?.description || fallback.description),
+    enabled: typeof industry?.enabled === "boolean" ? industry.enabled : fallback.enabled,
+    recommendedGoals: Array.isArray(industry?.recommendedGoals) && industry.recommendedGoals.length > 0
+      ? industry.recommendedGoals as MetaAdGoalKey[]
+      : fallback.recommendedGoals,
+    countriesCsv: String(industry?.countriesCsv || fallback.countriesCsv),
+    ageMin: Number(industry?.ageMin || fallback.ageMin),
+    ageMax: Number(industry?.ageMax || fallback.ageMax),
+    gender: industry?.gender === "male" || industry?.gender === "female" ? industry.gender : fallback.gender,
+    detailedTargetingText: String(industry?.detailedTargetingText || fallback.detailedTargetingText),
+    customAudienceIdsText: String(industry?.customAudienceIdsText || fallback.customAudienceIdsText),
+    excludedAudienceIdsText: String(industry?.excludedAudienceIdsText || fallback.excludedAudienceIdsText),
+    audienceNote: String(industry?.audienceNote || fallback.audienceNote),
+    dailyBudget: Number(industry?.dailyBudget || fallback.dailyBudget),
+    ctaType: String(industry?.ctaType || fallback.ctaType),
+    fbPositions: Array.isArray(industry?.fbPositions) ? industry.fbPositions.map(String) : fallback.fbPositions,
+    igPositions: Array.isArray(industry?.igPositions) ? industry.igPositions.map(String) : fallback.igPositions,
+  };
+}
+
+function mergeIndustries(rawIndustries: unknown): MetaIndustryPreset[] {
+  const defaults = buildDefaultIndustries();
+  const stored = Array.isArray(rawIndustries) ? rawIndustries as Array<Partial<MetaIndustryPreset>> : [];
+  const storedByKey = new Map(stored.map((industry) => [String(industry?.key || ""), industry]));
+  const mergedDefaults = defaults.map((fallback) => normalizeIndustry(storedByKey.get(fallback.key), fallback));
+  const defaultKeys = new Set(defaults.map((industry) => industry.key));
+  const custom = stored
+    .filter((industry) => industry?.key && !defaultKeys.has(String(industry.key)))
+    .map((industry, index) => normalizeIndustry(industry, {
+      ...defaults[index % defaults.length],
+      key: String(industry.key),
+      label: String(industry.label || `自訂產業 ${index + 1}`),
+      description: String(industry.description || "管理員新增的自訂產業模板"),
+    }));
+  return [...mergedDefaults, ...custom];
+}
+
 function normalize(raw: unknown): MetaPresetConfigV1 | null {
   if (!raw || typeof raw !== "object") return null;
   const row = raw as Partial<MetaPresetConfigV1>;
-  const defaults = buildDefaultIndustries();
   return {
     version: 1,
     updatedAt: typeof row.updatedAt === "string" ? row.updatedAt : nowIso(),
     optimization: { ...DEFAULT_META_OPTIMIZATION_CONFIG, ...(row.optimization ?? {}) },
-    accounts: Array.isArray(row.accounts) ? row.accounts.map((account, index) => ({
-      id: String(account?.id || `account-${index + 1}`),
-      label: String(account?.label || account?.adAccountId || `廣告帳號 ${index + 1}`),
-      adAccountId: String(account?.adAccountId || "").replace(/^act_/i, ""),
-      pageId: String(account?.pageId || ""),
-      pageName: String(account?.pageName || ""),
-      instagramActorId: String(account?.instagramActorId || ""),
-      isDefault: !!account?.isDefault,
-    })) : [],
-    industries: Array.isArray(row.industries) && row.industries.length > 0
-      ? row.industries.map((industry, index) => ({
-          ...defaults[index % defaults.length],
-          ...industry,
-          key: String(industry?.key || `industry-${index + 1}`),
-          label: String(industry?.label || `產業 ${index + 1}`),
-          recommendedGoals: Array.isArray(industry?.recommendedGoals) && industry.recommendedGoals.length > 0
-            ? industry.recommendedGoals as MetaAdGoalKey[]
-            : ["fb_post_engagement"],
-          fbPositions: Array.isArray(industry?.fbPositions) ? industry.fbPositions.map(String) : DEFAULT_FB_POSITIONS,
-          igPositions: Array.isArray(industry?.igPositions) ? industry.igPositions.map(String) : DEFAULT_IG_POSITIONS,
-        }))
-      : defaults,
+    accounts: Array.isArray(row.accounts) ? row.accounts.map(normalizeAccount) : [],
+    industries: mergeIndustries(row.industries),
   };
 }
 
