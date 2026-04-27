@@ -70,9 +70,14 @@ const metaPostMetricsCache = new Map();
 const metaPostMetricsInflight = new Map();
 const metaPostMetricsBackoff = new Map();
 const metaPostMetricsLastAttemptAt = new Map();
+const metaInterestSearchCache = new Map();
 let backgroundSyncRunning = false;
 let backgroundMetaSyncRunning = false;
 let trackingCachePrimed = false;
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 const APP_CONFIG_KEY = "ad_demo_config_v1";
 const VENDOR_KEYS_KEY = "ad_demo_vendor_keys_v1";
@@ -2119,6 +2124,91 @@ async function verifyMetaToken({ scope, token, apiVersion }) {
   }
 }
 
+function normalizeAudienceQuery(value) {
+  return String(value || "")
+    .replace(/^#+\s*/, "")
+    .replace(/^(加強|偏向|鎖定|包含|希望|想要|受眾|TA)\s*/i, "")
+    .trim();
+}
+
+function extractAudienceSearchQueries(input, max = 8) {
+  const out = [];
+  const add = (raw) => {
+    const value = normalizeAudienceQuery(raw);
+    if (!value) return;
+    if (/^\d+(\s*[|,]\s*.+)?$/.test(value)) return;
+    if (/^(排除|不要|不含|避開|exclude|without)\b/i.test(value)) return;
+    if (value.length < 2 || value.length > 80) return;
+    if (!out.some((item) => item.toLowerCase() === value.toLowerCase())) out.push(value);
+  };
+
+  String(input?.detailedTargetingText || "")
+    .split(/\r?\n/g)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .forEach((line) => {
+      if (line.startsWith("#")) add(line);
+    });
+
+  String(input?.audienceRequestNote || "")
+    .split(/[\n,，、;；。]/g)
+    .forEach(add);
+
+  return out.slice(0, max);
+}
+
+function normalizeInterestObject(row, fallbackQuery = "") {
+  if (!row || typeof row !== "object") return null;
+  const id = String(row.id || "").trim();
+  const name = String(row.name || row.title || fallbackQuery || "").trim();
+  if (!/^\d+$/.test(id) || !name) return null;
+  return { id, name };
+}
+
+async function searchMetaInterest({ metaSecrets, apiVersion, query }) {
+  const token = getMetaToken(metaSecrets, "ads");
+  const q = normalizeAudienceQuery(query);
+  if (!token || !q) return null;
+
+  const cacheKey = `${apiVersion}:${q.toLowerCase()}`;
+  if (metaInterestSearchCache.has(cacheKey)) return metaInterestSearchCache.get(cacheKey);
+
+  try {
+    const raw = await graphApiGet(apiVersion, token, "/search", {
+      type: "adinterest",
+      q,
+      limit: 5,
+    });
+    const rows = Array.isArray(raw?.data) ? raw.data : [];
+    const best = rows.map((row) => normalizeInterestObject(row, q)).find(Boolean) || null;
+    metaInterestSearchCache.set(cacheKey, best);
+    return best;
+  } catch {
+    metaInterestSearchCache.set(cacheKey, null);
+    return null;
+  }
+}
+
+async function resolveMetaAudienceInterestsForInput({ metaSecrets, apiVersion, input }) {
+  const existing = Array.isArray(input?.interestObjects)
+    ? input.interestObjects.map((row) => normalizeInterestObject(row)).filter(Boolean)
+    : [];
+  const seen = new Set(existing.map((row) => row.id));
+  const resolved = [...existing];
+  const queries = extractAudienceSearchQueries(input);
+
+  for (const query of queries) {
+    const found = await searchMetaInterest({ metaSecrets, apiVersion, query });
+    if (found?.id && !seen.has(found.id)) {
+      seen.add(found.id);
+      resolved.push(found);
+    }
+    await delay(120);
+  }
+
+  return { interests: resolved, queries, addedCount: resolved.length - existing.length };
+}
+
 function metaObjectiveFromInput(input) {
   const value = String(input?.campaignObjective || "OUTCOME_ENGAGEMENT");
   return [
@@ -2201,6 +2291,17 @@ async function createMetaOrderSecure(input) {
       : null);
 
   const requestLogs = [];
+  const audienceResolution = await resolveMetaAudienceInterestsForInput({ metaSecrets, apiVersion, input });
+  const enrichedInput = {
+    ...input,
+    interestObjects: audienceResolution.interests,
+  };
+  requestLogs.push({
+    step: "audience_search",
+    ok: true,
+    detail: `resolved ${audienceResolution.addedCount} interest(s) from ${audienceResolution.queries.length} query seed(s)`,
+  });
+
   const campaign = await graphApiPost(apiVersion, token, `/act_${adAccountId}/campaigns`, {
     name: campaignName,
     buying_type: "AUCTION",
@@ -2230,7 +2331,7 @@ async function createMetaOrderSecure(input) {
       bid_strategy: "LOWEST_COST_WITHOUT_CAP",
       start_time: input?.startTime || nowIso,
       end_time: input?.endTime || undefined,
-      targeting: buildMetaTargeting(input, settings, index),
+      targeting: buildMetaTargeting(enrichedInput, settings, index),
       promoted_object: Object.keys(promotedObject).length ? promotedObject : undefined,
       status: "PAUSED",
     });
@@ -2320,6 +2421,9 @@ async function createMetaOrderSecure(input) {
     genders: Array.isArray(input?.genders) ? input.genders : [],
     manualPlacements: input?.manualPlacements || { facebook: [], instagram: [] },
     detailedTargetingText: String(input?.detailedTargetingText || ""),
+    audienceRequestNote: String(input?.audienceRequestNote || ""),
+    resolvedInterestObjects: audienceResolution.interests,
+    audienceSearchQueries: audienceResolution.queries,
     trackingPostId: postRef,
     trackingRef,
     targetMetricKey: input?.targetMetricKey || "",
@@ -3482,6 +3586,27 @@ const server = http.createServer(async (req, res) => {
         apiVersion: String(payload.apiVersion || readMetaSettings().apiVersion || "v20.0"),
       });
       json(res, result.ok ? 200 : 400, result);
+      return;
+    }
+
+    if (req.method === "POST" && req.url === "/api/meta/resolve-audience") {
+      const raw = await readBody(req);
+      const payload = JSON.parse(String(raw || "{}"));
+      const metaSecrets = loadMetaSecrets();
+      const settings = readMetaSettings();
+      const apiVersion = String(payload.apiVersion || settings.apiVersion || metaSecrets?.apiVersion || "v20.0");
+      const input = {
+        detailedTargetingText: String(payload.detailedTargetingText || ""),
+        audienceRequestNote: String(payload.audienceRequestNote || payload.note || ""),
+        interestObjects: Array.isArray(payload.interestObjects) ? payload.interestObjects : [],
+      };
+      const result = await resolveMetaAudienceInterestsForInput({ metaSecrets, apiVersion, input });
+      json(res, 200, {
+        ok: true,
+        queries: result.queries,
+        interests: result.interests,
+        addedCount: result.addedCount,
+      });
       return;
     }
 

@@ -1651,6 +1651,18 @@ textarea:focus {
   font-weight: 900;
 }
 
+.meta-strategy-section-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.meta-strategy-section-title-row .meta-strategy-section-title {
+  margin-bottom: 0;
+}
+
 .meta-strategy-two {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

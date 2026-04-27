@@ -8,6 +8,7 @@ import {
   type MetaPresetConfigV1,
   type MetaPresetGender,
 } from "../config/metaPresetConfig";
+import { apiUrl } from "../lib/apiBase";
 import { listMetaGoals } from "../lib/metaGoals";
 import { CollapsibleCard } from "./CollapsibleCard";
 
@@ -37,6 +38,7 @@ export function MetaStrategySettingsCard(props: {
 }) {
   const { onNotice } = props;
   const [cfg, setCfg] = useState<MetaPresetConfigV1>(() => getMetaPresetConfig());
+  const [resolvingKey, setResolvingKey] = useState<string | null>(null);
   const goals = useMemo(() => listMetaGoals(), []);
 
   const save = () => {
@@ -68,6 +70,48 @@ export function MetaStrategySettingsCard(props: {
       ...current,
       optimization: { ...current.optimization, ...patch },
     }));
+  };
+
+  const resolveAudience = async (industry: MetaIndustryPreset, index: number) => {
+    setResolvingKey(industry.key);
+    try {
+      const response = await fetch(apiUrl("/api/meta/resolve-audience"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          detailedTargetingText: industry.detailedTargetingText,
+          audienceRequestNote: industry.audienceNote,
+        }),
+      });
+      const data = await response.json() as {
+        ok?: boolean;
+        interests?: Array<{ id?: string; name?: string }>;
+        queries?: string[];
+      };
+      if (!response.ok || !data.ok) throw new Error(data?.queries ? "Meta 搜尋未成功" : `HTTP ${response.status}`);
+
+      const existing = new Set(
+        industry.detailedTargetingText
+          .split(/\r?\n/g)
+          .map((line) => line.trim().match(/^(\d+)/)?.[1])
+          .filter(Boolean),
+      );
+      const resolvedLines = (data.interests ?? [])
+        .filter((row) => row.id && !existing.has(String(row.id)))
+        .map((row) => `${row.id} | ${row.name || row.id}`);
+      if (resolvedLines.length === 0) {
+        onNotice("info", `${industry.label} 沒有新的可補入受眾。`, 2600);
+        return;
+      }
+      setIndustry(index, {
+        detailedTargetingText: `${industry.detailedTargetingText.trim()}\n${resolvedLines.join("\n")}`.trim(),
+      });
+      onNotice("success", `${industry.label} 已補入 ${resolvedLines.length} 個 Meta interest。`, 3000);
+    } catch (error) {
+      onNotice("error", `${industry.label} 受眾搜尋失敗：${error instanceof Error ? error.message : "未知錯誤"}`, 4200);
+    } finally {
+      setResolvingKey(null);
+    }
   };
 
   return (
@@ -184,7 +228,17 @@ export function MetaStrategySettingsCard(props: {
                   </div>
 
                   <div className="meta-strategy-section">
-                    <div className="meta-strategy-section-title">TA 範圍</div>
+                    <div className="meta-strategy-section-title-row">
+                      <div className="meta-strategy-section-title">TA 範圍</div>
+                      <button
+                        className="btn sm"
+                        type="button"
+                        disabled={resolvingKey === industry.key}
+                        onClick={() => void resolveAudience(industry, index)}
+                      >
+                        {resolvingKey === industry.key ? "搜尋中..." : "搜尋並補入 ID"}
+                      </button>
+                    </div>
                     <div className="meta-strategy-form">
                       <label className="field">
                         <div className="label">地區代碼</div>
