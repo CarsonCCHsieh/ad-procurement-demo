@@ -2131,7 +2131,7 @@ function normalizeAudienceQuery(value) {
     .trim();
 }
 
-function extractAudienceSearchQueries(input, max = 8) {
+function extractAudienceSearchQueries(input, max = 16) {
   const out = [];
   const add = (raw) => {
     const value = normalizeAudienceQuery(raw);
@@ -2147,6 +2147,7 @@ function extractAudienceSearchQueries(input, max = 8) {
     .map((line) => line.trim())
     .filter(Boolean)
     .forEach((line) => {
+      if (line.startsWith("##")) return;
       if (line.startsWith("#")) add(line);
     });
 

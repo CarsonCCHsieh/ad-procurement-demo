@@ -123,7 +123,7 @@ function listTemplateNotes(value: string) {
   return value
     .split(/\r?\n/g)
     .map((line) => line.trim())
-    .filter(Boolean)
+    .filter((line) => line && !line.startsWith("##"))
     .map((line) => line.replace(/^#\s*/, ""))
     .filter(Boolean);
 }

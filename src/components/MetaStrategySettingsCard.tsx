@@ -275,7 +275,7 @@ export function MetaStrategySettingsCard(props: {
                       <label className="field">
                         <div className="label">興趣受眾模板</div>
                         <textarea
-                          rows={4}
+                          rows={10}
                           value={industry.detailedTargetingText}
                           onChange={(event) => setIndustry(index, { detailedTargetingText: event.target.value })}
                           placeholder="可填 # 關鍵字作為 AI 補充方向；若已知 Meta interest，可填 interest ID | 名稱。"
