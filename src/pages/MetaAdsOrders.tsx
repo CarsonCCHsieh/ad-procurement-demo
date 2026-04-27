@@ -537,7 +537,7 @@ export function MetaAdsOrdersPage() {
 
                 <div className="meta-info-strip">
                   <strong>如何補充想要的 TA？</strong>
-                  <span>不用查 ID。請用文字描述方向，例如「加強球鞋收藏者」、「排除學生」、「偏向高消費精品受眾」。管理員會把可用設定整理到產業模板中。</span>
+                  <span>不用查 ID。請用文字描述方向，例如「加強球鞋收藏者」、「排除學生」、「偏向高消費精品受眾」。由 AI 自動補充最符合的可選受眾。</span>
                 </div>
 
                 <div className="meta-form-grid">
