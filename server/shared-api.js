@@ -2135,7 +2135,7 @@ async function fetchMetaPostMetricsCoreSecure({ postId, platform, pageId, pageNa
           metaSecrets.apiVersion,
           token,
           `/${encodeURIComponent(candidatePostId)}`,
-          { fields: "id,created_time,permalink_url,shares,comments.summary(true),reactions.summary(true),attachments{media_type}" },
+          { fields: "id,message,created_time,permalink_url,shares,comments.summary(true),reactions.summary(true),attachments{media_type}" },
         );
         resolvedPostId = candidatePostId;
         baseToken = token;

@@ -85,6 +85,8 @@ const STEP_META: Array<{ key: WizardStep; label: string; desc: string }> = [
   { key: "review", label: "4. 確認送出", desc: "檢查建立內容" },
 ];
 
+const WIZARD_STEP_ORDER: WizardStep[] = ["campaign", "creative", "audience", "review"];
+
 function toLocalInput(date = new Date(Date.now() + 15 * 60 * 1000)) {
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
   return local.toISOString().slice(0, 16);
@@ -123,9 +125,18 @@ function listTemplateNotes(value: string) {
   return value
     .split(/\r?\n/g)
     .map((line) => line.trim())
-    .filter((line) => line && !line.startsWith("##"))
+    .filter((line) => line.startsWith("#") && !line.startsWith("##"))
     .map((line) => line.replace(/^#\s*/, ""))
     .filter(Boolean);
+}
+
+function mergeInterestText(existing: string, interests: Array<{ id?: string; name?: string }>) {
+  const lines = existing.split(/\r?\n/g).map((line) => line.trim()).filter(Boolean);
+  const existingIds = new Set(parseInterestObjects(existing).map((item) => item.id));
+  const additions = interests
+    .filter((item) => item.id && /^\d+$/.test(item.id) && !existingIds.has(item.id))
+    .map((item) => `${item.id}|${item.name || item.id}`);
+  return [...lines, ...additions].join("\n");
 }
 
 function toGenders(value: FormState["gender"]) {
@@ -166,16 +177,17 @@ function isLikelyMetaPostUrl(rawUrl: string) {
 function buildInitialState(applicant: string): FormState {
   const presets = getMetaPresetConfig();
   const industry = getDefaultMetaIndustry(presets);
+  const defaultName = "新投放任務";
   const seed: FormState = {
     applicant,
-    title: "新投放任務",
+    title: defaultName,
     industryKey: industry?.key || "",
-    deliveryMode: "optimized",
+    deliveryMode: "direct",
     campaignObjective: "OUTCOME_ENGAGEMENT",
     performanceGoalCode: "ENGAGEMENT_POST_ENGAGEMENT",
-    campaignName: "新行銷活動",
-    adsetName: "新廣告組合",
-    adName: "新廣告",
+    campaignName: defaultName,
+    adsetName: defaultName,
+    adName: defaultName,
     postUrl: "",
     destinationUrl: "",
     targetValue: "",
@@ -190,8 +202,8 @@ function buildInitialState(applicant: string): FormState {
     customAudienceIdsText: "",
     excludedAudienceIdsText: "",
     audienceNote: "",
-    fbPositions: ["feed", "profile_feed", "story", "facebook_reels", "video_feeds", "search"],
-    igPositions: ["stream", "story", "reels", "explore", "profile_feed"],
+    fbPositions: [],
+    igPositions: [],
   };
   return industry ? applyIndustry(seed, industry) : seed;
 }
@@ -212,16 +224,18 @@ function applyIndustry(base: FormState, industry: MetaIndustryPreset): FormState
     excludedAudienceIdsText: industry.excludedAudienceIdsText,
     audienceNote: "",
     dailyBudget: String(industry.dailyBudget || 1000),
-    fbPositions: industry.fbPositions,
-    igPositions: industry.igPositions,
+    fbPositions: [],
+    igPositions: [],
   };
 }
 
 function StepNav({ step, setStep, canReview }: { step: WizardStep; setStep: (step: WizardStep) => void; canReview: boolean }) {
+  const currentIndex = WIZARD_STEP_ORDER.indexOf(step);
   return (
     <div className="meta-step-nav">
       {STEP_META.map((item) => {
-        const disabled = item.key === "review" && !canReview;
+        const targetIndex = WIZARD_STEP_ORDER.indexOf(item.key);
+        const disabled = targetIndex > currentIndex || (item.key === "review" && !canReview);
         return (
           <button
             key={item.key}
@@ -248,6 +262,8 @@ export function MetaAdsOrdersPage() {
   const [state, setState] = useState<FormState>(() => buildInitialState(user?.displayName ?? user?.username ?? ""));
   const [resolved, setResolved] = useState<ResolvedPost | null>(null);
   const [resolving, setResolving] = useState(false);
+  const [resolvingAudience, setResolvingAudience] = useState(false);
+  const [audienceQueries, setAudienceQueries] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [step, setStep] = useState<WizardStep>("campaign");
   const [message, setMessage] = useState<string | null>(null);
@@ -272,7 +288,13 @@ export function MetaAdsOrdersPage() {
   const templateNotes = listTemplateNotes(state.detailedTargetingText);
 
   const setField = <K extends keyof FormState>(key: K, value: FormState[K]) => {
-    setState((current) => ({ ...current, [key]: value }));
+    setState((current) => {
+      if (key === "title") {
+        const name = String(value);
+        return { ...current, title: name, campaignName: name, adsetName: name, adName: name };
+      }
+      return { ...current, [key]: value };
+    });
     if (key === "postUrl") setResolved(null);
   };
 
@@ -321,15 +343,48 @@ export function MetaAdsOrdersPage() {
     }
   };
 
+  const resolveAudience = async () => {
+    const text = state.audienceNote.trim() || templateNotes.join("、");
+    if (!text) {
+      setMessage("請先填寫想補充的 TA 方向，例如品牌、族群、興趣或排除條件。");
+      return;
+    }
+    setResolvingAudience(true);
+    setMessage(null);
+    try {
+      const response = await fetch(apiUrl("/api/meta/resolve-audience"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          audienceRequestNote: text,
+          detailedTargetingText: state.detailedTargetingText,
+          interestObjects,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      setState((current) => ({
+        ...current,
+        detailedTargetingText: mergeInterestText(current.detailedTargetingText, data.interests || []),
+      }));
+      setAudienceQueries(Array.isArray(data.queries) ? data.queries : []);
+      const count = Number(data.addedCount || 0);
+      setMessage(count > 0 ? `已補充 ${count} 個可投遞興趣條件。` : "已完成搜尋，但目前沒有新增可投遞興趣條件；系統會保留原本模板設定。");
+    } catch (error) {
+      setMessage(`TA 補充失敗：${error instanceof Error ? error.message : "未知錯誤"}`);
+    } finally {
+      setResolvingAudience(false);
+    }
+  };
+
   const validate = () => {
     if (!effectiveAccountId) return "請先到控制設定指定預設廣告帳號。";
     if (!effectivePageId) return "請先到控制設定指定 Facebook 粉絲專頁。";
     if (!state.title.trim()) return "請填寫任務名稱。";
-    if (!state.campaignName.trim()) return "請填寫行銷活動名稱。";
     if (!state.postUrl.trim()) return "請貼上貼文連結。";
     if (!resolved?.existingPostId) return "請先驗證貼文，成功後才能送出。";
     if (!Number.isFinite(Number(state.dailyBudget)) || Number(state.dailyBudget) <= 0) return "日預算需為正數。";
-    if (state.targetValue.trim() && (!Number.isFinite(Number(state.targetValue)) || Number(state.targetValue) <= 0)) return "目標數值需為正數。";
+    if (state.targetValue.trim() && (!Number.isFinite(Number(state.targetValue)) || Number(state.targetValue) <= 0)) return "達標停投數值只能輸入正數。";
     if (Number(state.ageMin) < 13 || Number(state.ageMax) < Number(state.ageMin)) return "年齡範圍不正確。";
     if (state.fbPositions.length + state.igPositions.length === 0) return "請至少選擇一個版位。";
     return "";
@@ -351,12 +406,13 @@ export function MetaAdsOrdersPage() {
       setMessage(error);
       return;
     }
+    const taskName = state.title.trim();
     setSubmitting(true);
     setMessage(null);
     try {
       const payload = {
         applicant: state.applicant,
-        title: state.title,
+        title: taskName,
         industryKey: selectedIndustry?.key,
         industryLabel: selectedIndustry?.label,
         deliveryMode: state.deliveryMode,
@@ -368,9 +424,9 @@ export function MetaAdsOrdersPage() {
         adAccountId: effectiveAccountId,
         pageId: effectivePageId,
         instagramActorId: effectiveIgActor,
-        campaignName: state.campaignName,
-        adsetName: state.adsetName || state.campaignName,
-        adName: state.adName || state.campaignName,
+        campaignName: taskName,
+        adsetName: taskName,
+        adName: taskName,
         postUrl: state.postUrl,
         destinationUrl: state.destinationUrl,
         existingPostId: resolved?.existingPostId,
@@ -414,13 +470,13 @@ export function MetaAdsOrdersPage() {
     ["申請人", state.applicant],
     ["任務名稱", state.title],
     ["產業", selectedIndustry?.label || "-"],
-    ["投遞模式", state.deliveryMode === "optimized" ? "優化投遞法：建立 A/B 變體" : "直投法：建立單一投放"],
+    ["投遞模式", state.deliveryMode === "optimized" ? "B. AI 優化投遞：建立 A/B 模板實驗" : "A. 直接投遞：按照常用設定"],
     ["行銷活動目標", labelFor(META_CAMPAIGN_OBJECTIVE_OPTIONS, state.campaignObjective)],
     ["KPI 類型", performanceGoal.label],
     ["日預算", `NT$ ${Number(state.dailyBudget || 0).toLocaleString("zh-TW")}`],
     ["達標停投", state.targetValue ? `${Number(state.targetValue).toLocaleString("zh-TW")} ${targetLabel}` : "未設定"],
     ["已解析貼文", resolved?.preview?.id || resolved?.existingPostId || "-"],
-    ["受眾模板", `${interestObjects.length} 個 interest、${customAudienceIds.length} 個儲備受眾、排除 ${excludedAudienceIds.length} 個受眾`],
+    ["受眾設定", `${interestObjects.length} 個興趣條件、${customAudienceIds.length} 個儲備受眾、排除 ${excludedAudienceIds.length} 個受眾`],
     ["補充 TA", state.audienceNote.trim() || "無"],
   ];
 
@@ -429,7 +485,7 @@ export function MetaAdsOrdersPage() {
       <div className="topbar topbar--meta">
         <div className="brand brand--page">
           <div className="brand-title">Meta 官方投廣</div>
-          <div className="brand-sub">依照產業模板快速建立投放，並在成效達標後停投。</div>
+          <div className="brand-sub">依照行銷活動設定建立投放，送出後可在成效頁持續查看進度與是否達標。</div>
         </div>
         <div className="pill pill--nav">
           <span className="tag">{user?.displayName ?? user?.username}</span>
@@ -461,7 +517,7 @@ export function MetaAdsOrdersPage() {
             <div className="meta-help-card">
               <strong>目前廣告帳號</strong>
               <span>{effectiveAccountId ? `act_${effectiveAccountId}` : "尚未設定"}</span>
-              <small>廣告帳號、Page 與 Instagram actor 由管理員在控制設定指定，一般使用者不需要選擇。</small>
+              <small>廣告帳號、粉專與 Instagram 帳號由控制設定指定，投放時會自動套用。</small>
             </div>
           </aside>
 
@@ -471,13 +527,13 @@ export function MetaAdsOrdersPage() {
                 <div className="meta-panel-head">
                   <div>
                     <h2>投放目標</h2>
-                    <p>先選產業與 Meta 官方目標，系統會帶入預設 KPI、預算與受眾模板。</p>
+                    <p>先選產業與 Meta 官方目標，系統會帶入建議 KPI、預算與受眾模板。</p>
                   </div>
-                  <span className="meta-badge">{state.deliveryMode === "optimized" ? "優化投遞" : "直投"}</span>
+                  <span className="meta-badge">{state.deliveryMode === "optimized" ? "AI 優化投遞" : "直接投遞"}</span>
                 </div>
                 <div className="meta-form-grid">
                   <label className="field"><div className="label">申請人</div><input value={state.applicant} onChange={(e) => setField("applicant", e.target.value)} /></label>
-                  <label className="field"><div className="label">任務名稱</div><input value={state.title} onChange={(e) => setField("title", e.target.value)} /></label>
+                  <label className="field"><div className="label">任務名稱</div><input value={state.title} onChange={(e) => setField("title", e.target.value)} placeholder="例如：2026_新鞋上市互動投放" /></label>
                   <label className="field">
                     <div className="label">案件產業</div>
                     <select value={state.industryKey} onChange={(e) => {
@@ -491,8 +547,8 @@ export function MetaAdsOrdersPage() {
                   <label className="field">
                     <div className="label">投遞方式</div>
                     <select value={state.deliveryMode} onChange={(e) => setField("deliveryMode", e.target.value as DeliveryMode)}>
-                      <option value="direct">直投法：照模板投放，不自動汰換變體</option>
-                      <option value="optimized">優化投遞法：建立 A/B 變體並自動暫停低效組</option>
+                      <option value="direct">A. 直接投遞：按照過往常用設定建立單一投放</option>
+                      <option value="optimized">B. AI 優化投遞：建立 A/B 模板實驗，系統會嘗試暫停低效組</option>
                     </select>
                   </label>
                   <label className="field">
@@ -509,14 +565,13 @@ export function MetaAdsOrdersPage() {
                     </select>
                     <div className="hint">{performanceGoal.desc}</div>
                   </label>
-                  <label className="field"><div className="label">行銷活動名稱</div><input value={state.campaignName} onChange={(e) => { setField("campaignName", e.target.value); setField("adsetName", e.target.value); setField("adName", e.target.value); }} /></label>
                   <label className="field"><div className="label">日預算 TWD</div><input inputMode="numeric" value={state.dailyBudget} onChange={(e) => setField("dailyBudget", e.target.value)} /></label>
                   <label className="field"><div className="label">開始時間</div><input type="datetime-local" value={state.startTime} onChange={(e) => setField("startTime", e.target.value)} /></label>
                   <label className="field"><div className="label">結束時間</div><input type="datetime-local" value={state.endTime} onChange={(e) => setField("endTime", e.target.value)} /></label>
                   <label className="field">
                     <div className="label">達標停投數值</div>
-                    <input inputMode="numeric" value={state.targetValue} onChange={(e) => setField("targetValue", e.target.value)} placeholder={`例如：300000 ${targetLabel}`} />
-                    <div className="hint">留空代表只依預算投放；填入後會追蹤 {targetLabel}，達標即停投。</div>
+                    <input inputMode="numeric" value={state.targetValue} onChange={(e) => setField("targetValue", e.target.value)} placeholder="只輸入數字，例如：300000" />
+                    <div className="hint">請只輸入數字，不要加「曝光」「點擊」等文字。留空代表只依預算投放；填入後會追蹤 {targetLabel}，達標即停投。</div>
                   </label>
                 </div>
                 <div className="meta-footer-actions"><button className="btn primary" onClick={() => setStep("creative")}>下一步：貼文驗證</button></div>
@@ -544,8 +599,9 @@ export function MetaAdsOrdersPage() {
                     <div className="meta-preview-grid">
                       <div><span className="dense-meta">貼文 ID</span><strong>{resolved.preview?.id || resolved.existingPostId}</strong></div>
                       <div><span className="dense-meta">發布時間</span><strong>{resolved.preview?.createdTime ? new Date(resolved.preview.createdTime).toLocaleString("zh-TW") : "尚未回傳"}</strong></div>
+                      {resolved.preview?.permalink ? <div><span className="dense-meta">連結</span><a href={resolved.preview.permalink} target="_blank" rel="noreferrer">開啟貼文</a></div> : null}
                     </div>
-                    <p>{resolved.preview?.message || "已解析貼文 ID，API Key 補齊後可取得文案與更多資訊。"}</p>
+                    <p>{resolved.preview?.message || "已解析貼文 ID；這篇貼文沒有回傳文案，或目前權限只能取得基本資訊。"}</p>
                   </div>
                 ) : (
                   <div className="meta-empty-state">貼上連結後按「驗證貼文」，系統會確認是否能解析出投放所需的貼文 ID。</div>
@@ -562,14 +618,14 @@ export function MetaAdsOrdersPage() {
                 <div className="meta-panel-head">
                   <div>
                     <h2>TA 範圍與版位</h2>
-                    <p>進階受眾由管理員設定的產業模板套用。一般使用者不需要知道任何受眾編號。</p>
+                    <p>系統會先依產業帶入建議受眾。若你有更明確的 TA 方向，可用文字補充，系統會嘗試轉成可投遞的興趣條件。</p>
                   </div>
                   <span className="meta-badge">使用產業模板</span>
                 </div>
 
                 <div className="meta-info-strip">
-                  <strong>如何補充想要的 TA？</strong>
-                  <span>不用查 ID。請用文字描述方向，例如「加強球鞋收藏者」、「排除學生」、「偏向高消費精品受眾」。由 AI 自動補充最符合的可選受眾。</span>
+                  <strong>如何補充想投遞的 TA？</strong>
+                  <span>描述你想加強或排除的方向，例如「球鞋收藏者」「街頭文化」「高消費精品受眾」。按下補充後，系統會搜尋可投遞的 Meta 興趣條件並加入目前設定。</span>
                 </div>
 
                 <div className="meta-form-grid">
@@ -586,12 +642,14 @@ export function MetaAdsOrdersPage() {
                     <div className="meta-template-tags">
                       {templateNotes.map((note) => <span className="meta-template-tag" key={note}>{note}</span>)}
                       {interestObjects.map((item) => <span className="meta-template-tag is-id" key={item.id}>{item.name || item.id}</span>)}
+                      {interestObjects.length === 0 && templateNotes.length === 0 ? <span className="meta-template-tag">尚未加入興趣條件</span> : null}
                     </div>
                     <div className="meta-mini-stats">
-                      <span>interest：{interestObjects.length}</span>
-                      <span>儲備受眾：{customAudienceIds.length}</span>
-                      <span>排除受眾：{excludedAudienceIds.length}</span>
+                      <span>可投遞興趣條件：{interestObjects.length}</span>
+                      <span>儲備受眾：{customAudienceIds.length ? `${customAudienceIds.length} 個` : "未設定"}</span>
+                      <span>排除受眾：{excludedAudienceIds.length ? `${excludedAudienceIds.length} 個` : "未設定"}</span>
                     </div>
+                    {audienceQueries.length ? <div className="hint">最近搜尋方向：{audienceQueries.join("、")}</div> : null}
                   </div>
                   <div className="meta-targeting-guide">
                     <label className="field">
@@ -600,9 +658,10 @@ export function MetaAdsOrdersPage() {
                         rows={8}
                         value={state.audienceNote}
                         onChange={(e) => setField("audienceNote", e.target.value)}
-                        placeholder="例如：希望加強球鞋收藏、街頭文化、30歲以上高消費族群；排除學生族群。"
+                        placeholder="例如：希望加強球鞋收藏、街頭文化、30 歲以上高消費族群；排除學生族群。"
                       />
                     </label>
+                    <button className="btn primary" type="button" onClick={() => void resolveAudience()} disabled={resolvingAudience}>{resolvingAudience ? "補充中..." : "補充可投遞 TA"}</button>
                   </div>
                 </div>
 
@@ -641,7 +700,7 @@ export function MetaAdsOrdersPage() {
                 </div>
                 <div className="meta-info-strip">
                   <strong>送出後會發生什麼？</strong>
-                  <span>{state.deliveryMode === "optimized" ? "系統會建立模板受眾與較廣泛受眾的 A/B 變體；同步時比較目標成效 / 花費，低效組達門檻後自動暫停。" : "系統會依目前設定建立單一投放，後續只追蹤成效與達標停投。"}</span>
+                  <span>{state.deliveryMode === "optimized" ? "系統會建立模板受眾與較廣泛受眾的 A/B 變體；同步時比較目標成效 / 花費，低效組達門檻後自動暫停。" : "系統會依目前設定建立單一投放，後續追蹤成效與達標停投。"}</span>
                 </div>
                 <div className="meta-footer-actions">
                   <button className="btn" onClick={() => setStep("audience")}>返回修改</button>
