@@ -94,6 +94,8 @@ const META_POST_METRIC_MIN_GAP_MS = Number(process.env.META_POST_METRIC_MIN_GAP_
 const META_SYNC_MAX_ROWS_PER_RUN = Number(process.env.META_SYNC_MAX_ROWS_PER_RUN || 8);
 const META_SYNC_ROW_GAP_MS = Number(process.env.META_SYNC_ROW_GAP_MS || 300);
 const META_SYNC_MIN_RECHECK_MS = Number(process.env.META_SYNC_MIN_RECHECK_MS || 60 * 1000);
+const META_SUBMIT_BLOCK_KEY = "ad_demo_meta_submit_block_v1";
+const META_ACTION_BLOCK_COOLDOWN_MS = Number(process.env.META_ACTION_BLOCK_COOLDOWN_MS || 30 * 60 * 1000);
 const DEFAULT_VENDOR_BASES = {
   smmraja: "https://www.smmraja.com/api/v3",
   urpanel: "https://urpanel.com/api/v2",
@@ -433,6 +435,35 @@ function graphFormValue(value) {
   if (typeof value === "boolean") return value ? "True" : "False";
   if (typeof value === "string") return value;
   return JSON.stringify(value);
+}
+
+function isMetaTemporaryActionBlock(message) {
+  const text = String(message || "");
+  return /temporarily blocked|暫時遭禁止|暫時禁止|temporarily.+perform.+action/i.test(text);
+}
+
+function recordMetaSubmitBlock(errorMessage) {
+  const now = Date.now();
+  const blockedUntil = new Date(now + META_ACTION_BLOCK_COOLDOWN_MS).toISOString();
+  writeSharedJson(
+    META_SUBMIT_BLOCK_KEY,
+    {
+      reason: "meta_temporary_action_block",
+      error: String(errorMessage || "Meta temporarily blocked this action"),
+      blockedAt: new Date(now).toISOString(),
+      blockedUntil,
+    },
+    "server-meta-submit",
+  );
+  return blockedUntil;
+}
+
+function readActiveMetaSubmitBlock() {
+  const block = readSharedJson(META_SUBMIT_BLOCK_KEY);
+  if (!block || typeof block !== "object") return null;
+  const until = Date.parse(String(block.blockedUntil || ""));
+  if (!Number.isFinite(until) || Date.now() >= until) return null;
+  return block;
 }
 
 async function graphApiGet(apiVersion, token, path, params = {}) {
@@ -2953,6 +2984,15 @@ async function createMetaOrderSecure(input) {
   const token = getMetaToken(metaSecrets, "ads");
   const apiVersion = settings.apiVersion || metaSecrets?.apiVersion || "v20.0";
   const adAccountId = String(input?.adAccountId || settings.adAccountId || "").replace(/^act_/i, "");
+  const activeBlock = readActiveMetaSubmitBlock();
+  if (activeBlock) {
+    return {
+      ok: false,
+      code: "meta_temporary_action_block",
+      blockedUntil: activeBlock.blockedUntil,
+      error: `Meta 已暫時限制建立廣告動作。請等到 ${new Date(activeBlock.blockedUntil).toLocaleString("zh-TW")} 後再試；期間不要連續重送，以免延長限制。`,
+    };
+  }
   if (!token) return { ok: false, error: "尚未設定 Meta Ads API Key" };
   if (!adAccountId) return { ok: false, error: "尚未設定預設廣告帳號" };
   if (!/^\d+$/.test(adAccountId)) return { ok: false, error: "廣告帳號 ID 格式錯誤，請到控制設定使用下拉選單選擇廣告帳號。" };
@@ -2996,14 +3036,29 @@ async function createMetaOrderSecure(input) {
     detail: `resolved ${audienceResolution.addedCount} interest(s) from ${audienceResolution.queries.length} query seed(s)`,
   });
 
-  const campaign = await graphApiPost(apiVersion, token, `/act_${adAccountId}/campaigns`, {
-    name: campaignName,
-    buying_type: "AUCTION",
-    objective,
-    special_ad_categories: [],
-    is_adset_budget_sharing_enabled: false,
-    status: "PAUSED",
-  });
+  let campaign = null;
+  try {
+    campaign = await graphApiPost(apiVersion, token, `/act_${adAccountId}/campaigns`, {
+      name: campaignName,
+      buying_type: "AUCTION",
+      objective,
+      special_ad_categories: [],
+      is_adset_budget_sharing_enabled: false,
+      status: "PAUSED",
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Meta Campaign 建立失敗";
+    if (isMetaTemporaryActionBlock(message)) {
+      const blockedUntil = recordMetaSubmitBlock(message);
+      return {
+        ok: false,
+        code: "meta_temporary_action_block",
+        blockedUntil,
+        error: `Meta 已暫時限制建立廣告動作。請等到 ${new Date(blockedUntil).toLocaleString("zh-TW")} 後再試；期間不要連續重送，以免延長限制。`,
+      };
+    }
+    throw error;
+  }
   requestLogs.push({ step: "campaign", ok: true, detail: String(campaign.id || "") });
 
   const variantCount = mode === "optimized" ? 2 : 1;

@@ -497,7 +497,12 @@ export function MetaAdsOrdersPage() {
         body: JSON.stringify(payload),
       });
       const data = await response.json();
-      if (!response.ok || !data.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      if (!response.ok || !data.ok) {
+        if (data.code === "meta_temporary_action_block") {
+          throw new Error(data.error || "Meta 已暫時限制建立廣告動作，請稍後再試，期間不要連續重送。");
+        }
+        throw new Error(data.error || `HTTP ${response.status}`);
+      }
       const order = data.order as MetaOrder;
       replaceMetaOrders([order, ...listMetaOrders().filter((row) => row.id !== order.id)]);
       setStep("done");
