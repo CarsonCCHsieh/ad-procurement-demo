@@ -2049,6 +2049,30 @@ textarea:focus {
   background: linear-gradient(180deg, hsl(var(--card)), hsl(var(--muted) / 0.35));
 }
 
+.stack {
+  display: flex;
+  flex-direction: column;
+}
+
+.gap-sm {
+  gap: 10px;
+}
+
+.token-setting-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 12px;
+  align-items: end;
+  padding: 12px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 16px;
+  background: hsl(var(--card) / 0.65);
+}
+
+.token-status-field {
+  min-width: 0;
+}
+
 @media (max-width: 819px) {
   .topbar.topbar--meta {
     align-items: stretch;
@@ -2083,5 +2107,9 @@ textarea:focus {
 
   .meta-strategy-summary-badges {
     justify-content: flex-start;
+  }
+
+  .token-setting-row {
+    grid-template-columns: 1fr;
   }
 }

@@ -13,13 +13,20 @@ export type MetaConfigV1 = {
   pageName: string;
   instagramActorId: string;
   accessToken: string;
+  userAccessToken: string;
   adsAccessToken: string;
   facebookAccessToken: string;
   instagramAccessToken: string;
   tokenStatus?: {
+    user?: boolean;
     ads?: boolean;
     facebook?: boolean;
     instagram?: boolean;
+  };
+  tokenSource?: {
+    ads?: "specific" | "user" | "";
+    facebook?: "specific" | "user" | "";
+    instagram?: "specific" | "user" | "";
   };
 };
 
@@ -35,6 +42,7 @@ export const DEFAULT_META_CONFIG: MetaConfigV1 = {
   pageName: "",
   instagramActorId: "",
   accessToken: "",
+  userAccessToken: "",
   adsAccessToken: "",
   facebookAccessToken: "",
   instagramAccessToken: "",
@@ -53,10 +61,12 @@ function normalize(raw: unknown): MetaConfigV1 | null {
     instagramActorId: String(row.instagramActorId || ""),
     // Tokens are intentionally not persisted in browser storage. Backend secrets are the source of truth.
     accessToken: "",
+    userAccessToken: "",
     adsAccessToken: "",
     facebookAccessToken: "",
     instagramAccessToken: "",
     tokenStatus: row.tokenStatus,
+    tokenSource: row.tokenSource,
   };
 }
 
@@ -101,6 +111,7 @@ export async function fetchMetaConfigFromServer(): Promise<MetaConfigV1> {
 }
 
 export async function saveMetaConfigToServer(input: MetaConfigV1 & {
+  userAccessToken?: string;
   adsAccessToken?: string;
   facebookAccessToken?: string;
   instagramAccessToken?: string;

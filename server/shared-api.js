@@ -2069,14 +2069,21 @@ function publicMetaSettings() {
   return {
     ...settings,
     tokenStatus: {
+      user: !!String(secrets?.userAccessToken || "").trim(),
       ads: !!String(secrets?.adsAccessToken || secrets?.userAccessToken || "").trim(),
       facebook: !!String(secrets?.facebookAccessToken || secrets?.userAccessToken || "").trim(),
       instagram: !!String(secrets?.instagramAccessToken || secrets?.userAccessToken || "").trim(),
     },
     tokenPreview: {
+      user: maskToken(secrets?.userAccessToken || ""),
       ads: maskToken(secrets?.adsAccessToken || ""),
       facebook: maskToken(secrets?.facebookAccessToken || ""),
       instagram: maskToken(secrets?.instagramAccessToken || ""),
+    },
+    tokenSource: {
+      ads: String(secrets?.adsAccessToken || "").trim() ? "specific" : (String(secrets?.userAccessToken || "").trim() ? "user" : ""),
+      facebook: String(secrets?.facebookAccessToken || "").trim() ? "specific" : (String(secrets?.userAccessToken || "").trim() ? "user" : ""),
+      instagram: String(secrets?.instagramAccessToken || "").trim() ? "specific" : (String(secrets?.userAccessToken || "").trim() ? "user" : ""),
     },
   };
 }
@@ -2092,12 +2099,11 @@ function saveMetaSecretsPatch(patch) {
     preferredPageId: String(patch.pageId || current.preferredPageId || ""),
     preferredPageName: String(patch.pageName || current.preferredPageName || ""),
   };
-  for (const key of ["adsAccessToken", "facebookAccessToken", "instagramAccessToken"]) {
+  for (const key of ["userAccessToken", "adsAccessToken", "facebookAccessToken", "instagramAccessToken"]) {
     if (typeof patch[key] === "string" && patch[key].trim()) {
       next[key] = patch[key].trim();
     }
   }
-  next.userAccessToken = next.adsAccessToken || next.facebookAccessToken || next.instagramAccessToken || next.userAccessToken;
   mkdirSync(dirname(META_SECRET_PATH), { recursive: true });
   writeFileSync(META_SECRET_PATH, `${JSON.stringify(next, null, 2)}\n`, "utf-8");
   metaPagesCache = null;
@@ -2109,6 +2115,19 @@ async function verifyMetaToken({ scope, token, apiVersion }) {
   if (!resolvedToken) return { ok: false, error: "請先輸入 API Key" };
   const version = String(apiVersion || "v20.0");
   try {
+    if (scope === "user") {
+      const me = await graphApiGet(version, resolvedToken, "/me", { fields: "id,name" });
+      const adaccounts = await graphApiGet(version, resolvedToken, "/me/adaccounts", { fields: "id,name,account_id,account_status", limit: 3 });
+      const pages = await graphApiGet(version, resolvedToken, "/me/accounts", { fields: "id,name", limit: 3 });
+      return {
+        ok: true,
+        sample: {
+          me,
+          adAccounts: Array.isArray(adaccounts.data) ? adaccounts.data : [],
+          pages: Array.isArray(pages.data) ? pages.data : [],
+        },
+      };
+    }
     if (scope === "ads") {
       const raw = await graphApiGet(version, resolvedToken, "/me/adaccounts", { fields: "id,account_id,name,account_status" });
       return { ok: true, sample: Array.isArray(raw.data) ? raw.data.slice(0, 5) : [] };
@@ -3569,6 +3588,7 @@ const server = http.createServer(async (req, res) => {
         apiVersion: next.apiVersion,
         pageId: next.pageId,
         pageName: next.pageName,
+        userAccessToken: payload.userAccessToken,
         adsAccessToken: payload.adsAccessToken,
         facebookAccessToken: payload.facebookAccessToken,
         instagramAccessToken: payload.instagramAccessToken,
