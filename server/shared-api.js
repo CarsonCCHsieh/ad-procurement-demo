@@ -3003,6 +3003,7 @@ async function createMetaOrderSecure(input) {
     buying_type: "AUCTION",
     objective,
     special_ad_categories: [],
+    is_adset_budget_sharing_enabled: false,
     status: "PAUSED",
   });
   requestLogs.push({ step: "campaign", ok: true, detail: String(campaign.id || "") });

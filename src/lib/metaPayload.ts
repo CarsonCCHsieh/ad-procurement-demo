@@ -131,6 +131,7 @@ export function buildMetaPayloads(cfg: MetaConfigV1, input: MetaOrderInput): {
     buying_type: "AUCTION",
     objective: input.campaignObjective || goal.objective,
     special_ad_categories: [],
+    is_adset_budget_sharing_enabled: false,
     status: "PAUSED",
     bid_strategy: "LOWEST_COST_WITHOUT_CAP",
     daily_budget: String(Math.max(100, Math.round(input.dailyBudget * 100))),
