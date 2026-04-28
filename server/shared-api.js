@@ -429,6 +429,12 @@ function graphUrl(apiVersion, path, params = {}) {
   return url.toString();
 }
 
+function graphFormValue(value) {
+  if (typeof value === "boolean") return value ? "True" : "False";
+  if (typeof value === "string") return value;
+  return JSON.stringify(value);
+}
+
 async function graphApiGet(apiVersion, token, path, params = {}) {
   const url = graphUrl(apiVersion, path, { ...params, access_token: token });
   const res = await fetch(url, { method: "GET" });
@@ -444,7 +450,7 @@ async function graphApiPost(apiVersion, token, path, params = {}) {
   const body = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
     if (value == null || value === "") continue;
-    body.set(key, typeof value === "string" ? value : JSON.stringify(value));
+    body.set(key, graphFormValue(value));
   }
   body.set("access_token", token);
 

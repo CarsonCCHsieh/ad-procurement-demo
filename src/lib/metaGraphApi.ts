@@ -53,7 +53,9 @@ function toFormBody(params: Record<string, unknown>, token: string): URLSearchPa
   const body = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {
     if (v == null) continue;
-    if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
+    if (typeof v === "boolean") {
+      body.set(k, v ? "True" : "False");
+    } else if (typeof v === "string" || typeof v === "number") {
       body.set(k, String(v));
     } else {
       body.set(k, JSON.stringify(v as GraphValue));
