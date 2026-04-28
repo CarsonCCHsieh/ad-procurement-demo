@@ -19,6 +19,13 @@ function sourceText(cfg: MetaConfigV1, scope: Exclude<TokenScope, "user">) {
   return "未設定";
 }
 
+function statusText(cfg: MetaConfigV1, scope: TokenScope) {
+  if (scope === "user") return cfg.tokenStatus?.user ? "User Key 已儲存" : "User Key 未設定";
+  if (cfg.tokenSource?.[scope] === "specific") return "專用 Key 已儲存";
+  if (cfg.tokenSource?.[scope] === "user") return "使用 User Key";
+  return "未設定";
+}
+
 export function MetaSettingsCard(props: {
   onNotice: (tone: "success" | "error" | "info", text: string, timeout?: number) => void;
 }) {
@@ -143,7 +150,7 @@ export function MetaSettingsCard(props: {
             <div className="field token-status-field">
               <div className="label">狀態</div>
               <div className="actions inline">
-                <span className="tag">{cfg.tokenStatus?.[scope] ? "已設定" : "未設定"}</span>
+                <span className="tag">{statusText(cfg, scope)}</span>
                 {scope !== "user" && <span className="tag subtle">{sourceText(cfg, scope)}</span>}
                 <button className="btn" type="button" onClick={() => void verify(scope)} disabled={verifying[scope]}>
                   {verifying[scope] ? "驗證中..." : "驗證"}

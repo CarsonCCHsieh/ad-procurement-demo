@@ -142,6 +142,27 @@ function labelFor(options: Array<{ value: string; label: string }>, value: strin
   return options.find((item) => item.value === value)?.label ?? value;
 }
 
+function isLikelyMetaPostUrl(rawUrl: string) {
+  try {
+    const url = new URL(rawUrl.trim());
+    const host = url.hostname.toLowerCase();
+    const segments = url.pathname.split("/").filter(Boolean);
+    if (host.endsWith("instagram.com") || host.endsWith("instagr.am")) {
+      return ["p", "reel", "reels", "tv"].includes(segments[0] || "") && !!segments[1];
+    }
+    if (host.endsWith("facebook.com") || host.endsWith("fb.com")) {
+      if (url.searchParams.get("story_fbid") || url.searchParams.get("fbid")) return true;
+      if (segments.includes("posts") || segments.includes("videos")) return true;
+      if (segments[0] === "reel" && segments[1]) return true;
+      if (segments.some((item) => /^pfbid/i.test(item))) return true;
+      return false;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 function buildInitialState(applicant: string): FormState {
   const presets = getMetaPresetConfig();
   const industry = getDefaultMetaIndustry(presets);
@@ -269,6 +290,11 @@ export function MetaAdsOrdersPage() {
       setMessage("請先貼上貼文連結。");
       return;
     }
+    if (!isLikelyMetaPostUrl(state.postUrl)) {
+      setResolved(null);
+      setMessage("請貼上單篇 Facebook / Instagram 貼文或 Reels 連結，不要貼粉專首頁、帳號首頁或分享列表頁。");
+      return;
+    }
     setResolving(true);
     setMessage(null);
     try {
@@ -278,7 +304,13 @@ export function MetaAdsOrdersPage() {
         body: JSON.stringify({ url: state.postUrl, pageId: effectivePageId, pageName: cfg.pageName }),
       });
       const data = await response.json();
-      if (!response.ok || !data.ok) throw new Error(data.detail || data.error || `HTTP ${response.status}`);
+      if (!response.ok || !data.ok) {
+        const detail = data.detail || data.error || `HTTP ${response.status}`;
+        const friendly = String(detail).includes("usable Meta post reference")
+          ? "無法解析這個連結。請確認連結是公開的單篇 Facebook / Instagram 貼文或 Reels，且不是粉專首頁。"
+          : detail;
+        throw new Error(friendly);
+      }
       setResolved(data);
       setMessage("貼文驗證成功。");
     } catch (error) {
