@@ -142,6 +142,7 @@ export function buildMetaPayloads(cfg: MetaConfigV1, input: MetaOrderInput): {
     billing_event: "IMPRESSIONS",
     optimization_goal: goal.optimizationGoal,
     bid_strategy: "LOWEST_COST_WITHOUT_CAP",
+    is_adset_budget_sharing_enabled: false,
     start_time: input.startTime,
     status: "PAUSED",
     targeting,

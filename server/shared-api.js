@@ -2811,6 +2811,7 @@ async function createMetaOrderSecure(input) {
       billing_event: "IMPRESSIONS",
       optimization_goal: optimizationGoal,
       bid_strategy: "LOWEST_COST_WITHOUT_CAP",
+      is_adset_budget_sharing_enabled: false,
       start_time: input?.startTime || nowIso,
       end_time: input?.endTime || undefined,
       targeting: buildMetaTargeting(enrichedInput, settings, index),
