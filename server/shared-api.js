@@ -2608,6 +2608,14 @@ function extractAudienceSearchQueries(input, max = 16) {
     if (!out.some((item) => item.toLowerCase() === value.toLowerCase())) out.push(value);
   };
 
+  const requestNote = String(input?.audienceRequestNote || "").trim();
+  if (requestNote) {
+    requestNote
+      .split(/[\n,，、;；。]/g)
+      .forEach(add);
+    return out.slice(0, max);
+  }
+
   String(input?.detailedTargetingText || "")
     .split(/\r?\n/g)
     .map((line) => line.trim())
@@ -2616,10 +2624,6 @@ function extractAudienceSearchQueries(input, max = 16) {
       if (line.startsWith("##")) return;
       if (line.startsWith("#")) add(line);
     });
-
-  String(input?.audienceRequestNote || "")
-    .split(/[\n,，、;；。]/g)
-    .forEach(add);
 
   return out.slice(0, max);
 }

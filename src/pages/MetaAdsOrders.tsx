@@ -639,10 +639,15 @@ export function MetaAdsOrdersPage() {
                   <div className="meta-targeting-editor">
                     <div className="dense-title">目前套用的產業模板</div>
                     <p className="dense-meta">{selectedIndustry?.label}：{selectedIndustry?.audienceNote || selectedIndustry?.description}</p>
+                    <div className="dense-meta">模板搜尋方向</div>
                     <div className="meta-template-tags">
                       {templateNotes.map((note) => <span className="meta-template-tag" key={note}>{note}</span>)}
+                      {templateNotes.length === 0 ? <span className="meta-template-tag">尚未設定搜尋方向</span> : null}
+                    </div>
+                    <div className="dense-meta">已加入可投遞興趣</div>
+                    <div className="meta-template-tags">
                       {interestObjects.map((item) => <span className="meta-template-tag is-id" key={item.id}>{item.name || item.id}</span>)}
-                      {interestObjects.length === 0 && templateNotes.length === 0 ? <span className="meta-template-tag">尚未加入興趣條件</span> : null}
+                      {interestObjects.length === 0 ? <span className="meta-template-tag">尚未加入，請按右側按鈕補充</span> : null}
                     </div>
                     <div className="meta-mini-stats">
                       <span>可投遞興趣條件：{interestObjects.length}</span>
@@ -661,7 +666,7 @@ export function MetaAdsOrdersPage() {
                         placeholder="例如：希望加強球鞋收藏、街頭文化、30 歲以上高消費族群；排除學生族群。"
                       />
                     </label>
-                    <button className="btn primary" type="button" onClick={() => void resolveAudience()} disabled={resolvingAudience}>{resolvingAudience ? "補充中..." : "補充可投遞 TA"}</button>
+                    <button className="btn primary" type="button" onClick={() => void resolveAudience()} disabled={resolvingAudience}>{resolvingAudience ? "補充中..." : "依文字補充可投遞 TA"}</button>
                   </div>
                 </div>
 
