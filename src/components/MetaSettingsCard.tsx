@@ -1,9 +1,32 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { fetchMetaConfigFromServer, saveMetaConfigToServer, type MetaConfigV1 } from "../config/metaConfig";
 import { apiUrl } from "../lib/apiBase";
 import { CollapsibleCard } from "./CollapsibleCard";
 
 type TokenScope = "user" | "ads" | "facebook" | "instagram";
+
+type MetaPageOption = {
+  id: string;
+  name: string;
+  category?: string;
+  instagramActorId?: string;
+  instagramUsername?: string;
+};
+
+type MetaInstagramOption = {
+  id: string;
+  username: string;
+  pageId?: string;
+  pageName?: string;
+};
+
+type MetaAccountsResponse = {
+  ok: boolean;
+  error?: string;
+  pages?: MetaPageOption[];
+  instagramAccounts?: MetaInstagramOption[];
+  fetchedAt?: string;
+};
 
 const TOKEN_SCOPES: Array<{ scope: TokenScope; label: string; desc: string }> = [
   { scope: "user", label: "Meta User Key", desc: "共用 Key。若下方服務沒有另外設定，Meta Ads、Facebook、Instagram 都會使用這把 Key。" },
@@ -26,6 +49,16 @@ function statusText(cfg: MetaConfigV1, scope: TokenScope) {
   return "未設定";
 }
 
+function optionLabelForPage(page: MetaPageOption) {
+  const ig = page.instagramUsername ? ` / IG：${page.instagramUsername}` : "";
+  return `${page.name || page.id} / ${page.id}${ig}`;
+}
+
+function optionLabelForInstagram(account: MetaInstagramOption) {
+  const page = account.pageName ? ` / 粉專：${account.pageName}` : "";
+  return `${account.username || account.id} / ${account.id}${page}`;
+}
+
 export function MetaSettingsCard(props: {
   onNotice: (tone: "success" | "error" | "info", text: string, timeout?: number) => void;
 }) {
@@ -35,6 +68,10 @@ export function MetaSettingsCard(props: {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [verifying, setVerifying] = useState<Record<TokenScope, boolean>>({ user: false, ads: false, facebook: false, instagram: false });
+  const [accountsLoading, setAccountsLoading] = useState(false);
+  const [pages, setPages] = useState<MetaPageOption[]>([]);
+  const [instagramAccounts, setInstagramAccounts] = useState<MetaInstagramOption[]>([]);
+  const [accountsFetchedAt, setAccountsFetchedAt] = useState("");
 
   useEffect(() => {
     let canceled = false;
@@ -53,6 +90,19 @@ export function MetaSettingsCard(props: {
       canceled = true;
     };
   }, [onNotice]);
+
+  const selectedPageId = cfg?.pageId || "";
+  const selectedInstagramId = cfg?.instagramActorId || "";
+
+  const selectedPage = useMemo(
+    () => pages.find((page) => page.id === selectedPageId),
+    [pages, selectedPageId],
+  );
+
+  const selectedInstagram = useMemo(
+    () => instagramAccounts.find((account) => account.id === selectedInstagramId),
+    [instagramAccounts, selectedInstagramId],
+  );
 
   const save = async () => {
     if (!cfg) return;
@@ -73,6 +123,59 @@ export function MetaSettingsCard(props: {
     } finally {
       setSaving(false);
     }
+  };
+
+  const loadAccounts = async () => {
+    setAccountsLoading(true);
+    try {
+      const response = await fetch(apiUrl("/api/meta/accounts"), { headers: { "Cache-Control": "no-store" } });
+      const data = (await response.json()) as MetaAccountsResponse;
+      if (!response.ok || !data.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      const nextPages = Array.isArray(data.pages) ? data.pages : [];
+      const nextIg = Array.isArray(data.instagramAccounts) ? data.instagramAccounts : [];
+      setPages(nextPages);
+      setInstagramAccounts(nextIg);
+      setAccountsFetchedAt(data.fetchedAt || new Date().toISOString());
+      onNotice("success", `已載入 ${nextPages.length} 個 Facebook 粉專、${nextIg.length} 個 Instagram 帳戶。`, 3000);
+    } catch (error) {
+      onNotice("error", `Meta 帳戶載入失敗：${error instanceof Error ? error.message : "未知錯誤"}`, 5200);
+    } finally {
+      setAccountsLoading(false);
+    }
+  };
+
+  const selectPage = (pageId: string) => {
+    if (!cfg) return;
+    const page = pages.find((item) => item.id === pageId);
+    if (!page) {
+      setCfg({ ...cfg, pageId: "", pageName: "" });
+      return;
+    }
+    const linkedIg = page.instagramActorId
+      ? instagramAccounts.find((item) => item.id === page.instagramActorId)
+      : instagramAccounts.find((item) => item.pageId === page.id);
+    setCfg({
+      ...cfg,
+      pageId: page.id,
+      pageName: page.name,
+      instagramActorId: linkedIg?.id || page.instagramActorId || cfg.instagramActorId,
+    });
+  };
+
+  const selectInstagram = (instagramActorId: string) => {
+    if (!cfg) return;
+    const ig = instagramAccounts.find((item) => item.id === instagramActorId);
+    if (!ig) {
+      setCfg({ ...cfg, instagramActorId: "" });
+      return;
+    }
+    const linkedPage = pages.find((page) => page.id === ig.pageId);
+    setCfg({
+      ...cfg,
+      instagramActorId: ig.id,
+      pageId: cfg.pageId || ig.pageId || linkedPage?.id || "",
+      pageName: cfg.pageName || ig.pageName || linkedPage?.name || "",
+    });
   };
 
   const clearToken = async (scope: TokenScope) => {
@@ -131,8 +234,42 @@ export function MetaSettingsCard(props: {
         </label>
         <label className="field">
           <div className="label">預設廣告帳號 ID</div>
-          <input value={cfg.adAccountId} onChange={(event) => setCfg({ ...cfg, adAccountId: event.target.value.replace(/^act_/i, "") })} placeholder="例如：234567890" />
+          <input value={cfg.adAccountId} onChange={(event) => setCfg({ ...cfg, adAccountId: event.target.value.replace(/^act_/i, "") })} placeholder="例如：1234567890" />
         </label>
+      </div>
+
+      <div className="meta-account-picker">
+        <div className="meta-account-picker-head">
+          <div>
+            <div className="dense-title">Facebook / Instagram 帳戶選擇</div>
+            <p className="dense-meta">使用已儲存的 User Key 讀取可管理的粉專與連結的 Instagram 帳戶。下拉選定後會自動帶入 ID 與名稱。</p>
+          </div>
+          <button className="btn" type="button" onClick={() => void loadAccounts()} disabled={accountsLoading}>
+            {accountsLoading ? "載入中..." : "載入 Meta 帳戶"}
+          </button>
+        </div>
+        <div className="row cols2">
+          <label className="field">
+            <div className="label">Facebook 粉絲專頁</div>
+            <select value={selectedPageId} onChange={(event) => selectPage(event.target.value)}>
+              <option value="">請選擇粉專</option>
+              {pages.map((page) => <option key={page.id} value={page.id}>{optionLabelForPage(page)}</option>)}
+            </select>
+            <div className="hint">{selectedPage ? `已選擇：${selectedPage.name} / ${selectedPage.id}` : "可先載入清單，也可在下方手動輸入。"}</div>
+          </label>
+          <label className="field">
+            <div className="label">Instagram 帳戶</div>
+            <select value={selectedInstagramId} onChange={(event) => selectInstagram(event.target.value)}>
+              <option value="">請選擇 Instagram 帳戶</option>
+              {instagramAccounts.map((account) => <option key={account.id} value={account.id}>{optionLabelForInstagram(account)}</option>)}
+            </select>
+            <div className="hint">{selectedInstagram ? `已選擇：${selectedInstagram.username || selectedInstagram.id}` : "若粉專有連結 IG，選粉專時會自動帶入。"}</div>
+          </label>
+        </div>
+        {accountsFetchedAt ? <div className="hint">最近載入時間：{new Date(accountsFetchedAt).toLocaleString("zh-TW")}</div> : null}
+      </div>
+
+      <div className="row cols2">
         <label className="field">
           <div className="label">Facebook 粉專 ID</div>
           <input value={cfg.pageId} onChange={(event) => setCfg({ ...cfg, pageId: event.target.value.trim() })} />

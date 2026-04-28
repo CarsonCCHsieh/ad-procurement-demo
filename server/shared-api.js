@@ -2280,8 +2280,8 @@ function saveMetaSecretsPatch(patch) {
     adsAccessToken: String(current.adsAccessToken || ""),
     facebookAccessToken: String(current.facebookAccessToken || ""),
     instagramAccessToken: String(current.instagramAccessToken || ""),
-    preferredPageId: String(patch.pageId || current.preferredPageId || ""),
-    preferredPageName: String(patch.pageName || current.preferredPageName || ""),
+    preferredPageId: typeof patch.pageId === "string" ? String(patch.pageId || "") : String(current.preferredPageId || ""),
+    preferredPageName: typeof patch.pageName === "string" ? String(patch.pageName || "") : String(current.preferredPageName || ""),
   };
   if (Array.isArray(patch.clearTokens)) {
     for (const scope of patch.clearTokens) {
@@ -2298,6 +2298,54 @@ function saveMetaSecretsPatch(patch) {
   writeFileSync(META_SECRET_PATH, `${JSON.stringify(next, null, 2)}\n`, "utf-8");
   metaPagesCache = null;
   instagramAccountsCache = null;
+}
+
+async function listMetaSelectableAccounts() {
+  const metaSecrets = loadMetaSecrets();
+  if (!metaSecrets) {
+    return { ok: false, error: "Meta local credentials are not configured" };
+  }
+  const token = getMetaToken(metaSecrets, "facebook") || getMetaToken(metaSecrets, "ads") || getMetaToken(metaSecrets, "instagram");
+  if (!token) {
+    return { ok: false, error: "請先儲存可用的 Meta User Key 或 Facebook Key" };
+  }
+
+  try {
+    const pages = await listAvailablePages(metaSecrets);
+    const igAccounts = await listInstagramAccounts(metaSecrets);
+    const igByPageId = new Map(igAccounts.map((row) => [String(row.pageId || ""), row]));
+    const pageRows = (Array.isArray(pages) ? pages : []).map((page) => {
+      const pageId = String(page?.id || "").trim();
+      const ig = igByPageId.get(pageId);
+      return {
+        id: pageId,
+        name: String(page?.name || "").trim(),
+        category: String(page?.category || "").trim(),
+        tasks: Array.isArray(page?.tasks) ? page.tasks.map((task) => String(task || "")).filter(Boolean) : [],
+        instagramActorId: String(ig?.igId || "").trim(),
+        instagramUsername: String(ig?.igUsername || "").trim(),
+      };
+    }).filter((page) => page.id);
+
+    const instagramRows = igAccounts.map((account) => ({
+      id: String(account?.igId || "").trim(),
+      username: String(account?.igUsername || "").trim(),
+      pageId: String(account?.pageId || "").trim(),
+      pageName: String(account?.pageName || "").trim(),
+    })).filter((account) => account.id);
+
+    return {
+      ok: true,
+      pages: pageRows,
+      instagramAccounts: instagramRows,
+      fetchedAt: new Date().toISOString(),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Meta 帳戶清單讀取失敗",
+    };
+  }
 }
 
 async function verifyMetaToken({ scope, token, apiVersion }) {
@@ -3759,6 +3807,12 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (req.method === "GET" && req.url === "/api/meta/accounts") {
+      const result = await listMetaSelectableAccounts();
+      json(res, result.ok ? 200 : 400, result);
+      return;
+    }
+
     if (req.method === "POST" && req.url === "/api/meta/settings") {
       const raw = await readBody(req);
       const payload = JSON.parse(String(raw || "{}"));
@@ -3767,9 +3821,9 @@ const server = http.createServer(async (req, res) => {
         ...current,
         apiVersion: String(payload.apiVersion || current.apiVersion || "v20.0"),
         adAccountId: String(payload.adAccountId || current.adAccountId || "").replace(/^act_/i, ""),
-        pageId: String(payload.pageId || current.pageId || ""),
-        pageName: String(payload.pageName || current.pageName || ""),
-        instagramActorId: String(payload.instagramActorId || current.instagramActorId || ""),
+        pageId: typeof payload.pageId === "string" ? String(payload.pageId || "") : String(current.pageId || ""),
+        pageName: typeof payload.pageName === "string" ? String(payload.pageName || "") : String(current.pageName || ""),
+        instagramActorId: typeof payload.instagramActorId === "string" ? String(payload.instagramActorId || "") : String(current.instagramActorId || ""),
         optimization: { ...current.optimization, ...(payload.optimization || {}) },
         industries: Array.isArray(payload.industries) ? payload.industries : current.industries,
         updatedAt: new Date().toISOString(),
