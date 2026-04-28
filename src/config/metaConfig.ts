@@ -111,6 +111,7 @@ export async function fetchMetaConfigFromServer(): Promise<MetaConfigV1> {
 }
 
 export async function saveMetaConfigToServer(input: MetaConfigV1 & {
+  clearTokens?: Array<"user" | "ads" | "facebook" | "instagram">;
   userAccessToken?: string;
   adsAccessToken?: string;
   facebookAccessToken?: string;

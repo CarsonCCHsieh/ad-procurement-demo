@@ -228,6 +228,32 @@ function getMetaToken(metaSecrets, platform) {
   return String(metaSecrets.facebookAccessToken || metaSecrets.userAccessToken || "").trim();
 }
 
+function metaTokenKeyForScope(scope) {
+  if (scope === "user") return "userAccessToken";
+  if (scope === "ads") return "adsAccessToken";
+  if (scope === "instagram") return "instagramAccessToken";
+  if (scope === "facebook") return "facebookAccessToken";
+  return "";
+}
+
+async function getMetaTokenFailureDetail(metaSecrets, platform) {
+  const token = getMetaToken(metaSecrets, platform);
+  if (!token) return "Meta API Key 尚未設定。";
+  try {
+    if (platform === "ads") {
+      await graphApiGet(metaSecrets.apiVersion || "v20.0", token, "/me/adaccounts", { fields: "id", limit: 1 });
+    } else if (platform === "instagram" || platform === "facebook") {
+      await graphApiGet(metaSecrets.apiVersion || "v20.0", token, "/me/accounts", { fields: "id", limit: 1 });
+    } else {
+      await graphApiGet(metaSecrets.apiVersion || "v20.0", token, "/me", { fields: "id" });
+    }
+    return "";
+  } catch (error) {
+    const label = platform === "instagram" ? "Instagram" : platform === "ads" ? "Meta Ads" : "Facebook";
+    return `${label} Key 已過期或無效：${error instanceof Error ? error.message : "未知錯誤"}`;
+  }
+}
+
 function loadVendorSecrets() {
   if (!existsSync(VENDOR_SECRET_PATH)) return null;
   try {
@@ -1918,6 +1944,11 @@ async function resolveMetaPostSecure({ url, platform, pageId, pageName }) {
 
   const trackingRef = await resolveTrackingFromUrl(metaSecrets, sourceUrl);
   if (!trackingRef) {
+    const parsed = tryParseUrl(sourceUrl);
+    const tokenDetail = parsed && isInstagramHost(parsed.hostname)
+      ? await getMetaTokenFailureDetail(metaSecrets, "instagram")
+      : await getMetaTokenFailureDetail(metaSecrets, "facebook");
+    if (tokenDetail) return { ok: false, detail: tokenDetail };
     return { ok: false, detail: "The supplied URL could not be resolved into a usable Meta post reference" };
   }
 
@@ -2099,6 +2130,12 @@ function saveMetaSecretsPatch(patch) {
     preferredPageId: String(patch.pageId || current.preferredPageId || ""),
     preferredPageName: String(patch.pageName || current.preferredPageName || ""),
   };
+  if (Array.isArray(patch.clearTokens)) {
+    for (const scope of patch.clearTokens) {
+      const key = metaTokenKeyForScope(scope);
+      if (key) next[key] = "";
+    }
+  }
   for (const key of ["userAccessToken", "adsAccessToken", "facebookAccessToken", "instagramAccessToken"]) {
     if (typeof patch[key] === "string" && patch[key].trim()) {
       next[key] = patch[key].trim();
@@ -3588,6 +3625,7 @@ const server = http.createServer(async (req, res) => {
         apiVersion: next.apiVersion,
         pageId: next.pageId,
         pageName: next.pageName,
+        clearTokens: Array.isArray(payload.clearTokens) ? payload.clearTokens : [],
         userAccessToken: payload.userAccessToken,
         adsAccessToken: payload.adsAccessToken,
         facebookAccessToken: payload.facebookAccessToken,
@@ -3640,6 +3678,16 @@ const server = http.createServer(async (req, res) => {
         pageId: payload.pageId || "",
         pageName: payload.pageName || "",
       });
+      if (!result.ok && result.detail === "The supplied URL could not be resolved into a usable Meta post reference") {
+        const parsed = tryParseUrl(payload.url || payload.postUrl || "");
+        const metaSecrets = loadMetaSecrets();
+        if (metaSecrets) {
+          const tokenDetail = parsed && isInstagramHost(parsed.hostname)
+            ? await getMetaTokenFailureDetail(metaSecrets, "instagram")
+            : await getMetaTokenFailureDetail(metaSecrets, "facebook");
+          if (tokenDetail) result.detail = tokenDetail;
+        }
+      }
       json(res, result.ok ? 200 : 400, result);
       return;
     }

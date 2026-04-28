@@ -75,6 +75,21 @@ export function MetaSettingsCard(props: {
     }
   };
 
+  const clearToken = async (scope: TokenScope) => {
+    if (!cfg) return;
+    setSaving(true);
+    try {
+      const next = await saveMetaConfigToServer({ ...cfg, clearTokens: [scope] });
+      setCfg(next);
+      setTokens((state) => ({ ...state, [scope]: "" }));
+      onNotice("success", `${TOKEN_SCOPES.find((item) => item.scope === scope)?.label ?? "Meta Key"} 已清除。`, 2600);
+    } catch (error) {
+      onNotice("error", `清除失敗：${error instanceof Error ? error.message : "未知錯誤"}`, 4200);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const verify = async (scope: TokenScope) => {
     const token = tokens[scope].trim();
     if (!token) {
@@ -154,6 +169,9 @@ export function MetaSettingsCard(props: {
                 {scope !== "user" && <span className="tag subtle">{sourceText(cfg, scope)}</span>}
                 <button className="btn" type="button" onClick={() => void verify(scope)} disabled={verifying[scope]}>
                   {verifying[scope] ? "驗證中..." : "驗證"}
+                </button>
+                <button className="btn danger" type="button" onClick={() => void clearToken(scope)} disabled={saving || !cfg.tokenStatus?.[scope]}>
+                  清除
                 </button>
               </div>
             </div>
