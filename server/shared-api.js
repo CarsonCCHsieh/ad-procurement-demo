@@ -312,8 +312,24 @@ async function listAvailablePages(metaSecrets) {
   }
   const pageToken = getMetaToken(metaSecrets, "facebook");
   if (!pageToken) return [];
-  const raw = await graphApiGet(metaSecrets.apiVersion, pageToken, "/me/accounts");
-  const pages = Array.isArray(raw.data) ? raw.data : [];
+
+  const pages = [];
+  let after = "";
+  // /me/accounts is paginated. Keep the cap explicit to avoid accidental high-volume Graph API calls.
+  for (let pageIndex = 0; pageIndex < 8; pageIndex += 1) {
+    const raw = await graphApiGet(metaSecrets.apiVersion, pageToken, "/me/accounts", {
+      fields: "id,name,category,tasks,access_token,instagram_business_account{id,username}",
+      limit: 100,
+      after: after || undefined,
+    });
+    if (Array.isArray(raw.data)) {
+      pages.push(...raw.data);
+    }
+    const nextAfter = String(raw?.paging?.cursors?.after || "").trim();
+    if (!nextAfter || nextAfter === after) break;
+    after = nextAfter;
+  }
+
   metaPagesCache = { fetchedAt: now, pages };
   return pages;
 }
@@ -955,37 +971,71 @@ async function listInstagramAccounts(metaSecrets) {
 
   const pages = await listAvailablePages(metaSecrets);
   const accounts = [];
+  const seenIds = new Set();
 
   for (const page of pages) {
     const pageId = String(page?.id || "").trim();
     const pageToken = String(page?.access_token || "").trim();
-    if (!pageId || !pageToken) continue;
-    try {
-      const detail = await graphApiGet(
-        metaSecrets.apiVersion,
-        pageToken,
-        `/${encodeURIComponent(pageId)}`,
-        { fields: "id,name,instagram_business_account{id,username}" },
-      );
-      const ig = detail?.instagram_business_account;
-      const igId = String(ig?.id || "").trim();
-      if (!igId) continue;
-      accounts.push({
-        pageId,
-        pageName: String(detail?.name || page?.name || "").trim(),
-        pageToken,
-        igId,
-        igUsername: String(ig?.username || "").trim(),
-      });
-    } catch {
-      // ignore pages without IG account or unavailable permission
-    }
+    const ig = page?.instagram_business_account;
+    const igId = String(ig?.id || "").trim();
+    if (!pageId || !pageToken || !igId) continue;
+    seenIds.add(igId);
+    accounts.push({
+      pageId,
+      pageName: String(page?.name || "").trim(),
+      pageToken,
+      igId,
+      igUsername: String(ig?.username || "").trim(),
+    });
+  }
+
+  const businessAccounts = await listBusinessInstagramAccounts(metaSecrets);
+  for (const account of businessAccounts) {
+    const igId = String(account?.igId || "").trim();
+    if (!igId || seenIds.has(igId)) continue;
+    seenIds.add(igId);
+    accounts.push(account);
   }
 
   instagramAccountsCache = {
     fetchedAt: now,
     accounts,
   };
+  return accounts;
+}
+
+async function listBusinessInstagramAccounts(metaSecrets) {
+  const token = getMetaToken(metaSecrets, "ads") || getMetaToken(metaSecrets, "instagram") || getMetaToken(metaSecrets, "facebook");
+  if (!token) return [];
+
+  const accounts = [];
+  try {
+    const raw = await graphApiGet(metaSecrets.apiVersion, token, "/me/businesses", {
+      fields: "id,name,owned_instagram_accounts.limit(100){id,username},client_instagram_accounts.limit(100){id,username}",
+      limit: 25,
+    });
+    const businesses = Array.isArray(raw?.data) ? raw.data : [];
+    for (const business of businesses) {
+      const businessName = String(business?.name || "").trim();
+      for (const edgeName of ["owned_instagram_accounts", "client_instagram_accounts"]) {
+        const rows = Array.isArray(business?.[edgeName]?.data) ? business[edgeName].data : [];
+        for (const row of rows) {
+          const igId = String(row?.id || "").trim();
+          if (!igId) continue;
+          accounts.push({
+            pageId: "",
+            pageName: businessName,
+            pageToken: "",
+            igId,
+            igUsername: String(row?.username || "").trim(),
+            source: edgeName,
+          });
+        }
+      }
+    }
+  } catch {
+    // Business Manager assets require extra permissions on some tokens. Page-linked IG accounts above remain usable.
+  }
   return accounts;
 }
 
