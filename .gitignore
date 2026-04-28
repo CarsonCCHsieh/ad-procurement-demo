@@ -9,6 +9,7 @@ reports/
 !.env.migration.example
 !.env.shared.example
 data/
+.runtime/
 runtime-logs/
 
 npm-debug.log*

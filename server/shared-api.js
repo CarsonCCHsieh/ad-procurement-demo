@@ -605,7 +605,115 @@ function extractOpenGraphUrl(html) {
   if (!raw) return "";
   const match = raw.match(/<meta[^>]+property=["']og:url["'][^>]+content=["']([^"']+)["']/i)
     || raw.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:url["']/i);
-  return match?.[1] ? String(match[1]).trim() : "";
+  return match?.[1] ? decodeHtmlText(String(match[1]).trim()) : "";
+}
+
+function decodeHtmlText(value) {
+  return String(value || "")
+    .replace(/&#x([0-9a-f]+);/gi, (_match, hex) => {
+      const code = Number.parseInt(String(hex || ""), 16);
+      return Number.isFinite(code) ? String.fromCodePoint(code) : "";
+    })
+    .replace(/&#(\d+);/g, (_match, num) => {
+      const code = Number.parseInt(String(num || ""), 10);
+      return Number.isFinite(code) ? String.fromCodePoint(code) : "";
+    })
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, "\"")
+    .replace(/&#34;/g, "\"")
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">");
+}
+
+function decodeFacebookBase64(value) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  try {
+    return Buffer.from(text, "base64").toString("utf8");
+  } catch {
+    return "";
+  }
+}
+
+function extractFacebookStoryMetadataFromHtml(html) {
+  const raw = String(html || "");
+  if (!raw) return { actorId: "", postId: "", storyId: "" };
+
+  const actorPatterns = [
+    /"actorID"\s*:\s*"?(\d{8,})"?/i,
+    /\\?"actorID\\?"\s*:\s*\\?"?(\d{8,})/i,
+  ];
+  let actorId = "";
+  for (const pattern of actorPatterns) {
+    const match = raw.match(pattern);
+    if (match?.[1]) {
+      actorId = String(match[1]).trim();
+      break;
+    }
+  }
+
+  const storyPatterns = [
+    /"storyID"\s*:\s*"([^"]+)"/i,
+    /\\?"storyID\\?"\s*:\s*\\?"([^"\\]+)\\?"/i,
+  ];
+  let storyId = "";
+  let decodedStoryId = "";
+  for (const pattern of storyPatterns) {
+    const match = raw.match(pattern);
+    if (!match?.[1]) continue;
+    storyId = String(match[1]).trim();
+    decodedStoryId = decodeFacebookBase64(storyId);
+    if (decodedStoryId) break;
+  }
+
+  const storyNumbers = decodedStoryId.match(/\d{8,}/g) || [];
+  if (!actorId && storyNumbers[0]) actorId = String(storyNumbers[0]).trim();
+  const postId = storyNumbers[1] || storyNumbers[storyNumbers.length - 1] || "";
+
+  return {
+    actorId,
+    postId: String(postId || "").trim(),
+    storyId: decodedStoryId || storyId,
+  };
+}
+
+function extractMetaContent(html, propertyName) {
+  const raw = String(html || "");
+  if (!raw || !propertyName) return "";
+  const escaped = String(propertyName).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const patternA = new RegExp(`<meta[^>]+property=["']${escaped}["'][^>]+content=["']([^"']*)["']`, "i");
+  const patternB = new RegExp(`<meta[^>]+content=["']([^"']*)["'][^>]+property=["']${escaped}["']`, "i");
+  const match = raw.match(patternA) || raw.match(patternB);
+  return match?.[1] ? decodeHtmlText(String(match[1]).trim()) : "";
+}
+
+async function fetchFacebookPublicMetadata(rawUrl) {
+  const src = String(rawUrl || "").trim();
+  if (!src) return null;
+  try {
+    const res = await fetch(src, {
+      method: "GET",
+      redirect: "follow",
+      headers: {
+        "User-Agent": "Mozilla/5.0",
+      },
+    });
+    const html = await res.text();
+    const ogUrl = extractOpenGraphUrl(html);
+    const story = extractFacebookStoryMetadataFromHtml(html);
+    return {
+      finalUrl: res?.url ? String(res.url) : src,
+      ogUrl,
+      actorId: story.actorId,
+      storyPostId: story.postId,
+      storyId: story.storyId,
+      title: extractMetaContent(html, "og:title"),
+      description: extractMetaContent(html, "og:description"),
+    };
+  } catch {
+    return null;
+  }
 }
 
 async function fetchOpenGraphUrl(rawUrl) {
@@ -689,17 +797,6 @@ async function resolveFacebookTrackingFromPublicUrl(rawUrl) {
   }
 
   const pageName = info.username;
-  if (info.storyFbid && /^\d+$/.test(info.storyFbid) && pageId) {
-    return buildMetaTrackingRef({
-      platform: "facebook",
-      refId: `${pageId}_${info.storyFbid}`,
-      sourceUrl: rawUrl,
-      canonicalUrl: expandedUrl || rawUrl,
-      pageId,
-      pageName,
-      resolver: "facebook_story_fbid_public",
-    });
-  }
 
   const urlCandidates = [expandedUrl, rawUrl]
     .flatMap((item) => {
@@ -712,6 +809,50 @@ async function resolveFacebookTrackingFromPublicUrl(rawUrl) {
     .map((item) => String(item || "").trim())
     .filter(Boolean)
     .filter((item, idx, arr) => arr.indexOf(item) === idx);
+
+  for (const candidate of urlCandidates) {
+    const metadata = await fetchFacebookPublicMetadata(candidate);
+    if (!metadata) continue;
+
+    const canonicalUrl = metadata.ogUrl || metadata.finalUrl || candidate;
+    const canonicalInfo = parseFacebookPostUrl(canonicalUrl);
+    const metadataPageId = String(metadata.actorId || canonicalInfo?.pageIdFromQuery || "").trim();
+    const metadataPostId = String(
+      metadata.storyPostId ||
+        canonicalInfo?.storyFbid ||
+        canonicalInfo?.postIdToken ||
+        "",
+    ).trim();
+    const resolvedPageId = pageId || metadataPageId;
+
+    if (metadataPostId && /^\d+$/.test(metadataPostId) && resolvedPageId && /^\d+$/.test(resolvedPageId)) {
+      return buildMetaTrackingRef({
+        platform: "facebook",
+        refId: `${resolvedPageId}_${metadataPostId}`,
+        sourceUrl: rawUrl,
+        canonicalUrl,
+        pageId: resolvedPageId,
+        pageName: canonicalInfo?.username || pageName,
+        resolver: metadata.storyPostId ? "facebook_public_story_html" : "facebook_public_og_html",
+      });
+    }
+
+    if (!pageId && metadataPageId && /^\d+$/.test(metadataPageId)) {
+      pageId = metadataPageId;
+    }
+  }
+
+  if (info.storyFbid && /^\d+$/.test(info.storyFbid) && pageId) {
+    return buildMetaTrackingRef({
+      platform: "facebook",
+      refId: `${pageId}_${info.storyFbid}`,
+      sourceUrl: rawUrl,
+      canonicalUrl: expandedUrl || rawUrl,
+      pageId,
+      pageName,
+      resolver: "facebook_story_fbid_public",
+    });
+  }
 
   for (const candidate of urlCandidates) {
     const canonicalUrl = await fetchOpenGraphUrl(candidate);
@@ -1991,6 +2132,18 @@ async function resolveMetaPostSecure({ url, platform, pageId, pageName }) {
     }
   } catch {
     preview = null;
+  }
+
+  if (!preview && trackingRef.platform === "facebook") {
+    const publicMeta = await fetchFacebookPublicMetadata(trackingRef.sourceUrl || sourceUrl);
+    if (publicMeta) {
+      preview = {
+        id: trackingRef.refId,
+        createdTime: "",
+        message: publicMeta.description || publicMeta.title || "",
+        permalink: publicMeta.ogUrl || trackingRef.canonicalUrl || trackingRef.sourceUrl || sourceUrl,
+      };
+    }
   }
 
   return {
