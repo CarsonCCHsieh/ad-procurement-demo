@@ -3621,6 +3621,27 @@ const server = http.createServer(async (req, res) => {
         industries: Array.isArray(payload.industries) ? payload.industries : current.industries,
         updatedAt: new Date().toISOString(),
       };
+      const incomingTokenChecks = [
+        ["user", payload.userAccessToken, "Meta User Key"],
+        ["ads", payload.adsAccessToken, "Meta Ads Key"],
+        ["facebook", payload.facebookAccessToken, "Facebook Page Key"],
+        ["instagram", payload.instagramAccessToken, "Instagram Key"],
+      ];
+      for (const [scope, token, label] of incomingTokenChecks) {
+        if (typeof token !== "string" || !token.trim()) continue;
+        const check = await verifyMetaToken({
+          scope,
+          token,
+          apiVersion: next.apiVersion,
+        });
+        if (!check.ok) {
+          json(res, 400, {
+            ok: false,
+            error: `${label} 驗證失敗，未儲存：${check.error || "未知錯誤"}`,
+          });
+          return;
+        }
+      }
       saveMetaSecretsPatch({
         apiVersion: next.apiVersion,
         pageId: next.pageId,
