@@ -387,6 +387,87 @@ async function listBusinessPages(metaSecrets) {
   return pages;
 }
 
+function normalizeAdAccountRow(row, source = "", business = null) {
+  const rawId = String(row?.account_id || row?.id || "").trim();
+  const id = rawId.replace(/^act_/i, "");
+  if (!/^\d+$/.test(id)) return null;
+  return {
+    id,
+    graphId: `act_${id}`,
+    name: String(row?.name || "").trim(),
+    accountStatus: row?.account_status == null ? "" : String(row.account_status),
+    currency: String(row?.currency || "").trim(),
+    timezoneName: String(row?.timezone_name || "").trim(),
+    businessId: String(row?.business?.id || business?.id || "").trim(),
+    businessName: String(row?.business?.name || business?.name || "").trim(),
+    source,
+  };
+}
+
+async function listAvailableAdAccounts(metaSecrets) {
+  const token = getMetaToken(metaSecrets, "ads") || getMetaToken(metaSecrets, "facebook");
+  if (!token) return [];
+
+  const byId = new Map();
+  const addRows = (rows, source, business = null) => {
+    for (const row of Array.isArray(rows) ? rows : []) {
+      const normalized = normalizeAdAccountRow(row, source, business);
+      if (!normalized?.id) continue;
+      byId.set(normalized.id, {
+        ...(byId.get(normalized.id) || {}),
+        ...normalized,
+      });
+    }
+  };
+
+  try {
+    let after = "";
+    for (let pageIndex = 0; pageIndex < 8; pageIndex += 1) {
+      const raw = await graphApiGet(metaSecrets.apiVersion, token, "/me/adaccounts", {
+        fields: "id,account_id,name,account_status,currency,timezone_name,business{id,name}",
+        limit: 100,
+        after: after || undefined,
+      });
+      addRows(raw?.data, "me_adaccounts");
+      const nextAfter = String(raw?.paging?.cursors?.after || "").trim();
+      if (!nextAfter || nextAfter === after) break;
+      after = nextAfter;
+    }
+  } catch {
+    // Keep Business Manager ad accounts usable if /me/adaccounts is unavailable.
+  }
+
+  const businesses = await listBusinesses(metaSecrets, token);
+  for (const business of businesses.slice(0, 12)) {
+    const businessId = String(business?.id || "").trim();
+    if (!businessId) continue;
+    for (const edge of ["owned_ad_accounts", "client_ad_accounts"]) {
+      try {
+        let after = "";
+        for (let pageIndex = 0; pageIndex < 4; pageIndex += 1) {
+          const raw = await graphApiGet(metaSecrets.apiVersion, token, `/${encodeURIComponent(businessId)}/${edge}`, {
+            fields: "id,account_id,name,account_status,currency,timezone_name,business{id,name}",
+            limit: 100,
+            after: after || undefined,
+          });
+          addRows(raw?.data, edge, business);
+          const nextAfter = String(raw?.paging?.cursors?.after || "").trim();
+          if (!nextAfter || nextAfter === after) break;
+          after = nextAfter;
+        }
+      } catch {
+        // Some businesses do not expose this edge to the token.
+      }
+    }
+  }
+
+  return Array.from(byId.values()).sort((a, b) => {
+    const aName = String(a.name || a.id);
+    const bName = String(b.name || b.id);
+    return aName.localeCompare(bName, "zh-Hant");
+  });
+}
+
 async function listBusinesses(metaSecrets, tokenOverride = "") {
   const token = String(tokenOverride || getMetaToken(metaSecrets, "ads") || getMetaToken(metaSecrets, "facebook")).trim();
   if (!token) return [];
@@ -2437,6 +2518,7 @@ async function listMetaSelectableAccounts() {
   }
 
   try {
+    const adAccounts = await listAvailableAdAccounts(metaSecrets);
     const pages = await listAvailablePages(metaSecrets);
     const igAccounts = await listInstagramAccounts(metaSecrets);
     const igByPageId = new Map(igAccounts.map((row) => [String(row.pageId || ""), row]));
@@ -2462,6 +2544,7 @@ async function listMetaSelectableAccounts() {
 
     return {
       ok: true,
+      adAccounts,
       pages: pageRows,
       instagramAccounts: instagramRows,
       fetchedAt: new Date().toISOString(),
@@ -2660,7 +2743,22 @@ async function createMetaOrderSecure(input) {
   const adAccountId = String(input?.adAccountId || settings.adAccountId || "").replace(/^act_/i, "");
   if (!token) return { ok: false, error: "尚未設定 Meta Ads API Key" };
   if (!adAccountId) return { ok: false, error: "尚未設定預設廣告帳號" };
+  if (!/^\d+$/.test(adAccountId)) return { ok: false, error: "廣告帳號 ID 格式錯誤，請到控制設定使用下拉選單選擇廣告帳號。" };
   if (!String(input?.postUrl || "").trim()) return { ok: false, error: "請先填入並驗證貼文連結" };
+
+  let adAccount = null;
+  try {
+    const adAccounts = await listAvailableAdAccounts(metaSecrets);
+    adAccount = adAccounts.find((account) => String(account?.id || "") === adAccountId) || null;
+  } catch {
+    adAccount = null;
+  }
+  if (!adAccount) {
+    return {
+      ok: false,
+      error: `目前設定的 act_${adAccountId} 不是這把 Meta Key 可用的廣告帳號。請到控制設定按「載入 Meta 帳戶」，從「預設廣告帳號」下拉選單重新選擇。`,
+    };
+  }
 
   const mode = input?.deliveryMode === "optimized" ? "optimized" : "direct";
   const objective = metaObjectiveFromInput(input);

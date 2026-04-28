@@ -5,6 +5,18 @@ import { CollapsibleCard } from "./CollapsibleCard";
 
 type TokenScope = "user" | "ads" | "facebook" | "instagram";
 
+type MetaAdAccountOption = {
+  id: string;
+  graphId?: string;
+  name: string;
+  accountStatus?: string;
+  currency?: string;
+  timezoneName?: string;
+  businessId?: string;
+  businessName?: string;
+  source?: string;
+};
+
 type MetaPageOption = {
   id: string;
   name: string;
@@ -23,6 +35,7 @@ type MetaInstagramOption = {
 type MetaAccountsResponse = {
   ok: boolean;
   error?: string;
+  adAccounts?: MetaAdAccountOption[];
   pages?: MetaPageOption[];
   instagramAccounts?: MetaInstagramOption[];
   fetchedAt?: string;
@@ -49,6 +62,13 @@ function statusText(cfg: MetaConfigV1, scope: TokenScope) {
   return "未設定";
 }
 
+function optionLabelForAdAccount(account: MetaAdAccountOption) {
+  const name = account.name || account.id;
+  const business = account.businessName ? ` / ${account.businessName}` : "";
+  const currency = account.currency ? ` / ${account.currency}` : "";
+  return `${name} / act_${account.id}${currency}${business}`;
+}
+
 function optionLabelForPage(page: MetaPageOption) {
   const ig = page.instagramUsername ? ` / IG：${page.instagramUsername}` : "";
   return `${page.name || page.id} / ${page.id}${ig}`;
@@ -69,6 +89,7 @@ export function MetaSettingsCard(props: {
   const [saving, setSaving] = useState(false);
   const [verifying, setVerifying] = useState<Record<TokenScope, boolean>>({ user: false, ads: false, facebook: false, instagram: false });
   const [accountsLoading, setAccountsLoading] = useState(false);
+  const [adAccounts, setAdAccounts] = useState<MetaAdAccountOption[]>([]);
   const [pages, setPages] = useState<MetaPageOption[]>([]);
   const [instagramAccounts, setInstagramAccounts] = useState<MetaInstagramOption[]>([]);
   const [accountsFetchedAt, setAccountsFetchedAt] = useState("");
@@ -91,8 +112,14 @@ export function MetaSettingsCard(props: {
     };
   }, [onNotice]);
 
+  const selectedAdAccountId = cfg?.adAccountId || "";
   const selectedPageId = cfg?.pageId || "";
   const selectedInstagramId = cfg?.instagramActorId || "";
+
+  const selectedAdAccount = useMemo(
+    () => adAccounts.find((account) => account.id === selectedAdAccountId),
+    [adAccounts, selectedAdAccountId],
+  );
 
   const selectedPage = useMemo(
     () => pages.find((page) => page.id === selectedPageId),
@@ -131,17 +158,24 @@ export function MetaSettingsCard(props: {
       const response = await fetch(apiUrl("/api/meta/accounts"), { headers: { "Cache-Control": "no-store" } });
       const data = (await response.json()) as MetaAccountsResponse;
       if (!response.ok || !data.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      const nextAdAccounts = Array.isArray(data.adAccounts) ? data.adAccounts : [];
       const nextPages = Array.isArray(data.pages) ? data.pages : [];
       const nextIg = Array.isArray(data.instagramAccounts) ? data.instagramAccounts : [];
+      setAdAccounts(nextAdAccounts);
       setPages(nextPages);
       setInstagramAccounts(nextIg);
       setAccountsFetchedAt(data.fetchedAt || new Date().toISOString());
-      onNotice("success", `已載入 ${nextPages.length} 個 Facebook 粉專、${nextIg.length} 個 Instagram 帳戶。`, 3000);
+      onNotice("success", `已載入 ${nextAdAccounts.length} 個廣告帳號、${nextPages.length} 個 Facebook 粉專、${nextIg.length} 個 Instagram 帳戶。`, 3000);
     } catch (error) {
       onNotice("error", `Meta 帳戶載入失敗：${error instanceof Error ? error.message : "未知錯誤"}`, 5200);
     } finally {
       setAccountsLoading(false);
     }
+  };
+
+  const selectAdAccount = (adAccountId: string) => {
+    if (!cfg) return;
+    setCfg({ ...cfg, adAccountId });
   };
 
   const selectPage = (pageId: string) => {
@@ -234,21 +268,30 @@ export function MetaSettingsCard(props: {
         </label>
         <label className="field">
           <div className="label">預設廣告帳號 ID</div>
-          <input value={cfg.adAccountId} onChange={(event) => setCfg({ ...cfg, adAccountId: event.target.value.replace(/^act_/i, "") })} placeholder="例如：1234567890" />
+          <input value={cfg.adAccountId} onChange={(event) => setCfg({ ...cfg, adAccountId: event.target.value.replace(/^act_/i, "") })} placeholder="請優先用下方下拉選單選擇" />
+          <div className="hint">這裡必須是廣告帳號 ID，不是 Business Manager ID。</div>
         </label>
       </div>
 
       <div className="meta-account-picker">
         <div className="meta-account-picker-head">
           <div>
-            <div className="dense-title">Facebook / Instagram 帳戶選擇</div>
-            <p className="dense-meta">使用已儲存的 User Key 讀取可管理的粉專與連結的 Instagram 帳戶。下拉選定後會自動帶入 ID 與名稱。</p>
+            <div className="dense-title">Meta 帳戶選擇</div>
+            <p className="dense-meta">使用已儲存的 User Key 讀取可管理的廣告帳號、粉專與 Instagram 帳戶。下拉選定後會自動帶入正確 ID。</p>
           </div>
           <button className="btn" type="button" onClick={() => void loadAccounts()} disabled={accountsLoading}>
             {accountsLoading ? "載入中..." : "載入 Meta 帳戶"}
           </button>
         </div>
         <div className="row cols2">
+          <label className="field">
+            <div className="label">預設廣告帳號</div>
+            <select value={selectedAdAccountId} onChange={(event) => selectAdAccount(event.target.value)}>
+              <option value="">請選擇廣告帳號</option>
+              {adAccounts.map((account) => <option key={account.id} value={account.id}>{optionLabelForAdAccount(account)}</option>)}
+            </select>
+            <div className="hint">{selectedAdAccount ? `已選擇：${selectedAdAccount.name || selectedAdAccount.id} / act_${selectedAdAccount.id}` : "建立投放前必須選擇。請不要填 Business Manager ID。"}</div>
+          </label>
           <label className="field">
             <div className="label">Facebook 粉絲專頁</div>
             <select value={selectedPageId} onChange={(event) => selectPage(event.target.value)}>
