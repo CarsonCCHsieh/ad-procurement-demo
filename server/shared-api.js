@@ -2639,7 +2639,8 @@ function normalizeInterestObject(row, fallbackQuery = "") {
 async function searchMetaInterest({ metaSecrets, apiVersion, query }) {
   const token = getMetaToken(metaSecrets, "ads");
   const q = normalizeAudienceQuery(query);
-  if (!token || !q) return null;
+  if (!q) return { interest: null, error: "" };
+  if (!token) return { interest: null, error: "Meta Ads/User Key 尚未設定，無法搜尋可投遞興趣。" };
 
   const cacheKey = `${apiVersion}:${q.toLowerCase()}`;
   if (metaInterestSearchCache.has(cacheKey)) return metaInterestSearchCache.get(cacheKey);
@@ -2652,11 +2653,16 @@ async function searchMetaInterest({ metaSecrets, apiVersion, query }) {
     });
     const rows = Array.isArray(raw?.data) ? raw.data : [];
     const best = rows.map((row) => normalizeInterestObject(row, q)).find(Boolean) || null;
-    metaInterestSearchCache.set(cacheKey, best);
-    return best;
-  } catch {
-    metaInterestSearchCache.set(cacheKey, null);
-    return null;
+    const result = { interest: best, error: "" };
+    metaInterestSearchCache.set(cacheKey, result);
+    return result;
+  } catch (error) {
+    const result = { interest: null, error: error instanceof Error ? error.message : "Meta interest search failed" };
+    // Do not cache auth/rate-limit failures; a refreshed token should take effect immediately.
+    if (!/access token|OAuth|rate limit|request limit|temporarily/i.test(result.error)) {
+      metaInterestSearchCache.set(cacheKey, result);
+    }
+    return result;
   }
 }
 
@@ -2667,9 +2673,12 @@ async function resolveMetaAudienceInterestsForInput({ metaSecrets, apiVersion, i
   const seen = new Set(existing.map((row) => row.id));
   const resolved = [...existing];
   const queries = extractAudienceSearchQueries(input);
+  const errors = [];
 
   for (const query of queries) {
-    const found = await searchMetaInterest({ metaSecrets, apiVersion, query });
+    const search = await searchMetaInterest({ metaSecrets, apiVersion, query });
+    if (search?.error && !errors.includes(search.error)) errors.push(search.error);
+    const found = search?.interest;
     if (found?.id && !seen.has(found.id)) {
       seen.add(found.id);
       resolved.push(found);
@@ -2677,7 +2686,7 @@ async function resolveMetaAudienceInterestsForInput({ metaSecrets, apiVersion, i
     await delay(120);
   }
 
-  return { interests: resolved, queries, addedCount: resolved.length - existing.length };
+  return { interests: resolved, queries, addedCount: resolved.length - existing.length, errors };
 }
 
 function metaObjectiveFromInput(input) {
@@ -4122,6 +4131,7 @@ const server = http.createServer(async (req, res) => {
         queries: result.queries,
         interests: result.interests,
         addedCount: result.addedCount,
+        errors: result.errors || [],
       });
       return;
     }

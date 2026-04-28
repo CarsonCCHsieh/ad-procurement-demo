@@ -266,6 +266,7 @@ export function MetaAdsOrdersPage() {
   const [resolvingTemplate, setResolvingTemplate] = useState(false);
   const [templateResolvedKey, setTemplateResolvedKey] = useState("");
   const [audienceQueries, setAudienceQueries] = useState<string[]>([]);
+  const [audienceErrors, setAudienceErrors] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [step, setStep] = useState<WizardStep>("campaign");
   const [message, setMessage] = useState<string | null>(null);
@@ -389,9 +390,15 @@ export function MetaAdsOrdersPage() {
         detailedTargetingText: mergeInterestText(current.detailedTargetingText, data.interests || []),
       }));
       setAudienceQueries(Array.isArray(data.queries) ? data.queries : []);
+      setAudienceErrors(Array.isArray(data.errors) ? data.errors : []);
       const count = Number(data.addedCount || 0);
       if (source === "user") {
-        setMessage(count > 0 ? `已補充 ${count} 個可投遞興趣條件。` : "已完成搜尋，但目前沒有新增可投遞興趣條件；系統會保留原本模板設定。");
+        const errors = Array.isArray(data.errors) ? data.errors : [];
+        if (errors.length > 0 && count === 0) {
+          setMessage(`TA 搜尋失敗：${errors[0]}`);
+        } else {
+          setMessage(count > 0 ? `已補充 ${count} 個可投遞興趣條件。` : "已完成搜尋，但目前沒有新增可投遞興趣條件；系統會保留原本模板設定。");
+        }
       }
     } catch (error) {
       if (source === "user") {
@@ -577,6 +584,7 @@ export function MetaAdsOrdersPage() {
                       if (industry) {
                         setTemplateResolvedKey("");
                         setAudienceQueries([]);
+                        setAudienceErrors([]);
                         setState((current) => applyIndustry(current, industry));
                       }
                     }}>
@@ -701,6 +709,7 @@ export function MetaAdsOrdersPage() {
                       <span>排除受眾：{excludedAudienceIds.length ? `${excludedAudienceIds.length} 個` : "未設定"}</span>
                     </div>
                     {audienceQueries.length ? <div className="hint">最近搜尋方向：{audienceQueries.join("、")}</div> : null}
+                    {audienceErrors.length ? <div className="hint text-danger">TA 搜尋目前無法完成：{audienceErrors[0]}</div> : null}
                   </div>
                   <div className="meta-targeting-guide">
                     <label className="field">

@@ -2023,6 +2023,10 @@ textarea:focus {
   color: hsl(var(--destructive));
 }
 
+.text-danger {
+  color: hsl(var(--destructive)) !important;
+}
+
 .meta-summary {
   border: 1px solid hsl(var(--border));
   border-radius: 16px;
