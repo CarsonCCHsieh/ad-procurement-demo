@@ -1,6 +1,15 @@
 {
   "apiVersion": "v20.0",
-  "userAccessToken": "paste_user_access_token_here",
+  "appId": "paste_meta_app_id_here",
+  "appSecret": "paste_meta_app_secret_here",
+  "loginConfigId": "optional_meta_login_configuration_id",
+  "redirectUri": "http://127.0.0.1:8787/api/meta/oauth/callback",
+  "successRedirect": "https://carsoncchsieh.github.io/ad-procurement-demo/#/settings?meta_oauth=connected",
+  "errorRedirect": "https://carsoncchsieh.github.io/ad-procurement-demo/#/settings?meta_oauth=error",
+  "userAccessToken": "paste_long_lived_user_access_token_here",
+  "adsAccessToken": "optional_service_specific_ads_token",
+  "facebookAccessToken": "optional_service_specific_facebook_token",
+  "instagramAccessToken": "optional_service_specific_instagram_token",
   "preferredPageId": "195769958936",
-  "preferredPageName": "JUKSY 街星"
+  "preferredPageName": "JUKSY"
 }

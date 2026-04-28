@@ -41,11 +41,18 @@ type MetaAccountsResponse = {
   fetchedAt?: string;
 };
 
+type OAuthStatusResponse = {
+  ok: boolean;
+  error?: string;
+  status?: string;
+  config?: MetaConfigV1["oauth"];
+};
+
 const TOKEN_SCOPES: Array<{ scope: TokenScope; label: string; desc: string }> = [
-  { scope: "user", label: "Meta User Key", desc: "共用 Key。若下方服務沒有另外設定，Meta Ads、Facebook、Instagram 都會使用這把 Key。" },
-  { scope: "ads", label: "Meta Ads Key", desc: "選填。填入後只覆蓋廣告帳號、建立廣告與 insights 相關功能。" },
-  { scope: "facebook", label: "Facebook Page Key", desc: "選填。填入後只覆蓋 Facebook 粉專、貼文解析與貼文成效讀取。" },
-  { scope: "instagram", label: "Instagram Key", desc: "選填。填入後只覆蓋 Instagram media / insights 相關功能。" },
+  { scope: "user", label: "Meta User Key", desc: "通用 Key。若下方服務沒有另外設定，Meta Ads、Facebook、Instagram 都會使用這把 Key。" },
+  { scope: "ads", label: "Meta Ads Key", desc: "選填。只覆蓋廣告帳號、建立廣告與 insights 相關功能。" },
+  { scope: "facebook", label: "Facebook Page Key", desc: "選填。只覆蓋 Facebook 粉專、貼文解析與貼文成效讀取。" },
+  { scope: "instagram", label: "Instagram Key", desc: "選填。只覆蓋 Instagram media / insights 相關功能。" },
 ];
 
 function sourceText(cfg: MetaConfigV1, scope: Exclude<TokenScope, "user">) {
@@ -79,20 +86,35 @@ function optionLabelForInstagram(account: MetaInstagramOption) {
   return `${account.username || account.id} / ${account.id}${page}`;
 }
 
+function formatDateTime(value?: string) {
+  if (!value) return "未取得";
+  const ts = Date.parse(value);
+  if (!Number.isFinite(ts)) return value;
+  return new Date(ts).toLocaleString("zh-TW");
+}
+
 export function MetaSettingsCard(props: {
   onNotice: (tone: "success" | "error" | "info", text: string, timeout?: number) => void;
 }) {
   const { onNotice } = props;
   const [cfg, setCfg] = useState<MetaConfigV1 | null>(null);
   const [tokens, setTokens] = useState<Record<TokenScope, string>>({ user: "", ads: "", facebook: "", instagram: "" });
+  const [shortToken, setShortToken] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [oauthBusy, setOauthBusy] = useState(false);
   const [verifying, setVerifying] = useState<Record<TokenScope, boolean>>({ user: false, ads: false, facebook: false, instagram: false });
   const [accountsLoading, setAccountsLoading] = useState(false);
   const [adAccounts, setAdAccounts] = useState<MetaAdAccountOption[]>([]);
   const [pages, setPages] = useState<MetaPageOption[]>([]);
   const [instagramAccounts, setInstagramAccounts] = useState<MetaInstagramOption[]>([]);
   const [accountsFetchedAt, setAccountsFetchedAt] = useState("");
+
+  const refreshConfig = async () => {
+    const next = await fetchMetaConfigFromServer();
+    setCfg(next);
+    return next;
+  };
 
   useEffect(() => {
     let canceled = false;
@@ -170,6 +192,72 @@ export function MetaSettingsCard(props: {
       onNotice("error", `Meta 帳戶載入失敗：${error instanceof Error ? error.message : "未知錯誤"}`, 5200);
     } finally {
       setAccountsLoading(false);
+    }
+  };
+
+  const refreshOAuthStatus = async () => {
+    setOauthBusy(true);
+    try {
+      const response = await fetch(apiUrl("/api/meta/token/status"), { headers: { "Cache-Control": "no-store" } });
+      const data = (await response.json()) as OAuthStatusResponse;
+      if (!response.ok || !data.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      const next = await refreshConfig();
+      onNotice("success", `Meta 授權狀態：${data.config?.status || next.oauth?.status || "未知"}`, 2600);
+    } catch (error) {
+      onNotice("error", `授權狀態確認失敗：${error instanceof Error ? error.message : "未知錯誤"}`, 4200);
+    } finally {
+      setOauthBusy(false);
+    }
+  };
+
+  const connectMeta = async () => {
+    if (!cfg) return;
+    setOauthBusy(true);
+    try {
+      await saveMetaConfigToServer(cfg);
+      window.location.assign(apiUrl("/api/meta/oauth/start"));
+    } catch (error) {
+      setOauthBusy(false);
+      onNotice("error", `啟動 Meta 授權失敗：${error instanceof Error ? error.message : "未知錯誤"}`, 4200);
+    }
+  };
+
+  const exchangeShortToken = async () => {
+    if (!shortToken.trim()) {
+      onNotice("error", "請先貼上短效 User Token。", 2600);
+      return;
+    }
+    setOauthBusy(true);
+    try {
+      const response = await fetch(apiUrl("/api/meta/token/exchange-short-lived"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ short_lived_user_token: shortToken.trim() }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      setShortToken("");
+      await refreshConfig();
+      onNotice("success", "短效 User Token 已交換並儲存為長效 token。", 3200);
+    } catch (error) {
+      onNotice("error", `交換失敗：${error instanceof Error ? error.message : "未知錯誤"}`, 5200);
+    } finally {
+      setOauthBusy(false);
+    }
+  };
+
+  const disconnectMeta = async () => {
+    setOauthBusy(true);
+    try {
+      const response = await fetch(apiUrl("/api/meta/disconnect"), { method: "POST" });
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      await refreshConfig();
+      onNotice("success", "Meta token 已清除，App 設定仍保留。", 2800);
+    } catch (error) {
+      onNotice("error", `中斷授權失敗：${error instanceof Error ? error.message : "未知錯誤"}`, 4200);
+    } finally {
+      setOauthBusy(false);
     }
   };
 
@@ -260,7 +348,7 @@ export function MetaSettingsCard(props: {
   }
 
   return (
-    <CollapsibleCard title="Meta 基本設定" desc="API Key 只儲存在本機後端，不會寫入前端或 GitHub。User Key 可作為通用 Key；服務專用 Key 可覆蓋 User Key。" tag="Meta" storageKey="sec:meta-settings">
+    <CollapsibleCard title="Meta 基本設定" desc="Meta token 只存本機後端；前端只顯示狀態與遮罩資訊。" tag="Meta" storageKey="sec:meta-settings">
       <div className="row cols2">
         <label className="field">
           <div className="label">Graph API 版本</div>
@@ -268,16 +356,83 @@ export function MetaSettingsCard(props: {
         </label>
         <label className="field">
           <div className="label">預設廣告帳號 ID</div>
-          <input value={cfg.adAccountId} onChange={(event) => setCfg({ ...cfg, adAccountId: event.target.value.replace(/^act_/i, "") })} placeholder="請優先用下方下拉選單選擇" />
+          <input value={cfg.adAccountId} onChange={(event) => setCfg({ ...cfg, adAccountId: event.target.value.replace(/^act_/i, "") })} placeholder="可用下方載入帳戶選擇" />
           <div className="hint">這裡必須是廣告帳號 ID，不是 Business Manager ID。</div>
         </label>
       </div>
+
+      <div className="sep" />
+
+      <div className="meta-account-picker">
+        <div className="meta-account-picker-head">
+          <div>
+            <div className="dense-title">Meta 長效授權</div>
+            <p className="dense-meta">設定 App 後可走 Meta OAuth 取得長效 User Token；也可貼上圖形 API 測試工具產生的短效 User Token 交換。</p>
+          </div>
+          <div className="actions inline">
+            <button className="btn" type="button" onClick={() => void refreshOAuthStatus()} disabled={oauthBusy}>更新狀態</button>
+            <button className="btn primary" type="button" onClick={() => void connectMeta()} disabled={oauthBusy || !(cfg.metaAppId || cfg.oauth?.configured)}>Meta 授權登入</button>
+          </div>
+        </div>
+        <div className="row cols2">
+          <label className="field">
+            <div className="label">Meta App ID</div>
+            <input value={cfg.metaAppId} onChange={(event) => setCfg({ ...cfg, metaAppId: event.target.value.trim() })} placeholder={cfg.oauth?.appIdPreview || "貼上 App ID"} />
+          </label>
+          <label className="field">
+            <div className="label">Meta App Secret</div>
+            <input type="password" value={cfg.metaAppSecret} onChange={(event) => setCfg({ ...cfg, metaAppSecret: event.target.value.trim() })} placeholder={cfg.oauth?.configured ? "已設定；需要更換時再輸入" : "貼上 App Secret"} />
+          </label>
+          <label className="field">
+            <div className="label">Login Configuration ID</div>
+            <input value={cfg.metaLoginConfigId} onChange={(event) => setCfg({ ...cfg, metaLoginConfigId: event.target.value.trim() })} placeholder={cfg.oauth?.loginConfigIdPreview || "選填；Meta Login 新版設定 ID"} />
+          </label>
+          <label className="field">
+            <div className="label">OAuth 回呼網址</div>
+            <input value={cfg.metaRedirectUri || cfg.oauth?.redirectUri || ""} onChange={(event) => setCfg({ ...cfg, metaRedirectUri: event.target.value.trim() })} placeholder="http://127.0.0.1:8787/api/meta/oauth/callback" />
+            <div className="hint">此網址需加入 Meta App 的 Valid OAuth Redirect URIs。</div>
+          </label>
+        </div>
+        <div className="row cols2">
+          <label className="field">
+            <div className="label">授權成功返回頁</div>
+            <input value={cfg.metaSuccessRedirect || cfg.oauth?.successRedirect || ""} onChange={(event) => setCfg({ ...cfg, metaSuccessRedirect: event.target.value.trim() })} />
+          </label>
+          <label className="field">
+            <div className="label">授權失敗返回頁</div>
+            <input value={cfg.metaErrorRedirect || cfg.oauth?.errorRedirect || ""} onChange={(event) => setCfg({ ...cfg, metaErrorRedirect: event.target.value.trim() })} />
+          </label>
+        </div>
+        <div className="row cols2">
+          <label className="field">
+            <div className="label">短效 User Token 交換</div>
+            <textarea value={shortToken} onChange={(event) => setShortToken(event.target.value.trim())} placeholder="可貼上圖形 API 測試工具的短效 User Token" rows={3} />
+          </label>
+          <div className="field">
+            <div className="label">目前授權狀態</div>
+            <div className="stack gap-sm">
+              <div className="actions inline">
+                <span className="tag">{cfg.oauth?.status || "未連線"}</span>
+                {cfg.oauth?.tokenPreview ? <span className="tag subtle">{cfg.oauth.tokenPreview}</span> : null}
+                <button className="btn" type="button" onClick={() => void exchangeShortToken()} disabled={oauthBusy || !shortToken.trim()}>交換長效 token</button>
+                <button className="btn danger" type="button" onClick={() => void disconnectMeta()} disabled={oauthBusy || !cfg.tokenStatus?.user}>中斷授權</button>
+              </div>
+              <div className="hint">Meta 使用者：{cfg.oauth?.metaUserName || cfg.oauth?.metaUserId || "未取得"}</div>
+              <div className="hint">Token 到期：{formatDateTime(cfg.oauth?.expiresAt)}</div>
+              <div className="hint">資料存取到期：{formatDateTime(cfg.oauth?.dataAccessExpiresAt)}</div>
+              <div className="hint">Scopes：{cfg.oauth?.scopes?.length ? cfg.oauth.scopes.join("、") : "尚未取得"}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="sep" />
 
       <div className="meta-account-picker">
         <div className="meta-account-picker-head">
           <div>
             <div className="dense-title">Meta 帳戶選擇</div>
-            <p className="dense-meta">使用已儲存的 User Key 讀取可管理的廣告帳號、粉專與 Instagram 帳戶。下拉選定後會自動帶入正確 ID。</p>
+            <p className="dense-meta">使用已儲存的 User Key 讀取可管理的廣告帳號、粉專與 Instagram 帳戶，避免手動輸入錯誤 ID。</p>
           </div>
           <button className="btn" type="button" onClick={() => void loadAccounts()} disabled={accountsLoading}>
             {accountsLoading ? "載入中..." : "載入 Meta 帳戶"}
@@ -290,7 +445,7 @@ export function MetaSettingsCard(props: {
               <option value="">請選擇廣告帳號</option>
               {adAccounts.map((account) => <option key={account.id} value={account.id}>{optionLabelForAdAccount(account)}</option>)}
             </select>
-            <div className="hint">{selectedAdAccount ? `已選擇：${selectedAdAccount.name || selectedAdAccount.id} / act_${selectedAdAccount.id}` : "建立投放前必須選擇。請不要填 Business Manager ID。"}</div>
+            <div className="hint">{selectedAdAccount ? `已選擇：${selectedAdAccount.name || selectedAdAccount.id} / act_${selectedAdAccount.id}` : "建立投放前必須選擇。"}</div>
           </label>
           <label className="field">
             <div className="label">Facebook 粉絲專頁</div>
@@ -309,7 +464,7 @@ export function MetaSettingsCard(props: {
             <div className="hint">{selectedInstagram ? `已選擇：${selectedInstagram.username || selectedInstagram.id}` : "若粉專有連結 IG，選粉專時會自動帶入。"}</div>
           </label>
         </div>
-        {accountsFetchedAt ? <div className="hint">最近載入時間：{new Date(accountsFetchedAt).toLocaleString("zh-TW")}</div> : null}
+        {accountsFetchedAt ? <div className="hint">最近載入時間：{formatDateTime(accountsFetchedAt)}</div> : null}
       </div>
 
       <div className="row cols2">

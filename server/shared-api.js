@@ -1,4 +1,5 @@
 import http from "node:http";
+import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, extname, resolve } from "node:path";
 import { networkInterfaces } from "node:os";
@@ -85,6 +86,7 @@ const ORDERS_KEY = "ad_demo_orders_v1";
 const META_ORDERS_KEY = "ad_demo_meta_orders_v1";
 const META_SETTINGS_KEY = "ad_demo_meta_settings_v2";
 const META_SYNC_STATUS_KEY = "ad_demo_meta_sync_status_v1";
+const META_OAUTH_STATE_KEY = "ad_demo_meta_oauth_state_v1";
 const META_BACKGROUND_SYNC_INTERVAL_MS = 5 * 60 * 1000;
 const META_POST_METRIC_CACHE_TTL_MS = Number(process.env.META_POST_METRIC_CACHE_TTL_MS || 2 * 60 * 1000);
 const META_POST_METRIC_BACKOFF_MS = Number(process.env.META_POST_METRIC_BACKOFF_MS || 90 * 1000);
@@ -128,6 +130,14 @@ function json(res, status, payload) {
     "Access-Control-Allow-Headers": "Content-Type, Cache-Control",
   });
   res.end(JSON.stringify(payload));
+}
+
+function redirect(res, location) {
+  res.writeHead(302, {
+    Location: location,
+    "Cache-Control": "no-store",
+  });
+  res.end();
 }
 
 function sendFile(res, filePath) {
@@ -202,18 +212,164 @@ function loadMetaSecrets() {
       adsAccessToken ||
       facebookAccessToken ||
       instagramAccessToken;
-    if (!userAccessToken && !adsAccessToken && !facebookAccessToken && !instagramAccessToken) return null;
+    const appId = String(raw.appId || process.env.META_APP_ID || "").trim();
+    const appSecret = String(raw.appSecret || process.env.META_APP_SECRET || "").trim();
+    const loginConfigId = String(raw.loginConfigId || process.env.META_LOGIN_CONFIG_ID || "").trim();
+    const redirectUri = String(raw.redirectUri || process.env.META_REDIRECT_URI || defaultMetaRedirectUri()).trim();
+    const successRedirect = String(
+      raw.successRedirect ||
+      process.env.META_OAUTH_SUCCESS_REDIRECT ||
+      "https://carsoncchsieh.github.io/ad-procurement-demo/#/settings?meta_oauth=connected",
+    ).trim();
+    const errorRedirect = String(
+      raw.errorRedirect ||
+      process.env.META_OAUTH_ERROR_REDIRECT ||
+      "https://carsoncchsieh.github.io/ad-procurement-demo/#/settings?meta_oauth=error",
+    ).trim();
+    if (
+      !userAccessToken &&
+      !adsAccessToken &&
+      !facebookAccessToken &&
+      !instagramAccessToken &&
+      !appId &&
+      !appSecret &&
+      !loginConfigId
+    ) return null;
     return {
       apiVersion: typeof raw.apiVersion === "string" && raw.apiVersion.trim() ? raw.apiVersion.trim() : "v20.0",
       userAccessToken,
       adsAccessToken,
       facebookAccessToken,
       instagramAccessToken,
+      appId,
+      appSecret,
+      loginConfigId,
+      redirectUri,
+      successRedirect,
+      errorRedirect,
+      oauth: raw.oauth && typeof raw.oauth === "object" ? raw.oauth : null,
       preferredPageId: typeof raw.preferredPageId === "string" ? raw.preferredPageId.trim() : "",
       preferredPageName: typeof raw.preferredPageName === "string" ? raw.preferredPageName.trim() : "",
     };
   } catch {
     return null;
+  }
+}
+
+function defaultMetaRedirectUri() {
+  return `http://127.0.0.1:${PORT}/api/meta/oauth/callback`;
+}
+
+function getMetaAppConfig(metaSecrets = loadMetaSecrets()) {
+  return {
+    apiVersion: String(metaSecrets?.apiVersion || process.env.META_GRAPH_VERSION || "v20.0").trim() || "v20.0",
+    appId: String(metaSecrets?.appId || process.env.META_APP_ID || "").trim(),
+    appSecret: String(metaSecrets?.appSecret || process.env.META_APP_SECRET || "").trim(),
+    loginConfigId: String(metaSecrets?.loginConfigId || process.env.META_LOGIN_CONFIG_ID || "").trim(),
+    redirectUri: String(metaSecrets?.redirectUri || process.env.META_REDIRECT_URI || defaultMetaRedirectUri()).trim(),
+    successRedirect: String(
+      metaSecrets?.successRedirect ||
+      process.env.META_OAUTH_SUCCESS_REDIRECT ||
+      "https://carsoncchsieh.github.io/ad-procurement-demo/#/settings?meta_oauth=connected",
+    ).trim(),
+    errorRedirect: String(
+      metaSecrets?.errorRedirect ||
+      process.env.META_OAUTH_ERROR_REDIRECT ||
+      "https://carsoncchsieh.github.io/ad-procurement-demo/#/settings?meta_oauth=error",
+    ).trim(),
+  };
+}
+
+function metaAppAccessToken(cfg) {
+  return `${cfg.appId}|${cfg.appSecret}`;
+}
+
+function secondsToIso(seconds) {
+  const value = Number(seconds || 0);
+  if (!Number.isFinite(value) || value <= 0) return "";
+  return new Date(Date.now() + value * 1000).toISOString();
+}
+
+function unixSecondsToIso(seconds) {
+  const value = Number(seconds || 0);
+  if (!Number.isFinite(value) || value <= 0) return "";
+  return new Date(value * 1000).toISOString();
+}
+
+function uniqueStringList(input) {
+  if (!Array.isArray(input)) return [];
+  return Array.from(new Set(input.map((item) => String(item || "").trim()).filter(Boolean)));
+}
+
+async function debugMetaToken(token, cfg = getMetaAppConfig()) {
+  if (!cfg.appId || !cfg.appSecret) throw new Error("尚未設定 Meta App ID / App Secret");
+  const raw = await graphApiGet(cfg.apiVersion, metaAppAccessToken(cfg), "/debug_token", { input_token: token });
+  return raw?.data && typeof raw.data === "object" ? raw.data : {};
+}
+
+async function fetchMetaUserProfile(token, cfg = getMetaAppConfig()) {
+  return graphApiGet(cfg.apiVersion, token, "/me", { fields: "id,name,email" });
+}
+
+async function exchangeShortLivedMetaToken(shortToken, cfg = getMetaAppConfig()) {
+  const inputToken = String(shortToken || "").trim();
+  if (!cfg.appId || !cfg.appSecret) throw new Error("尚未設定 Meta App ID / App Secret");
+  if (!inputToken) throw new Error("請提供短效 User Token");
+
+  const raw = await graphApiGet(cfg.apiVersion, "", "/oauth/access_token", {
+    grant_type: "fb_exchange_token",
+    client_id: cfg.appId,
+    client_secret: cfg.appSecret,
+    fb_exchange_token: inputToken,
+  });
+  const token = String(raw?.access_token || "").trim();
+  if (!token) throw new Error("Meta 未回傳長效 token");
+  const debug = await debugMetaToken(token, cfg).catch(() => null);
+  const profile = await fetchMetaUserProfile(token, cfg).catch(() => null);
+  return {
+    token,
+    tokenType: String(raw?.token_type || "bearer"),
+    expiresIn: Number(raw?.expires_in || 0),
+    expiresAt: unixSecondsToIso(debug?.expires_at) || secondsToIso(raw?.expires_in),
+    dataAccessExpiresAt: unixSecondsToIso(debug?.data_access_expires_at),
+    scopes: uniqueStringList(debug?.scopes),
+    debug,
+    profile,
+  };
+}
+
+function saveLongLivedMetaToken(exchange) {
+  saveMetaSecretsPatch({
+    userAccessToken: exchange.token,
+    oauth: {
+      status: "active",
+      metaUserId: String(exchange.profile?.id || exchange.debug?.user_id || ""),
+      metaUserName: String(exchange.profile?.name || ""),
+      metaUserEmail: String(exchange.profile?.email || ""),
+      tokenType: exchange.tokenType || "bearer",
+      expiresAt: exchange.expiresAt || "",
+      dataAccessExpiresAt: exchange.dataAccessExpiresAt || "",
+      scopes: exchange.scopes || [],
+      updatedAt: new Date().toISOString(),
+    },
+  });
+}
+
+function appendQuery(url, params) {
+  try {
+    const parsed = new URL(url);
+    for (const [key, value] of Object.entries(params || {})) {
+      if (value == null || value === "") continue;
+      parsed.searchParams.set(key, String(value));
+    }
+    return parsed.toString();
+  } catch {
+    const cleanParams = new URLSearchParams();
+    for (const [key, value] of Object.entries(params || {})) {
+      if (value == null || value === "") continue;
+      cleanParams.set(key, String(value));
+    }
+    return `${url}${url.includes("?") ? "&" : "?"}${cleanParams.toString()}`;
   }
 }
 
@@ -2457,8 +2613,34 @@ function readMetaSettings() {
 function publicMetaSettings() {
   const settings = readMetaSettings();
   const secrets = loadMetaSecrets();
+  const appConfig = getMetaAppConfig(secrets);
+  const oauth = secrets?.oauth && typeof secrets.oauth === "object" ? secrets.oauth : {};
   return {
     ...settings,
+    metaAppId: "",
+    metaAppSecret: "",
+    metaLoginConfigId: "",
+    metaRedirectUri: appConfig.redirectUri,
+    metaSuccessRedirect: appConfig.successRedirect,
+    metaErrorRedirect: appConfig.errorRedirect,
+    oauth: {
+      configured: !!(appConfig.appId && appConfig.appSecret),
+      appIdPreview: maskToken(appConfig.appId),
+      loginConfigIdPreview: maskToken(appConfig.loginConfigId),
+      redirectUri: appConfig.redirectUri,
+      successRedirect: appConfig.successRedirect,
+      errorRedirect: appConfig.errorRedirect,
+      status: String(oauth.status || (String(secrets?.userAccessToken || "").trim() ? "active" : "disconnected")),
+      metaUserId: String(oauth.metaUserId || ""),
+      metaUserName: String(oauth.metaUserName || ""),
+      metaUserEmail: String(oauth.metaUserEmail || ""),
+      expiresAt: String(oauth.expiresAt || ""),
+      dataAccessExpiresAt: String(oauth.dataAccessExpiresAt || ""),
+      scopes: uniqueStringList(oauth.scopes),
+      updatedAt: String(oauth.updatedAt || ""),
+      disconnectedAt: String(oauth.disconnectedAt || ""),
+      tokenPreview: maskToken(secrets?.userAccessToken || ""),
+    },
     tokenStatus: {
       user: !!String(secrets?.userAccessToken || "").trim(),
       ads: !!String(secrets?.adsAccessToken || secrets?.userAccessToken || "").trim(),
@@ -2483,10 +2665,17 @@ function saveMetaSecretsPatch(patch) {
   const current = existsSync(META_SECRET_PATH) ? (loadMetaSecrets() || {}) : {};
   const next = {
     apiVersion: String(patch.apiVersion || current.apiVersion || "v20.0"),
+    appId: typeof patch.appId === "string" ? String(patch.appId || "").trim() : String(current.appId || ""),
+    appSecret: typeof patch.appSecret === "string" && patch.appSecret.trim() ? patch.appSecret.trim() : String(current.appSecret || ""),
+    loginConfigId: typeof patch.loginConfigId === "string" ? String(patch.loginConfigId || "").trim() : String(current.loginConfigId || ""),
+    redirectUri: typeof patch.redirectUri === "string" && patch.redirectUri.trim() ? patch.redirectUri.trim() : String(current.redirectUri || defaultMetaRedirectUri()),
+    successRedirect: typeof patch.successRedirect === "string" && patch.successRedirect.trim() ? patch.successRedirect.trim() : String(current.successRedirect || "https://carsoncchsieh.github.io/ad-procurement-demo/#/settings?meta_oauth=connected"),
+    errorRedirect: typeof patch.errorRedirect === "string" && patch.errorRedirect.trim() ? patch.errorRedirect.trim() : String(current.errorRedirect || "https://carsoncchsieh.github.io/ad-procurement-demo/#/settings?meta_oauth=error"),
     userAccessToken: String(current.userAccessToken || ""),
     adsAccessToken: String(current.adsAccessToken || ""),
     facebookAccessToken: String(current.facebookAccessToken || ""),
     instagramAccessToken: String(current.instagramAccessToken || ""),
+    oauth: current.oauth && typeof current.oauth === "object" ? current.oauth : null,
     preferredPageId: typeof patch.pageId === "string" ? String(patch.pageId || "") : String(current.preferredPageId || ""),
     preferredPageName: typeof patch.pageName === "string" ? String(patch.pageName || "") : String(current.preferredPageName || ""),
   };
@@ -2500,6 +2689,12 @@ function saveMetaSecretsPatch(patch) {
     if (typeof patch[key] === "string" && patch[key].trim()) {
       next[key] = patch[key].trim();
     }
+  }
+  if (patch.oauth && typeof patch.oauth === "object") {
+    next.oauth = {
+      ...(next.oauth && typeof next.oauth === "object" ? next.oauth : {}),
+      ...patch.oauth,
+    };
   }
   mkdirSync(dirname(META_SECRET_PATH), { recursive: true });
   writeFileSync(META_SECRET_PATH, `${JSON.stringify(next, null, 2)}\n`, "utf-8");
@@ -4040,6 +4235,131 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (req.method === "GET" && req.url === "/api/meta/token/status") {
+      const metaSecrets = loadMetaSecrets();
+      if (!metaSecrets || !String(metaSecrets.userAccessToken || "").trim()) {
+        json(res, 200, { ok: true, status: "disconnected", config: publicMetaSettings().oauth });
+        return;
+      }
+      const cfg = getMetaAppConfig(metaSecrets);
+      const token = String(metaSecrets.userAccessToken || "").trim();
+      let oauthPatch = {};
+      try {
+        const debug = await debugMetaToken(token, cfg);
+        const profile = await fetchMetaUserProfile(token, cfg).catch(() => null);
+        oauthPatch = {
+          status: debug?.is_valid === false ? "invalid" : "active",
+          metaUserId: String(profile?.id || debug?.user_id || ""),
+          metaUserName: String(profile?.name || ""),
+          metaUserEmail: String(profile?.email || ""),
+          expiresAt: unixSecondsToIso(debug?.expires_at),
+          dataAccessExpiresAt: unixSecondsToIso(debug?.data_access_expires_at),
+          scopes: uniqueStringList(debug?.scopes),
+          updatedAt: new Date().toISOString(),
+        };
+        saveMetaSecretsPatch({ oauth: oauthPatch });
+      } catch (error) {
+        oauthPatch = {
+          status: "unknown",
+          lastError: error instanceof Error ? error.message : "Token 狀態確認失敗",
+          updatedAt: new Date().toISOString(),
+        };
+        saveMetaSecretsPatch({ oauth: oauthPatch });
+      }
+      json(res, 200, { ok: true, status: oauthPatch.status || "active", config: publicMetaSettings().oauth });
+      return;
+    }
+
+    if (req.method === "GET" && req.url === "/api/meta/oauth/start") {
+      const cfg = getMetaAppConfig();
+      if (!cfg.appId) {
+        json(res, 400, { ok: false, error: "尚未設定 Meta App ID" });
+        return;
+      }
+      const state = randomBytes(24).toString("hex");
+      writeSharedJson(
+        META_OAUTH_STATE_KEY,
+        { state, createdAt: new Date().toISOString() },
+        "server-meta-oauth",
+      );
+      const params = new URLSearchParams({
+        client_id: cfg.appId,
+        redirect_uri: cfg.redirectUri,
+        response_type: "code",
+        state,
+      });
+      if (cfg.loginConfigId) {
+        params.set("config_id", cfg.loginConfigId);
+        params.set("override_default_response_type", "true");
+      } else {
+        params.set(
+          "scope",
+          [
+            "pages_show_list",
+            "pages_read_engagement",
+            "read_insights",
+            "instagram_basic",
+            "instagram_manage_insights",
+            "business_management",
+            "ads_read",
+            "ads_management",
+            "pages_manage_ads",
+          ].join(","),
+        );
+      }
+      redirect(res, `https://www.facebook.com/${cfg.apiVersion}/dialog/oauth?${params.toString()}`);
+      return;
+    }
+
+    if (req.method === "GET" && req.url.startsWith("/api/meta/oauth/callback")) {
+      const url = new URL(req.url, `http://${req.headers.host || "127.0.0.1"}`);
+      const cfg = getMetaAppConfig();
+      const savedState = readSharedJson(META_OAUTH_STATE_KEY);
+      const state = url.searchParams.get("state") || "";
+      const code = url.searchParams.get("code") || "";
+      const error = url.searchParams.get("error_description") || url.searchParams.get("error_message") || url.searchParams.get("error") || "";
+      const fail = (message) => redirect(res, appendQuery(cfg.errorRedirect, { meta_oauth: "error", message }));
+
+      if (error) {
+        fail(error);
+        return;
+      }
+      const createdAt = Date.parse(String(savedState?.createdAt || ""));
+      const stateExpired = !Number.isFinite(createdAt) || Date.now() - createdAt > 15 * 60 * 1000;
+      if (!savedState?.state || savedState.state !== state || stateExpired) {
+        fail("Meta OAuth state 驗證失敗，請重新授權");
+        return;
+      }
+      if (!cfg.appId || !cfg.appSecret || !code) {
+        fail("Meta OAuth 缺少 App 設定或授權碼");
+        return;
+      }
+
+      try {
+        const tokenRaw = await graphApiGet(cfg.apiVersion, "", "/oauth/access_token", {
+          client_id: cfg.appId,
+          client_secret: cfg.appSecret,
+          redirect_uri: cfg.redirectUri,
+          code,
+        });
+        const shortToken = String(tokenRaw?.access_token || "").trim();
+        if (!shortToken) throw new Error("Meta 未回傳短效 token");
+        const exchange = await exchangeShortLivedMetaToken(shortToken, cfg);
+        saveLongLivedMetaToken(exchange);
+        writeSharedJson(META_OAUTH_STATE_KEY, null, "server-meta-oauth");
+        redirect(res, appendQuery(cfg.successRedirect, { meta_oauth: "connected" }));
+      } catch (exchangeError) {
+        fail(exchangeError instanceof Error ? exchangeError.message : "Meta OAuth token 交換失敗");
+      }
+      return;
+    }
+
+    if (req.method === "GET" && req.url === "/api/meta/assets") {
+      const result = await listMetaSelectableAccounts();
+      json(res, result.ok ? 200 : 400, result);
+      return;
+    }
+
     if (req.method === "GET" && req.url === "/api/meta/settings") {
       json(res, 200, { ok: true, config: publicMetaSettings() });
       return;
@@ -4089,6 +4409,12 @@ const server = http.createServer(async (req, res) => {
       }
       saveMetaSecretsPatch({
         apiVersion: next.apiVersion,
+        appId: typeof payload.metaAppId === "string" && payload.metaAppId.trim() ? payload.metaAppId : undefined,
+        appSecret: typeof payload.metaAppSecret === "string" && payload.metaAppSecret.trim() ? payload.metaAppSecret : undefined,
+        loginConfigId: typeof payload.metaLoginConfigId === "string" && payload.metaLoginConfigId.trim() ? payload.metaLoginConfigId : undefined,
+        redirectUri: typeof payload.metaRedirectUri === "string" && payload.metaRedirectUri.trim() ? payload.metaRedirectUri : undefined,
+        successRedirect: typeof payload.metaSuccessRedirect === "string" && payload.metaSuccessRedirect.trim() ? payload.metaSuccessRedirect : undefined,
+        errorRedirect: typeof payload.metaErrorRedirect === "string" && payload.metaErrorRedirect.trim() ? payload.metaErrorRedirect : undefined,
         pageId: next.pageId,
         pageName: next.pageName,
         clearTokens: Array.isArray(payload.clearTokens) ? payload.clearTokens : [],
@@ -4099,6 +4425,42 @@ const server = http.createServer(async (req, res) => {
       });
       writeSharedJson(META_SETTINGS_KEY, next, "server-meta-settings");
       json(res, 200, { ok: true, config: publicMetaSettings() });
+      return;
+    }
+
+    if (req.method === "POST" && req.url === "/api/meta/token/exchange-short-lived") {
+      const raw = await readBody(req);
+      const payload = JSON.parse(String(raw || "{}"));
+      try {
+        const exchange = await exchangeShortLivedMetaToken(payload.short_lived_user_token || payload.token || payload.accessToken || "");
+        saveLongLivedMetaToken(exchange);
+        json(res, 200, {
+          ok: true,
+          status: "active",
+          oauth: publicMetaSettings().oauth,
+        });
+      } catch (error) {
+        json(res, 400, { ok: false, error: error instanceof Error ? error.message : "短效 token 交換失敗" });
+      }
+      return;
+    }
+
+    if (req.method === "POST" && req.url === "/api/meta/disconnect") {
+      saveMetaSecretsPatch({
+        clearTokens: ["user", "ads", "facebook", "instagram"],
+        oauth: {
+          status: "disconnected",
+          disconnectedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          scopes: [],
+          metaUserId: "",
+          metaUserName: "",
+          metaUserEmail: "",
+          expiresAt: "",
+          dataAccessExpiresAt: "",
+        },
+      });
+      json(res, 200, { ok: true, oauth: publicMetaSettings().oauth });
       return;
     }
 

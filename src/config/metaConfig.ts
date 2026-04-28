@@ -17,6 +17,30 @@ export type MetaConfigV1 = {
   adsAccessToken: string;
   facebookAccessToken: string;
   instagramAccessToken: string;
+  metaAppId: string;
+  metaAppSecret: string;
+  metaLoginConfigId: string;
+  metaRedirectUri: string;
+  metaSuccessRedirect: string;
+  metaErrorRedirect: string;
+  oauth?: {
+    configured?: boolean;
+    appIdPreview?: string;
+    loginConfigIdPreview?: string;
+    redirectUri?: string;
+    successRedirect?: string;
+    errorRedirect?: string;
+    status?: string;
+    metaUserId?: string;
+    metaUserName?: string;
+    metaUserEmail?: string;
+    expiresAt?: string;
+    dataAccessExpiresAt?: string;
+    scopes?: string[];
+    updatedAt?: string;
+    disconnectedAt?: string;
+    tokenPreview?: string;
+  };
   tokenStatus?: {
     user?: boolean;
     ads?: boolean;
@@ -46,6 +70,12 @@ export const DEFAULT_META_CONFIG: MetaConfigV1 = {
   adsAccessToken: "",
   facebookAccessToken: "",
   instagramAccessToken: "",
+  metaAppId: "",
+  metaAppSecret: "",
+  metaLoginConfigId: "",
+  metaRedirectUri: "",
+  metaSuccessRedirect: "",
+  metaErrorRedirect: "",
 };
 
 function normalize(raw: unknown): MetaConfigV1 | null {
@@ -65,6 +95,13 @@ function normalize(raw: unknown): MetaConfigV1 | null {
     adsAccessToken: "",
     facebookAccessToken: "",
     instagramAccessToken: "",
+    metaAppId: "",
+    metaAppSecret: "",
+    metaLoginConfigId: "",
+    metaRedirectUri: String(row.metaRedirectUri || row.oauth?.redirectUri || ""),
+    metaSuccessRedirect: String(row.metaSuccessRedirect || row.oauth?.successRedirect || ""),
+    metaErrorRedirect: String(row.metaErrorRedirect || row.oauth?.errorRedirect || ""),
+    oauth: row.oauth,
     tokenStatus: row.tokenStatus,
     tokenSource: row.tokenSource,
   };
@@ -116,6 +153,12 @@ export async function saveMetaConfigToServer(input: MetaConfigV1 & {
   adsAccessToken?: string;
   facebookAccessToken?: string;
   instagramAccessToken?: string;
+  metaAppId?: string;
+  metaAppSecret?: string;
+  metaLoginConfigId?: string;
+  metaRedirectUri?: string;
+  metaSuccessRedirect?: string;
+  metaErrorRedirect?: string;
 }) {
   const res = await fetch(apiUrl("/api/meta/settings"), {
     method: "POST",
