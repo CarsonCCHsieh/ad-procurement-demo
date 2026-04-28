@@ -263,6 +263,8 @@ export function MetaAdsOrdersPage() {
   const [resolved, setResolved] = useState<ResolvedPost | null>(null);
   const [resolving, setResolving] = useState(false);
   const [resolvingAudience, setResolvingAudience] = useState(false);
+  const [resolvingTemplate, setResolvingTemplate] = useState(false);
+  const [templateResolvedKey, setTemplateResolvedKey] = useState("");
   const [audienceQueries, setAudienceQueries] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [step, setStep] = useState<WizardStep>("campaign");
@@ -307,6 +309,19 @@ export function MetaAdsOrdersPage() {
     }));
   };
 
+  const removeInterest = (id: string) => {
+    setState((current) => ({
+      ...current,
+      detailedTargetingText: current.detailedTargetingText
+        .split(/\r?\n/g)
+        .filter((line) => {
+          const [lineId] = line.trim().split("|");
+          return lineId !== id;
+        })
+        .join("\n"),
+    }));
+  };
+
   const resolvePost = async () => {
     if (!state.postUrl.trim()) {
       setMessage("請先貼上貼文連結。");
@@ -343,20 +358,26 @@ export function MetaAdsOrdersPage() {
     }
   };
 
-  const resolveAudience = async () => {
-    const text = state.audienceNote.trim() || templateNotes.join("、");
-    if (!text) {
+  const resolveAudience = async (source: "template" | "user" = "user") => {
+    const text = source === "user" ? state.audienceNote.trim() : templateNotes.join("、");
+    if (!text && source === "user") {
       setMessage("請先填寫想補充的 TA 方向，例如品牌、族群、興趣或排除條件。");
       return;
     }
-    setResolvingAudience(true);
-    setMessage(null);
+    if (!text) return;
+    if (source === "template") {
+      setResolvingTemplate(true);
+      if (selectedIndustry?.key) setTemplateResolvedKey(selectedIndustry.key);
+    } else {
+      setResolvingAudience(true);
+      setMessage(null);
+    }
     try {
       const response = await fetch(apiUrl("/api/meta/resolve-audience"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          audienceRequestNote: text,
+          audienceRequestNote: source === "user" ? text : "",
           detailedTargetingText: state.detailedTargetingText,
           interestObjects,
         }),
@@ -369,13 +390,28 @@ export function MetaAdsOrdersPage() {
       }));
       setAudienceQueries(Array.isArray(data.queries) ? data.queries : []);
       const count = Number(data.addedCount || 0);
-      setMessage(count > 0 ? `已補充 ${count} 個可投遞興趣條件。` : "已完成搜尋，但目前沒有新增可投遞興趣條件；系統會保留原本模板設定。");
+      if (source === "user") {
+        setMessage(count > 0 ? `已補充 ${count} 個可投遞興趣條件。` : "已完成搜尋，但目前沒有新增可投遞興趣條件；系統會保留原本模板設定。");
+      }
     } catch (error) {
-      setMessage(`TA 補充失敗：${error instanceof Error ? error.message : "未知錯誤"}`);
+      if (source === "user") {
+        setMessage(`TA 補充失敗：${error instanceof Error ? error.message : "未知錯誤"}`);
+      }
     } finally {
-      setResolvingAudience(false);
+      if (source === "template") {
+        setResolvingTemplate(false);
+      } else {
+        setResolvingAudience(false);
+      }
     }
   };
+
+  useEffect(() => {
+    if (step !== "audience") return;
+    if (!selectedIndustry?.key || templateResolvedKey === selectedIndustry.key) return;
+    if (interestObjects.length > 0 || templateNotes.length === 0) return;
+    void resolveAudience("template");
+  }, [step, selectedIndustry?.key, templateResolvedKey, interestObjects.length, templateNotes.length]);
 
   const validate = () => {
     if (!effectiveAccountId) return "請先到控制設定指定預設廣告帳號。";
@@ -538,7 +574,11 @@ export function MetaAdsOrdersPage() {
                     <div className="label">案件產業</div>
                     <select value={state.industryKey} onChange={(e) => {
                       const industry = availableIndustries.find((item) => item.key === e.target.value);
-                      if (industry) setState((current) => applyIndustry(current, industry));
+                      if (industry) {
+                        setTemplateResolvedKey("");
+                        setAudienceQueries([]);
+                        setState((current) => applyIndustry(current, industry));
+                      }
                     }}>
                       {availableIndustries.map((industry) => <option key={industry.key} value={industry.key}>{industry.label}</option>)}
                     </select>
@@ -646,8 +686,14 @@ export function MetaAdsOrdersPage() {
                     </div>
                     <div className="dense-meta">已加入可投遞興趣</div>
                     <div className="meta-template-tags">
-                      {interestObjects.map((item) => <span className="meta-template-tag is-id" key={item.id}>{item.name || item.id}</span>)}
-                      {interestObjects.length === 0 ? <span className="meta-template-tag">尚未加入，請按右側按鈕補充</span> : null}
+                      {interestObjects.map((item) => (
+                        <button className="meta-template-tag is-id meta-template-tag-button" key={item.id} type="button" onClick={() => removeInterest(item.id)} title="移除此興趣條件">
+                          {item.name || item.id}
+                          <span aria-hidden="true">×</span>
+                        </button>
+                      ))}
+                      {resolvingTemplate ? <span className="meta-template-tag">正在套用產業模板...</span> : null}
+                      {interestObjects.length === 0 && !resolvingTemplate ? <span className="meta-template-tag">尚未加入，請按右側按鈕補充</span> : null}
                     </div>
                     <div className="meta-mini-stats">
                       <span>可投遞興趣條件：{interestObjects.length}</span>
@@ -666,7 +712,7 @@ export function MetaAdsOrdersPage() {
                         placeholder="例如：希望加強球鞋收藏、街頭文化、30 歲以上高消費族群；排除學生族群。"
                       />
                     </label>
-                    <button className="btn primary" type="button" onClick={() => void resolveAudience()} disabled={resolvingAudience}>{resolvingAudience ? "補充中..." : "依文字補充可投遞 TA"}</button>
+                    <button className="btn primary" type="button" onClick={() => void resolveAudience("user")} disabled={resolvingAudience}>{resolvingAudience ? "補充中..." : "依文字補充可投遞 TA"}</button>
                   </div>
                 </div>
 

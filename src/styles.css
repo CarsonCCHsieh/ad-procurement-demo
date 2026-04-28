@@ -1998,6 +1998,31 @@ textarea:focus {
   color: hsl(var(--meta-green));
 }
 
+.meta-template-tag-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.meta-template-tag-button span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: hsl(var(--meta-green) / 0.14);
+  line-height: 1;
+}
+
+.meta-template-tag-button:hover {
+  border-color: hsl(var(--destructive) / 0.35);
+  background: hsl(var(--destructive) / 0.08);
+  color: hsl(var(--destructive));
+}
+
 .meta-summary {
   border: 1px solid hsl(var(--border));
   border-radius: 16px;
