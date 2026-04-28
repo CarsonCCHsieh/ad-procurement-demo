@@ -330,8 +330,84 @@ async function listAvailablePages(metaSecrets) {
     after = nextAfter;
   }
 
-  metaPagesCache = { fetchedAt: now, pages };
+  const businessPages = await listBusinessPages(metaSecrets);
+  const byId = new Map();
+  for (const page of [...pages, ...businessPages]) {
+    const id = String(page?.id || "").trim();
+    if (!id) continue;
+    byId.set(id, {
+      ...(byId.get(id) || {}),
+      ...page,
+      id,
+    });
+  }
+
+  const mergedPages = Array.from(byId.values());
+  metaPagesCache = { fetchedAt: now, pages: mergedPages };
+  return mergedPages;
+}
+
+async function listBusinessPages(metaSecrets) {
+  const token = getMetaToken(metaSecrets, "ads") || getMetaToken(metaSecrets, "facebook");
+  if (!token) return [];
+
+  const businesses = await listBusinesses(metaSecrets, token);
+  if (businesses.length === 0) return [];
+
+  const pages = [];
+  for (const business of businesses.slice(0, 12)) {
+    const businessId = String(business?.id || "").trim();
+    if (!businessId) continue;
+    for (const edge of ["owned_pages", "client_pages"]) {
+      try {
+        let after = "";
+        for (let pageIndex = 0; pageIndex < 4; pageIndex += 1) {
+          const raw = await graphApiGet(metaSecrets.apiVersion, token, `/${encodeURIComponent(businessId)}/${edge}`, {
+            fields: "id,name,category,tasks,access_token,instagram_business_account{id,username}",
+            limit: 100,
+            after: after || undefined,
+          });
+          if (Array.isArray(raw?.data)) {
+            pages.push(...raw.data.map((page) => ({
+              ...page,
+              businessId,
+              businessName: String(business?.name || "").trim(),
+              businessEdge: edge,
+            })));
+          }
+          const nextAfter = String(raw?.paging?.cursors?.after || "").trim();
+          if (!nextAfter || nextAfter === after) break;
+          after = nextAfter;
+        }
+      } catch {
+        // Some businesses do not expose client pages to this token. Keep other edges usable.
+      }
+    }
+  }
   return pages;
+}
+
+async function listBusinesses(metaSecrets, tokenOverride = "") {
+  const token = String(tokenOverride || getMetaToken(metaSecrets, "ads") || getMetaToken(metaSecrets, "facebook")).trim();
+  if (!token) return [];
+  const businesses = [];
+  let after = "";
+  for (let pageIndex = 0; pageIndex < 4; pageIndex += 1) {
+    try {
+      const raw = await graphApiGet(metaSecrets.apiVersion, token, "/me/businesses", {
+        fields: "id,name",
+        limit: 50,
+        after: after || undefined,
+      });
+      if (Array.isArray(raw?.data)) businesses.push(...raw.data);
+      const nextAfter = String(raw?.paging?.cursors?.after || "").trim();
+      if (!nextAfter || nextAfter === after) break;
+      after = nextAfter;
+    } catch {
+      break;
+    }
+  }
+  return businesses;
 }
 
 function derivePageIdFromPostId(postId) {
@@ -1009,32 +1085,32 @@ async function listBusinessInstagramAccounts(metaSecrets) {
   if (!token) return [];
 
   const accounts = [];
-  try {
-    const raw = await graphApiGet(metaSecrets.apiVersion, token, "/me/businesses", {
-      fields: "id,name,owned_instagram_accounts.limit(100){id,username},client_instagram_accounts.limit(100){id,username}",
-      limit: 25,
-    });
-    const businesses = Array.isArray(raw?.data) ? raw.data : [];
-    for (const business of businesses) {
+  const businesses = await listBusinesses(metaSecrets, token);
+  for (const business of businesses.slice(0, 12)) {
+    const businessId = String(business?.id || "").trim();
+    if (!businessId) continue;
+    try {
+      const raw = await graphApiGet(metaSecrets.apiVersion, token, `/${encodeURIComponent(businessId)}/owned_instagram_accounts`, {
+        fields: "id,username",
+        limit: 100,
+      });
       const businessName = String(business?.name || "").trim();
-      for (const edgeName of ["owned_instagram_accounts", "client_instagram_accounts"]) {
-        const rows = Array.isArray(business?.[edgeName]?.data) ? business[edgeName].data : [];
-        for (const row of rows) {
-          const igId = String(row?.id || "").trim();
-          if (!igId) continue;
-          accounts.push({
-            pageId: "",
-            pageName: businessName,
-            pageToken: "",
-            igId,
-            igUsername: String(row?.username || "").trim(),
-            source: edgeName,
-          });
-        }
+      const rows = Array.isArray(raw?.data) ? raw.data : [];
+      for (const row of rows) {
+        const igId = String(row?.id || "").trim();
+        if (!igId) continue;
+        accounts.push({
+          pageId: "",
+          pageName: businessName,
+          pageToken: "",
+          igId,
+          igUsername: String(row?.username || "").trim(),
+          source: "owned_instagram_accounts",
+        });
       }
+    } catch {
+      // owned_instagram_accounts requires business_management on the token.
     }
-  } catch {
-    // Business Manager assets require extra permissions on some tokens. Page-linked IG accounts above remain usable.
   }
   return accounts;
 }
