@@ -119,7 +119,6 @@ export function buildMetaPayloads(cfg: MetaConfigV1, input: MetaOrderInput): {
 
   const promotedObject: Record<string, unknown> = {};
   if (cfg.pageId) promotedObject.page_id = cfg.pageId;
-  if (cfg.instagramActorId) promotedObject.instagram_actor_id = cfg.instagramActorId;
   if (input.pixelId) promotedObject.pixel_id = input.pixelId;
   if (input.conversionEvent) promotedObject.custom_event_type = input.conversionEvent;
   if (input.appId) promotedObject.application_id = input.appId;

@@ -2939,9 +2939,7 @@ function buildMetaTargeting(input, settings, variantIndex) {
 function buildPromotedObject(input, settings) {
   const out = {};
   const pageId = String(settings.pageId || input?.pageId || "").trim();
-  const instagramActorId = String(settings.instagramActorId || input?.instagramActorId || "").trim();
   if (pageId) out.page_id = pageId;
-  if (instagramActorId) out.instagram_actor_id = instagramActorId;
   if (input?.pixelId) out.pixel_id = String(input.pixelId);
   if (input?.conversionEvent) out.custom_event_type = String(input.conversionEvent);
   if (input?.appId) out.application_id = String(input.appId);
