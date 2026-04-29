@@ -69,6 +69,7 @@
 
 - `.env.shared.example`：本機 API 與 Meta OAuth 環境變數範例。
 - `server/meta-local.example.json`：本機 secrets JSON 範例，請複製到 `data/meta-local-secrets.json` 後填入實際值。
+- `docs/meta_ads_and_vendor_technical_handoff_zh-TW.md`：最新 Meta 官方投廣、HDZ 供應商、追加投遞、資料儲存與同步機制交接文件。
 
 必要 Meta OAuth 環境變數：
 
