@@ -351,11 +351,10 @@ function buildVendorRows(source: DemoOrder[]): VendorRow[] {
           : "";
 
         const appendEnabled = line.appendOnComplete?.enabled && line.appendOnComplete.quantity > 0;
-        const isFinalBatch = Number(batch.stageIndex) === Number(batch.stageCount);
-        const appendExec = line.appendExec;
+        const appendExec = batch.appendExec ?? line.appendExec;
         const appendStatusText = (() => {
           if (!appendEnabled) return "";
-          if (!isFinalBatch) return "追加：等待最終批次完成";
+          if (batch.status !== "completed" && (!appendExec || appendExec.status === "pending")) return "追加：等待本批完成";
           if (!appendExec || appendExec.status === "pending") return "追加：待觸發";
           if (appendExec.status === "failed") return `追加失敗：${appendExec.error || "請通知管理員"}`;
           if (appendExec.status === "completed") return "追加：已完成";

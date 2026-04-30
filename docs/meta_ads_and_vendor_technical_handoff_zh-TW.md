@@ -234,7 +234,7 @@ API 格式與 SMM panel 類型相同：
 
 主要用途：
 
-- 當某個品項完成後，固定追加一筆供應商訂單。
+- 當某個品項批次完成後，固定追加一筆供應商訂單。
 - 例如 Facebook 貼文讚完成後，自動追加 150 個特定供應商服務。
 
 資料結構：
@@ -265,9 +265,9 @@ API 格式與 SMM panel 類型相同：
 觸發規則：
 
 - 單次下單：主批次完成後觸發。
-- 平均下單：最後一批完成後才觸發。
+- 平均下單：每一天的批次完成後，各自觸發該批次的追加投遞，不等待最後一天。
 - 若主訂單 partial / failed，不視為正常完成，不應自動追加。
-- 追加訂單會寫入 line 的 `appendExec`。
+- 追加訂單會寫入 batch 的 `appendExec`，line 的 `appendExec` 只保留彙總狀態供舊 UI 相容。
 
 成效頁顯示：
 
@@ -288,7 +288,7 @@ API 格式與 SMM panel 類型相同：
 | Meta 成效 | `src/pages/AdPerformance.tsx` | `syncSharedMetaOrders()` |
 | 廠商下單 | `src/pages/AdOrders.tsx` | `POST /api/vendor/submit-order` |
 | 廠商同步 | `src/pages/AdPerformance.tsx` | `POST /api/vendor/sync-shared-orders` |
-| 追加投遞 | `src/pages/Settings.tsx`, `src/pages/AdPerformance.tsx` | `maybeHandleLineAppend()` |
+| 追加投遞 | `src/pages/Settings.tsx`, `src/pages/AdPerformance.tsx` | `maybeHandleLineAppend()`，逐 batch 寫入 `appendExec` |
 | HDZ 供應商 | `src/config/appConfig.ts`, `src/pages/Settings.tsx` | `DEFAULT_VENDOR_BASES`, `vendor-local-secrets.json` |
 
 ## 11. 修改時的回歸測試清單
@@ -312,7 +312,7 @@ node --check server/shared-api.js
 6. Meta 送出後預設狀態為 `PAUSED`。
 7. 若 Meta action block，系統進入冷卻，不連續重送。
 8. HDZ 可載入服務、查餘額、被品項對應選用。
-9. 追加投遞只在主訂單完成後觸發，平均模式只在最後一批完成後觸發。
+9. 追加投遞在單次模式於主批次完成後觸發；平均模式需每天批次完成後各自觸發。
 10. 投放成效頁能顯示廠商與 Meta 訂單狀態。
 
 ## 12. 禁止事項

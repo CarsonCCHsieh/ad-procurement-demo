@@ -62,6 +62,7 @@ export type DemoOrderBatch = {
   status: DemoOrderBatchStatus;
   submittedAt?: string;
   lastSyncAt?: string;
+  appendExec?: CompletionAppendExec;
 };
 
 export type DemoOrderLine = {

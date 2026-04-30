@@ -3489,13 +3489,6 @@ function deriveOrderStatus(lines) {
   return "submitted";
 }
 
-function getFinalBatch(batches) {
-  const list = Array.isArray(batches) ? batches.slice() : [];
-  if (!list.length) return null;
-  list.sort((a, b) => Number(a?.stageIndex ?? 0) - Number(b?.stageIndex ?? 0));
-  return list[list.length - 1];
-}
-
 function isFailureStatus(status) {
   const s = String(status ?? "").trim().toLowerCase();
   if (!s) return false;
@@ -3526,14 +3519,33 @@ async function refreshAppendExecStatus(appendExec) {
   return next;
 }
 
-async function maybeHandleLineAppend(line, links) {
-  const appendOnComplete = normalizeAppendConfig(line?.appendOnComplete);
-  if (!appendOnComplete) return { line, syncedCount: 0 };
+function mergeLineAppendExecFromBatches(batches, appendOnComplete) {
+  const execs = (Array.isArray(batches) ? batches : [])
+    .map((batch) => normalizeAppendExec(batch?.appendExec, appendOnComplete))
+    .filter(Boolean);
+  if (!execs.length) {
+    return {
+      status: "pending",
+      vendor: appendOnComplete.vendor,
+      serviceId: appendOnComplete.serviceId,
+      quantity: appendOnComplete.quantity,
+    };
+  }
+  const failed = execs.find((exec) => exec.status === "failed");
+  if (failed) return failed;
+  const submitted = execs.find((exec) => exec.status === "submitted");
+  if (submitted) return submitted;
+  if (execs.length === (Array.isArray(batches) ? batches.length : 0) && execs.every((exec) => exec.status === "completed")) {
+    return execs[execs.length - 1];
+  }
+  return execs.find((exec) => exec.status === "pending") ?? execs[execs.length - 1];
+}
 
-  let appendExec = normalizeAppendExec(line?.appendExec, appendOnComplete);
+async function handleBatchAppend(batch, appendOnComplete, links) {
+  let appendExec = normalizeAppendExec(batch?.appendExec, appendOnComplete);
   let syncedCount = 0;
 
-  if (appendExec) {
+  if (appendExec?.vendorOrderId && appendExec.status === "submitted") {
     const refreshed = await refreshAppendExecStatus(appendExec);
     if (refreshed !== appendExec) {
       appendExec = refreshed;
@@ -3542,32 +3554,18 @@ async function maybeHandleLineAppend(line, links) {
   }
 
   if (appendExec?.status === "submitted" || appendExec?.status === "completed" || appendExec?.status === "failed") {
-    return { line: { ...line, appendOnComplete, appendExec }, syncedCount };
+    return { batch: { ...batch, appendExec }, syncedCount };
   }
 
-  const finalBatch = getFinalBatch(normalizeLineBatches(line));
-  if (!finalBatch || finalBatch.status !== "completed") {
-    return {
-      line: {
-        ...line,
-        appendOnComplete,
-        appendExec: appendExec ?? {
-          status: "pending",
-          vendor: appendOnComplete.vendor,
-          serviceId: appendOnComplete.serviceId,
-          quantity: appendOnComplete.quantity,
-        },
-      },
-      syncedCount,
-    };
+  if (batch?.status !== "completed") {
+    return { batch: { ...batch, appendExec }, syncedCount };
   }
 
   const firstLink = Array.isArray(links) ? links.find((value) => typeof value === "string" && value.trim()) : "";
   if (!firstLink) {
     return {
-      line: {
-        ...line,
-        appendOnComplete,
+      batch: {
+        ...batch,
         appendExec: {
           status: "failed",
           vendor: appendOnComplete.vendor,
@@ -3577,7 +3575,7 @@ async function maybeHandleLineAppend(line, links) {
           lastSyncAt: new Date().toISOString(),
         },
       },
-      syncedCount,
+      syncedCount: syncedCount + 1,
     };
   }
 
@@ -3592,9 +3590,8 @@ async function maybeHandleLineAppend(line, links) {
   const now = new Date().toISOString();
   if (!result.ok) {
     return {
-      line: {
-        ...line,
-        appendOnComplete,
+      batch: {
+        ...batch,
         appendExec: {
           status: "failed",
           vendor: appendOnComplete.vendor,
@@ -3623,11 +3620,29 @@ async function maybeHandleLineAppend(line, links) {
   if (isFailureStatus(nextExec.vendorStatus) || nextExec.error) nextExec.status = "failed";
   else if (isAppendCompleted(nextExec)) nextExec.status = "completed";
 
+  return { batch: { ...batch, appendExec: nextExec }, syncedCount };
+}
+
+async function maybeHandleLineAppend(line, links) {
+  const appendOnComplete = normalizeAppendConfig(line?.appendOnComplete);
+  if (!appendOnComplete) return { line, syncedCount: 0 };
+
+  let syncedCount = 0;
+  const nextBatches = [];
+  for (const batch of normalizeLineBatches(line)) {
+    const result = await handleBatchAppend(batch, appendOnComplete, links);
+    nextBatches.push(result.batch);
+    syncedCount += result.syncedCount;
+  }
+  const appendExec = mergeLineAppendExecFromBatches(nextBatches, appendOnComplete);
+
   return {
     line: {
       ...line,
       appendOnComplete,
-      appendExec: nextExec,
+      appendExec,
+      batches: nextBatches,
+      splits: flattenBatchSplits(nextBatches),
     },
     syncedCount,
   };
