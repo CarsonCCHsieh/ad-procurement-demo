@@ -209,11 +209,7 @@ function loadMetaSecrets() {
     const adsAccessToken = typeof raw.adsAccessToken === "string" ? raw.adsAccessToken.trim() : "";
     const facebookAccessToken = typeof raw.facebookAccessToken === "string" ? raw.facebookAccessToken.trim() : "";
     const instagramAccessToken = typeof raw.instagramAccessToken === "string" ? raw.instagramAccessToken.trim() : "";
-    const userAccessToken =
-      (typeof raw.userAccessToken === "string" ? raw.userAccessToken.trim() : "") ||
-      adsAccessToken ||
-      facebookAccessToken ||
-      instagramAccessToken;
+    const userAccessToken = typeof raw.userAccessToken === "string" ? raw.userAccessToken.trim() : "";
     const appId = String(raw.appId || process.env.META_APP_ID || "").trim();
     const appSecret = String(raw.appSecret || process.env.META_APP_SECRET || "").trim();
     const loginConfigId = String(raw.loginConfigId || process.env.META_LOGIN_CONFIG_ID || "").trim();
@@ -340,11 +336,26 @@ async function exchangeShortLivedMetaToken(shortToken, cfg = getMetaAppConfig())
   };
 }
 
-function saveLongLivedMetaToken(exchange) {
+function saveLongLivedMetaToken(exchange, target = "user") {
+  const scope = String(target || "user").trim();
+  const tokenPatch = {};
+  if (scope === "ads") {
+    tokenPatch.adsAccessToken = exchange.token;
+  } else if (scope === "facebook") {
+    tokenPatch.facebookAccessToken = exchange.token;
+  } else if (scope === "instagram") {
+    tokenPatch.instagramAccessToken = exchange.token;
+  } else if (scope === "post_read") {
+    tokenPatch.facebookAccessToken = exchange.token;
+    tokenPatch.instagramAccessToken = exchange.token;
+  } else {
+    tokenPatch.userAccessToken = exchange.token;
+  }
   saveMetaSecretsPatch({
-    userAccessToken: exchange.token,
+    ...tokenPatch,
     oauth: {
       status: "active",
+      tokenTarget: scope,
       metaUserId: String(exchange.profile?.id || exchange.debug?.user_id || ""),
       metaUserName: String(exchange.profile?.name || ""),
       metaUserEmail: String(exchange.profile?.email || ""),
@@ -4507,12 +4518,20 @@ const server = http.createServer(async (req, res) => {
       const raw = await readBody(req);
       const payload = JSON.parse(String(raw || "{}"));
       try {
+        const target = String(payload.target || payload.scope || "user").trim();
+        const allowedTargets = new Set(["user", "ads", "facebook", "instagram", "post_read"]);
+        if (!allowedTargets.has(target)) {
+          json(res, 400, { ok: false, error: "Unsupported Meta token target" });
+          return;
+        }
         const exchange = await exchangeShortLivedMetaToken(payload.short_lived_user_token || payload.token || payload.accessToken || "");
-        saveLongLivedMetaToken(exchange);
+        saveLongLivedMetaToken(exchange, target);
         json(res, 200, {
           ok: true,
           status: "active",
+          target,
           oauth: publicMetaSettings().oauth,
+          config: publicMetaSettings(),
         });
       } catch (error) {
         json(res, 400, { ok: false, error: error instanceof Error ? error.message : "短效 token 交換失敗" });
