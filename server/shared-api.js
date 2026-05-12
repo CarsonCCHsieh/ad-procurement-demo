@@ -2968,17 +2968,18 @@ function assertSupportedMetaPostFlowGoal(objective, optimizationGoal) {
   }
 }
 
-function buildTaiwanRegionalRegulationIdentities(settings) {
+function buildTaiwanRegionalRegulationIdentities(settings, adAccount = null) {
   const beneficiary = String(settings?.taiwanBeneficiaryId || "").trim();
   const payer = String(settings?.taiwanPayerId || beneficiary || "").trim();
-  // Leave this unset by default. Meta Ads Manager can keep advertiser/payer
-  // defaults on the ad account; sending no identities lets that server-side
-  // default apply. These fields are only an advanced override when Meta still
-  // rejects Taiwan-targeted ad sets for missing advertiser transparency data.
-  if (!beneficiary && !payer) return null;
+  const accountBusinessId = String(adAccount?.businessId || "").trim();
+  // Meta Ads Manager displays advertiser/payer defaults, but Marketing API
+  // may still require explicit identities for Taiwan-targeted ad sets. Prefer
+  // admin overrides; otherwise use the selected ad account's owning Business ID.
+  const fallbackIdentity = accountBusinessId;
+  if (!beneficiary && !payer && !fallbackIdentity) return null;
   return {
-    taiwan_universal_beneficiary: beneficiary || payer,
-    taiwan_universal_payer: payer || beneficiary,
+    taiwan_universal_beneficiary: beneficiary || payer || fallbackIdentity,
+    taiwan_universal_payer: payer || beneficiary || fallbackIdentity,
   };
 }
 
@@ -3111,7 +3112,7 @@ async function createMetaOrderSecure(input) {
   const totalBudgetCents = Math.round(dailyBudget * 100);
   const variantBudgetCents = Math.max(100, Math.floor(totalBudgetCents / variantCount));
   const promotedObject = buildPromotedObject(input, settings);
-  const regionalRegulationIdentities = buildTaiwanRegionalRegulationIdentities(settings);
+  const regionalRegulationIdentities = buildTaiwanRegionalRegulationIdentities(settings, adAccount);
   const pageId = String(settings.pageId || input?.pageId || trackingRef?.pageId || "").trim();
   const instagramActorId = String(settings.instagramActorId || input?.instagramActorId || "").trim();
   const postRef = String(input?.existingPostId || trackingRef?.refId || "").trim();

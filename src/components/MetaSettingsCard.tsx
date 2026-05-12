@@ -489,12 +489,12 @@ export function MetaSettingsCard(props: {
         <label className="field">
           <div className="label">台灣受益方覆寫 ID</div>
           <input value={cfg.taiwanBeneficiaryId} onChange={(event) => setCfg({ ...cfg, taiwanBeneficiaryId: event.target.value.trim() })} placeholder="通常留空，使用 Meta 後台預設值" />
-          <div className="hint">若 Meta 後台已設定預設廣告主與出資者，這裡不需要填。只有 API 仍回報缺少廣告主資訊時，才由 Meta 管理員提供身分 ID 覆寫。</div>
+          <div className="hint">通常留空即可。系統會優先使用選定廣告帳號所屬 Business ID；只有 Meta 仍回報缺少廣告主資訊時，才由 Meta 管理員提供身分 ID 覆寫。</div>
         </label>
         <label className="field">
           <div className="label">台灣出資方覆寫 ID</div>
           <input value={cfg.taiwanPayerId} onChange={(event) => setCfg({ ...cfg, taiwanPayerId: event.target.value.trim() })} placeholder="通常留空，使用 Meta 後台預設值" />
-          <div className="hint">留空時不會送出 regional_regulation_identities，讓 Meta 使用廣告帳號中的預設出資者設定。</div>
+          <div className="hint">通常留空即可。若填寫，會覆寫系統自動帶入的 Business ID。</div>
         </label>
       </div>
 
