@@ -2949,6 +2949,21 @@ function metaOptimizationGoalFromInput(input) {
   return value || "POST_ENGAGEMENT";
 }
 
+const META_POST_FLOW_ALLOWED_OPTIMIZATION_GOALS = {
+  OUTCOME_AWARENESS: new Set(["REACH", "IMPRESSIONS", "THRUPLAY", "VIDEO_VIEWS"]),
+  OUTCOME_TRAFFIC: new Set(["LINK_CLICKS", "LANDING_PAGE_VIEWS", "PROFILE_VISIT"]),
+  OUTCOME_ENGAGEMENT: new Set(["POST_ENGAGEMENT", "THRUPLAY", "VIDEO_VIEWS", "REACH"]),
+};
+
+function assertSupportedMetaPostFlowGoal(objective, optimizationGoal) {
+  const allowed = META_POST_FLOW_ALLOWED_OPTIMIZATION_GOALS[objective];
+  if (!allowed || !allowed.has(optimizationGoal)) {
+    throw new Error(
+      `目前貼文投放流程不支援「${objective} / ${optimizationGoal}」這組 Meta 目標。請回到第一步重新選擇成效目標。`,
+    );
+  }
+}
+
 function buildMetaTargeting(input, settings, variantIndex) {
   const countries = Array.isArray(input?.countries) && input.countries.length ? input.countries : ["TW"];
   const facebookPositions = Array.isArray(input?.manualPlacements?.facebook) ? input.manualPlacements.facebook.filter(Boolean) : [];
@@ -3026,6 +3041,7 @@ async function createMetaOrderSecure(input) {
   const mode = input?.deliveryMode === "optimized" ? "optimized" : "direct";
   const objective = metaObjectiveFromInput(input);
   const optimizationGoal = metaOptimizationGoalFromInput(input);
+  assertSupportedMetaPostFlowGoal(objective, optimizationGoal);
   const dailyBudget = Math.max(1, Number(input?.dailyBudget || 0));
   const campaignName = String(input?.campaignName || input?.title || "Meta 投放任務").trim();
   const goal = String(input?.goal || "fb_post_engagement");

@@ -66,6 +66,7 @@ export type MetaPerformanceGoalOption = {
   proxyMetricKey: MetaKpiMetricKey | null;
   defaultGoal: MetaAdGoalKey;
   conversionLocation: "website" | "on_ad" | "messenger" | "instagram_profile" | "app" | "none";
+  supportedInPostFlow?: boolean;
 };
 
 export type MetaKpiMetric = {
@@ -95,12 +96,12 @@ const COMMON_ENGAGEMENT_METRICS: MetaKpiMetric[] = [
 ];
 
 export const META_CAMPAIGN_OBJECTIVE_OPTIONS: MetaCampaignObjectiveOption[] = [
-  { value: "OUTCOME_AWARENESS", label: "品牌認知", desc: "提高觸及、曝光、廣告回想提升幅度與影片觀看。" },
-  { value: "OUTCOME_TRAFFIC", label: "流量", desc: "導流至網站、貼文、Instagram 個人檔案、訊息或通話。" },
-  { value: "OUTCOME_ENGAGEMENT", label: "互動", desc: "提高貼文互動、影片觀看、訊息、活動回覆或粉絲專頁按讚。" },
-  { value: "OUTCOME_LEADS", label: "潛在顧客", desc: "取得名單、訊息名單、通話或網站轉換。" },
-  { value: "OUTCOME_APP_PROMOTION", label: "應用程式推廣", desc: "增加 App 安裝、App 事件或 App 內轉換價值。" },
-  { value: "OUTCOME_SALES", label: "銷售業績", desc: "取得購買、轉換、價值、訊息購買或導流成效。" },
+  { value: "OUTCOME_AWARENESS", label: "品牌認知", desc: "提高觸及、曝光、廣告回想與影片觀看。" },
+  { value: "OUTCOME_TRAFFIC", label: "流量", desc: "導流至網站、貼文連結或其他目的地。" },
+  { value: "OUTCOME_ENGAGEMENT", label: "互動", desc: "提高貼文互動、影片觀看、活動回覆或粉絲專頁互動。" },
+  { value: "OUTCOME_LEADS", label: "潛在顧客", desc: "需要表單、網站轉換或訊息名單設定；本貼文投放流程暫不開放。" },
+  { value: "OUTCOME_APP_PROMOTION", label: "應用程式推廣", desc: "需要 App 與 SDK / 事件設定；本貼文投放流程暫不開放。" },
+  { value: "OUTCOME_SALES", label: "銷售業績", desc: "需要 Pixel / CAPI / 商品目錄等轉換設定；本貼文投放流程暫不開放。" },
 ];
 
 export const META_AD_GOALS: Record<MetaAdGoalKey, MetaAdGoalTemplate> = {
@@ -245,66 +246,27 @@ function goal(
   proxyMetricKey: MetaKpiMetricKey | null,
   defaultGoal: MetaAdGoalKey,
   conversionLocation: MetaPerformanceGoalOption["conversionLocation"],
+  supportedInPostFlow = true,
 ): MetaPerformanceGoalOption {
-  return { code, objective, label, desc, optimizationGoal, proxyMetricKey, defaultGoal, conversionLocation };
+  return { code, objective, label, desc, optimizationGoal, proxyMetricKey, defaultGoal, conversionLocation, supportedInPostFlow };
 }
 
+// This list intentionally exposes only combinations that are safe for this product's existing-post workflow.
+// Meta's Ads Manager text lists broader possibilities, but several require pixel/app/lead/message assets or are rejected by API versions for ODAX campaigns.
 export const META_PERFORMANCE_GOALS: MetaPerformanceGoalOption[] = [
   goal("AWARENESS_REACH", "OUTCOME_AWARENESS", "盡可能提高廣告觸及人數", "盡可能向更多受眾顯示廣告。", "REACH", "reach", "fb_reach", "none"),
   goal("AWARENESS_IMPRESSIONS", "OUTCOME_AWARENESS", "盡可能提高曝光次數", "盡可能提高廣告向受眾顯示的次數。", "IMPRESSIONS", "impressions", "fb_reach", "none"),
-  goal("AWARENESS_AD_RECALL", "OUTCOME_AWARENESS", "盡可能提高廣告回想提升幅度", "向可能會記得看過您廣告的受眾顯示廣告。", "AD_RECALL_LIFT", null, "fb_reach", "none"),
   goal("AWARENESS_THRUPLAY", "OUTCOME_AWARENESS", "盡可能提高 ThruPlay 觀看次數", "向可能看完整部短影片或至少 15 秒影片的受眾顯示影片廣告。", "THRUPLAY", "thruplays", "fb_video_views", "none"),
   goal("AWARENESS_2S_VIDEO", "OUTCOME_AWARENESS", "盡可能提高影片連續觀看 2 秒以上的次數", "向可能連續觀看 2 秒以上的受眾顯示影片廣告。", "VIDEO_VIEWS", "video_3s_views", "fb_video_views", "none"),
 
-  goal("TRAFFIC_LANDING_PAGE_VIEWS", "OUTCOME_TRAFFIC", "取得最多連結頁面瀏覽次數", "向最有可能查看廣告中所連結網站的受眾顯示廣告。", "LANDING_PAGE_VIEWS", "all_clicks", "fb_post_engagement", "website"),
-  goal("TRAFFIC_LINK_CLICKS", "OUTCOME_TRAFFIC", "取得最多連結點擊次數", "向最有可能點擊廣告的受眾顯示廣告。", "LINK_CLICKS", "all_clicks", "fb_post_engagement", "website"),
-  goal("TRAFFIC_DAILY_UNIQUE_REACH", "OUTCOME_TRAFFIC", "盡可能增加單日不重複觸及人數", "每天最多向受眾顯示一次廣告。", "REACH", "reach", "fb_reach", "none"),
-  goal("TRAFFIC_CONVERSATIONS", "OUTCOME_TRAFFIC", "盡可能增加對話數量", "向最有可能透過訊息與您對話的受眾顯示廣告。", "CONVERSATIONS", null, "fb_post_engagement", "messenger"),
-  goal("TRAFFIC_IMPRESSIONS", "OUTCOME_TRAFFIC", "盡可能提高曝光次數", "盡可能提高廣告向受眾顯示的次數。", "IMPRESSIONS", "impressions", "fb_reach", "none"),
+  goal("TRAFFIC_LINK_CLICKS", "OUTCOME_TRAFFIC", "取得最多連結點擊次數", "向最有可能點擊廣告連結的受眾顯示廣告。", "LINK_CLICKS", "all_clicks", "fb_post_engagement", "website"),
+  goal("TRAFFIC_LANDING_PAGE_VIEWS", "OUTCOME_TRAFFIC", "取得最多連結頁面瀏覽次數", "向最有可能查看廣告連結頁面的受眾顯示廣告。", "LANDING_PAGE_VIEWS", "all_clicks", "fb_post_engagement", "website"),
   goal("TRAFFIC_IG_PROFILE_VISITS", "OUTCOME_TRAFFIC", "提高 Instagram 個人檔案瀏覽次數", "向最有可能瀏覽 Instagram 個人檔案的受眾顯示廣告。", "PROFILE_VISIT", "profile_visits", "ig_followers", "instagram_profile"),
-  goal("TRAFFIC_CALLS", "OUTCOME_TRAFFIC", "盡可能增加通話次數", "向最有可能向您致電的受眾顯示廣告。", "LINK_CLICKS", "calls", "fb_post_engagement", "on_ad"),
 
-  goal("ENGAGEMENT_CONVERSATIONS", "OUTCOME_ENGAGEMENT", "盡可能增加對話數量", "向最有可能透過訊息與您對話的受眾顯示廣告。", "CONVERSATIONS", null, "fb_post_engagement", "messenger"),
-  goal("ENGAGEMENT_LINK_CLICKS", "OUTCOME_ENGAGEMENT", "取得最多連結點擊次數", "向最有可能點擊廣告的受眾顯示廣告。", "LINK_CLICKS", "all_clicks", "fb_post_engagement", "website"),
-  goal("ENGAGEMENT_IMPRESSIONS", "OUTCOME_ENGAGEMENT", "盡可能提高曝光次數", "盡可能提高廣告向受眾顯示的次數。", "IMPRESSIONS", "impressions", "fb_reach", "none"),
+  goal("ENGAGEMENT_POST_ENGAGEMENT", "OUTCOME_ENGAGEMENT", "盡可能提升貼文互動率", "向最有可能喜歡、分享貼文或留言的受眾顯示廣告。", "POST_ENGAGEMENT", "interactions_total", "fb_post_engagement", "on_ad"),
   goal("ENGAGEMENT_THRUPLAY", "OUTCOME_ENGAGEMENT", "盡可能提高 ThruPlay 觀看次數", "向可能看完整部短影片或至少 15 秒影片的受眾顯示影片廣告。", "THRUPLAY", "thruplays", "fb_video_views", "none"),
   goal("ENGAGEMENT_2S_VIDEO", "OUTCOME_ENGAGEMENT", "盡可能提高影片連續觀看 2 秒以上的次數", "向可能連續觀看 2 秒以上的受眾顯示影片廣告。", "VIDEO_VIEWS", "video_3s_views", "fb_video_views", "none"),
-  goal("ENGAGEMENT_POST_ENGAGEMENT", "OUTCOME_ENGAGEMENT", "盡可能提升貼文互動率", "向最有可能喜歡、分享貼文或在貼文留言的用戶顯示廣告。", "POST_ENGAGEMENT", "interactions_total", "fb_post_engagement", "on_ad"),
-  goal("ENGAGEMENT_DAILY_UNIQUE_REACH", "OUTCOME_ENGAGEMENT", "盡可能增加單日不重複觸及人數", "每天最多向受眾顯示一次廣告。", "REACH", "reach", "fb_reach", "none"),
-  goal("ENGAGEMENT_EVENT_RESPONSES", "OUTCOME_ENGAGEMENT", "盡可能增加活動回覆數量", "向最有可能回應活動的受眾顯示廣告。", "POST_ENGAGEMENT", "interactions_total", "fb_post_engagement", "on_ad"),
-  goal("ENGAGEMENT_CONVERSIONS", "OUTCOME_ENGAGEMENT", "取得最多轉換次數", "向最有可能在您的網站上採取特定動作的受眾顯示廣告。", "OFFSITE_CONVERSIONS", "conversions", "fb_post_engagement", "website"),
-  goal("ENGAGEMENT_LANDING_PAGE_VIEWS", "OUTCOME_ENGAGEMENT", "取得最多連結頁面瀏覽次數", "向最有可能查看廣告中所連結網站的受眾顯示廣告。", "LANDING_PAGE_VIEWS", "all_clicks", "fb_post_engagement", "website"),
-  goal("ENGAGEMENT_APP_EVENTS", "OUTCOME_ENGAGEMENT", "取得最多應用程式事件", "向最有可能在應用程式中採取特定動作的受眾顯示廣告。", "OFFSITE_CONVERSIONS", "app_events", "fb_post_engagement", "app"),
-  goal("ENGAGEMENT_REMINDERS", "OUTCOME_ENGAGEMENT", "增加提醒設定數量", "向最有可能針對近期活動設定提醒的受眾顯示廣告。", "POST_ENGAGEMENT", "interactions_total", "fb_post_engagement", "on_ad"),
-  goal("ENGAGEMENT_CALLS", "OUTCOME_ENGAGEMENT", "盡可能增加通話次數", "向最有可能向您致電的受眾顯示廣告。", "LINK_CLICKS", "calls", "fb_post_engagement", "on_ad"),
-  goal("ENGAGEMENT_PAGE_LIKES", "OUTCOME_ENGAGEMENT", "盡可能增加粉絲專頁按讚數", "以最低成本向最有可能對粉絲專頁按讚的受眾顯示廣告。", "POST_ENGAGEMENT", "likes", "fb_post_likes", "on_ad"),
-
-  goal("LEADS_CONVERSIONS", "OUTCOME_LEADS", "取得最多轉換次數", "向最有可能在網站上採取特定動作的受眾顯示廣告。", "OFFSITE_CONVERSIONS", "conversions", "fb_post_engagement", "website"),
-  goal("LEADS_LANDING_PAGE_VIEWS", "OUTCOME_LEADS", "取得最多連結頁面瀏覽次數", "向最有可能查看廣告中所連結網站的受眾顯示廣告。", "LANDING_PAGE_VIEWS", "all_clicks", "fb_post_engagement", "website"),
-  goal("LEADS_LINK_CLICKS", "OUTCOME_LEADS", "取得最多連結點擊次數", "向最有可能點擊廣告的受眾顯示廣告。", "LINK_CLICKS", "all_clicks", "fb_post_engagement", "website"),
-  goal("LEADS_DAILY_UNIQUE_REACH", "OUTCOME_LEADS", "盡可能增加單日不重複觸及人數", "每天最多向受眾顯示一次廣告。", "REACH", "reach", "fb_reach", "none"),
-  goal("LEADS_IMPRESSIONS", "OUTCOME_LEADS", "盡可能提高曝光次數", "盡可能提高廣告向受眾顯示的次數。", "IMPRESSIONS", "impressions", "fb_reach", "none"),
-  goal("LEADS_MAXIMIZE_LEADS", "OUTCOME_LEADS", "盡可能提高潛在顧客人數", "向最有可能與您分享聯絡資料的受眾顯示廣告。", "LEAD_GENERATION", "leads", "fb_post_engagement", "on_ad"),
-  goal("LEADS_QUALIFIED_LEADS", "OUTCOME_LEADS", "增加採取轉換動作的潛在顧客人數", "向分享聯絡資料後最有可能轉換的受眾顯示廣告。", "LEAD_GENERATION", "leads", "fb_post_engagement", "on_ad"),
-  goal("LEADS_MESSAGE_LEADS", "OUTCOME_LEADS", "盡可能增加透過訊息成為潛在顧客的人數", "向最有可能透過訊息成為潛在顧客的受眾顯示廣告。", "CONVERSATIONS", "leads", "fb_post_engagement", "messenger"),
-  goal("LEADS_CALLS", "OUTCOME_LEADS", "盡可能增加通話次數", "向最有可能向您致電的受眾顯示廣告。", "LINK_CLICKS", "calls", "fb_post_engagement", "on_ad"),
-  goal("LEADS_APP_EVENTS", "OUTCOME_LEADS", "取得最多應用程式事件", "向最有可能在應用程式中採取特定動作的受眾顯示廣告。", "OFFSITE_CONVERSIONS", "app_events", "fb_post_engagement", "app"),
-
-  goal("APP_APP_EVENTS", "OUTCOME_APP_PROMOTION", "取得最多應用程式事件", "向最有可能在應用程式中採取特定動作的受眾顯示廣告。", "OFFSITE_CONVERSIONS", "app_events", "fb_post_engagement", "app"),
-  goal("APP_INSTALLS", "OUTCOME_APP_PROMOTION", "盡可能增加應用程式安裝次數", "向最有可能安裝應用程式的受眾顯示廣告。", "APP_INSTALLS", "app_events", "fb_post_engagement", "app"),
-  goal("APP_VALUE", "OUTCOME_APP_PROMOTION", "獲得最高轉換價值", "向最有可能透過特定動作產生較高價值的用戶顯示廣告。", "VALUE", "conversions", "fb_post_engagement", "app"),
-  goal("APP_LINK_CLICKS", "OUTCOME_APP_PROMOTION", "取得最多連結點擊次數", "向最有可能點擊廣告的受眾顯示廣告。", "LINK_CLICKS", "all_clicks", "fb_post_engagement", "website"),
-
-  goal("SALES_CONVERSIONS", "OUTCOME_SALES", "取得最多轉換次數", "向最有可能在網站上採取特定動作的受眾顯示廣告。", "OFFSITE_CONVERSIONS", "conversions", "fb_post_engagement", "website"),
-  goal("SALES_VALUE", "OUTCOME_SALES", "獲得最高轉換價值", "向最有可能進行較高額消費的受眾顯示廣告。", "VALUE", "conversions", "fb_post_engagement", "website"),
-  goal("SALES_LANDING_PAGE_VIEWS", "OUTCOME_SALES", "取得最多連結頁面瀏覽次數", "向最有可能查看廣告中所連結網站的受眾顯示廣告。", "LANDING_PAGE_VIEWS", "all_clicks", "fb_post_engagement", "website"),
-  goal("SALES_LINK_CLICKS", "OUTCOME_SALES", "盡可能提高連結點擊次數", "向最有可能點擊廣告的受眾顯示廣告。", "LINK_CLICKS", "all_clicks", "fb_post_engagement", "website"),
-  goal("SALES_MESSAGE_PURCHASES", "OUTCOME_SALES", "盡可能增加透過訊息購買次數", "向最有可能透過訊息購買的用戶顯示廣告。", "CONVERSATIONS", "conversions", "fb_post_engagement", "messenger"),
-  goal("SALES_DAILY_UNIQUE_REACH", "OUTCOME_SALES", "盡可能增加單日不重複觸及人數", "每天最多向受眾顯示一次廣告。", "REACH", "reach", "fb_reach", "none"),
-  goal("SALES_IMPRESSIONS", "OUTCOME_SALES", "盡可能提高曝光次數", "盡可能提高廣告向受眾顯示的次數。", "IMPRESSIONS", "impressions", "fb_reach", "none"),
-  goal("SALES_CONVERSATIONS", "OUTCOME_SALES", "盡可能增加對話數量", "向最有可能透過訊息與您對話的受眾顯示廣告。", "CONVERSATIONS", null, "fb_post_engagement", "messenger"),
-  goal("SALES_CALLS", "OUTCOME_SALES", "盡可能增加通話次數", "向最有可能向您致電的受眾顯示廣告。", "LINK_CLICKS", "calls", "fb_post_engagement", "on_ad"),
-  goal("SALES_APP_EVENTS", "OUTCOME_SALES", "取得最多應用程式事件", "向最有可能在應用程式中採取特定動作的受眾顯示廣告。", "OFFSITE_CONVERSIONS", "app_events", "fb_post_engagement", "app"),
+  goal("ENGAGEMENT_DAILY_UNIQUE_REACH", "OUTCOME_ENGAGEMENT", "盡可能增加單日不重複觸及人數", "每天最多向同一位受眾顯示一次廣告。", "REACH", "reach", "fb_reach", "none"),
 ];
 
 const GOAL_PRIMARY_METRIC: Record<MetaAdGoalKey, MetaKpiMetricKey> = {
@@ -324,7 +286,7 @@ export function listMetaGoals(): MetaAdGoalTemplate[] {
 }
 
 export function listPerformanceGoalsByObjective(objective: MetaCampaignObjective): MetaPerformanceGoalOption[] {
-  return META_PERFORMANCE_GOALS.filter((item) => item.objective === objective);
+  return META_PERFORMANCE_GOALS.filter((item) => item.objective === objective && item.supportedInPostFlow !== false);
 }
 
 export function getPerformanceGoal(code: string): MetaPerformanceGoalOption {

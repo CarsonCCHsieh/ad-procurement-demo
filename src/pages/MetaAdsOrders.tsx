@@ -278,7 +278,8 @@ export function MetaAdsOrdersPage() {
   const availableIndustries = presets.industries.filter((industry) => industry.enabled);
   const selectedIndustry = availableIndustries.find((industry) => industry.key === state.industryKey) ?? availableIndustries[0] ?? presets.industries[0];
   const objectiveGoals = listPerformanceGoalsByObjective(state.campaignObjective);
-  const performanceGoal = getPerformanceGoal(state.performanceGoalCode);
+  const currentObjectiveGoal = objectiveGoals.find((item) => item.code === state.performanceGoalCode) ?? objectiveGoals[0];
+  const performanceGoal = currentObjectiveGoal ?? getPerformanceGoal(state.performanceGoalCode);
   const targetMetricKey = getTrackedMetricKeyForPerformanceGoal(state.performanceGoalCode, performanceGoal.defaultGoal);
   const targetLabel = getPerformanceGoalTargetLabel(state.performanceGoalCode, performanceGoal.defaultGoal);
   const account = getManagedMetaAccount(presets, cfg.adAccountId);
@@ -289,6 +290,12 @@ export function MetaAdsOrdersPage() {
   const customAudienceIds = parseIdLines(state.customAudienceIdsText);
   const excludedAudienceIds = parseIdLines(state.excludedAudienceIdsText);
   const templateNotes = listTemplateNotes(state.detailedTargetingText);
+
+  useEffect(() => {
+    if (objectiveGoals.length > 0 && !objectiveGoals.some((goal) => goal.code === state.performanceGoalCode)) {
+      setState((current) => ({ ...current, performanceGoalCode: objectiveGoals[0].code }));
+    }
+  }, [objectiveGoals, state.performanceGoalCode]);
 
   const setField = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setState((current) => {
@@ -303,6 +310,7 @@ export function MetaAdsOrdersPage() {
 
   const setObjective = (objective: MetaCampaignObjective) => {
     const nextGoal = listPerformanceGoalsByObjective(objective)[0];
+    if (!nextGoal) return;
     setState((current) => ({
       ...current,
       campaignObjective: objective,
@@ -607,7 +615,7 @@ export function MetaAdsOrdersPage() {
                   <label className="field">
                     <div className="label">行銷活動目標</div>
                     <select value={state.campaignObjective} onChange={(e) => setObjective(e.target.value as MetaCampaignObjective)}>
-                      {META_CAMPAIGN_OBJECTIVE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                      {META_CAMPAIGN_OBJECTIVE_OPTIONS.filter((option) => listPerformanceGoalsByObjective(option.value).length > 0).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                     </select>
                     <div className="hint">{META_CAMPAIGN_OBJECTIVE_OPTIONS.find((item) => item.value === state.campaignObjective)?.desc}</div>
                   </label>
