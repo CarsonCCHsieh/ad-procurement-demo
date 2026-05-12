@@ -2628,6 +2628,8 @@ function defaultMetaSettings() {
     pageId: "",
     pageName: "",
     instagramActorId: "",
+    taiwanBeneficiaryId: "",
+    taiwanPayerId: "",
     optimization: {
       enabled: true,
       autoStopCheckMinutes: 5,
@@ -2653,6 +2655,8 @@ function readMetaSettings() {
     pageId: String(stored.pageId || ""),
     pageName: String(stored.pageName || ""),
     instagramActorId: String(stored.instagramActorId || ""),
+    taiwanBeneficiaryId: String(stored.taiwanBeneficiaryId || ""),
+    taiwanPayerId: String(stored.taiwanPayerId || ""),
     optimization: { ...base.optimization, ...(stored.optimization || {}) },
     industries: Array.isArray(stored.industries) ? stored.industries : [],
   };
@@ -2964,6 +2968,16 @@ function assertSupportedMetaPostFlowGoal(objective, optimizationGoal) {
   }
 }
 
+function buildTaiwanRegionalRegulationIdentities(settings) {
+  const beneficiary = String(settings?.taiwanBeneficiaryId || "").trim();
+  const payer = String(settings?.taiwanPayerId || beneficiary || "").trim();
+  if (!beneficiary && !payer) return null;
+  return {
+    taiwan_universal_beneficiary: beneficiary || payer,
+    taiwan_universal_payer: payer || beneficiary,
+  };
+}
+
 function buildMetaTargeting(input, settings, variantIndex) {
   const countries = Array.isArray(input?.countries) && input.countries.length ? input.countries : ["TW"];
   const facebookPositions = Array.isArray(input?.manualPlacements?.facebook) ? input.manualPlacements.facebook.filter(Boolean) : [];
@@ -3093,6 +3107,7 @@ async function createMetaOrderSecure(input) {
   const totalBudgetCents = Math.round(dailyBudget * 100);
   const variantBudgetCents = Math.max(100, Math.floor(totalBudgetCents / variantCount));
   const promotedObject = buildPromotedObject(input, settings);
+  const regionalRegulationIdentities = buildTaiwanRegionalRegulationIdentities(settings);
   const pageId = String(settings.pageId || input?.pageId || trackingRef?.pageId || "").trim();
   const instagramActorId = String(settings.instagramActorId || input?.instagramActorId || "").trim();
   const postRef = String(input?.existingPostId || trackingRef?.refId || "").trim();
@@ -3113,6 +3128,7 @@ async function createMetaOrderSecure(input) {
       // Meta requires this declaration for any ad set targeting Taiwan.
       // Keep it server-side so users do not need to understand regional compliance fields.
       regional_regulated_categories: ["TAIWAN_UNIVERSAL"],
+      regional_regulation_identities: regionalRegulationIdentities || undefined,
       promoted_object: Object.keys(promotedObject).length ? promotedObject : undefined,
       status: "PAUSED",
     });
@@ -4487,6 +4503,8 @@ const server = http.createServer(async (req, res) => {
         pageId: typeof payload.pageId === "string" ? String(payload.pageId || "") : String(current.pageId || ""),
         pageName: typeof payload.pageName === "string" ? String(payload.pageName || "") : String(current.pageName || ""),
         instagramActorId: typeof payload.instagramActorId === "string" ? String(payload.instagramActorId || "") : String(current.instagramActorId || ""),
+        taiwanBeneficiaryId: typeof payload.taiwanBeneficiaryId === "string" ? String(payload.taiwanBeneficiaryId || "").trim() : String(current.taiwanBeneficiaryId || ""),
+        taiwanPayerId: typeof payload.taiwanPayerId === "string" ? String(payload.taiwanPayerId || "").trim() : String(current.taiwanPayerId || ""),
         optimization: { ...current.optimization, ...(payload.optimization || {}) },
         industries: Array.isArray(payload.industries) ? payload.industries : current.industries,
         updatedAt: new Date().toISOString(),

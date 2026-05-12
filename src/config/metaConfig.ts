@@ -12,6 +12,8 @@ export type MetaConfigV1 = {
   pageId: string;
   pageName: string;
   instagramActorId: string;
+  taiwanBeneficiaryId: string;
+  taiwanPayerId: string;
   accessToken: string;
   userAccessToken: string;
   adsAccessToken: string;
@@ -65,6 +67,8 @@ export const DEFAULT_META_CONFIG: MetaConfigV1 = {
   pageId: "",
   pageName: "",
   instagramActorId: "",
+  taiwanBeneficiaryId: "",
+  taiwanPayerId: "",
   accessToken: "",
   userAccessToken: "",
   adsAccessToken: "",
@@ -89,6 +93,8 @@ function normalize(raw: unknown): MetaConfigV1 | null {
     pageId: String(row.pageId || ""),
     pageName: String(row.pageName || ""),
     instagramActorId: String(row.instagramActorId || ""),
+    taiwanBeneficiaryId: String(row.taiwanBeneficiaryId || ""),
+    taiwanPayerId: String(row.taiwanPayerId || ""),
     // Tokens are intentionally not persisted in browser storage. Backend secrets are the source of truth.
     accessToken: "",
     userAccessToken: "",

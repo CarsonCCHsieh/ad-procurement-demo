@@ -124,6 +124,8 @@ export function buildMetaPayloads(cfg: MetaConfigV1, input: MetaOrderInput): {
   if (input.appId) promotedObject.application_id = input.appId;
   if (input.appStoreUrl) promotedObject.object_store_url = input.appStoreUrl;
   if (input.appEventType && !input.conversionEvent) promotedObject.custom_event_type = input.appEventType;
+  const taiwanBeneficiaryId = String(cfg.taiwanBeneficiaryId || "").trim();
+  const taiwanPayerId = String(cfg.taiwanPayerId || taiwanBeneficiaryId || "").trim();
 
   const campaign: Record<string, unknown> = {
     name: input.campaignName || `${input.title}_campaign`,
@@ -149,6 +151,12 @@ export function buildMetaPayloads(cfg: MetaConfigV1, input: MetaOrderInput): {
     // Required by Meta when the ad set targets Taiwan. This stays hidden from normal users.
     regional_regulated_categories: ["TAIWAN_UNIVERSAL"],
   };
+  if (taiwanBeneficiaryId || taiwanPayerId) {
+    adset.regional_regulation_identities = {
+      taiwan_universal_beneficiary: taiwanBeneficiaryId || taiwanPayerId,
+      taiwan_universal_payer: taiwanPayerId || taiwanBeneficiaryId,
+    };
+  }
   const destinationType = normalizeDestinationType(input.conversionLocation);
   if (destinationType) {
     adset.destination_type = destinationType;
