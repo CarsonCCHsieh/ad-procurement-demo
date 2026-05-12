@@ -2971,6 +2971,10 @@ function assertSupportedMetaPostFlowGoal(objective, optimizationGoal) {
 function buildTaiwanRegionalRegulationIdentities(settings) {
   const beneficiary = String(settings?.taiwanBeneficiaryId || "").trim();
   const payer = String(settings?.taiwanPayerId || beneficiary || "").trim();
+  // Leave this unset by default. Meta Ads Manager can keep advertiser/payer
+  // defaults on the ad account; sending no identities lets that server-side
+  // default apply. These fields are only an advanced override when Meta still
+  // rejects Taiwan-targeted ad sets for missing advertiser transparency data.
   if (!beneficiary && !payer) return null;
   return {
     taiwan_universal_beneficiary: beneficiary || payer,

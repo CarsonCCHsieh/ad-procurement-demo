@@ -487,14 +487,14 @@ export function MetaSettingsCard(props: {
           <input value={cfg.instagramActorId} onChange={(event) => setCfg({ ...cfg, instagramActorId: event.target.value.trim() })} />
         </label>
         <label className="field">
-          <div className="label">台灣受益方廣告主 ID</div>
-          <input value={cfg.taiwanBeneficiaryId} onChange={(event) => setCfg({ ...cfg, taiwanBeneficiaryId: event.target.value.trim() })} placeholder="Meta 已驗證廣告主 / 受益方 ID" />
-          <div className="hint">投放台灣受眾必填。若付款方與受益方相同，可兩欄填同一個 ID。</div>
+          <div className="label">台灣受益方覆寫 ID</div>
+          <input value={cfg.taiwanBeneficiaryId} onChange={(event) => setCfg({ ...cfg, taiwanBeneficiaryId: event.target.value.trim() })} placeholder="通常留空，使用 Meta 後台預設值" />
+          <div className="hint">若 Meta 後台已設定預設廣告主與出資者，這裡不需要填。只有 API 仍回報缺少廣告主資訊時，才由 Meta 管理員提供身分 ID 覆寫。</div>
         </label>
         <label className="field">
-          <div className="label">台灣付款方廣告主 ID</div>
-          <input value={cfg.taiwanPayerId} onChange={(event) => setCfg({ ...cfg, taiwanPayerId: event.target.value.trim() })} placeholder="Meta 已驗證廣告主 / 付款方 ID" />
-          <div className="hint">Meta 會用於台灣地區廣告透明度。請勿填 Business ID 或廣告帳號 ID。</div>
+          <div className="label">台灣出資方覆寫 ID</div>
+          <input value={cfg.taiwanPayerId} onChange={(event) => setCfg({ ...cfg, taiwanPayerId: event.target.value.trim() })} placeholder="通常留空，使用 Meta 後台預設值" />
+          <div className="hint">留空時不會送出 regional_regulation_identities，讓 Meta 使用廣告帳號中的預設出資者設定。</div>
         </label>
       </div>
 

@@ -151,6 +151,9 @@ export function buildMetaPayloads(cfg: MetaConfigV1, input: MetaOrderInput): {
     // Required by Meta when the ad set targets Taiwan. This stays hidden from normal users.
     regional_regulated_categories: ["TAIWAN_UNIVERSAL"],
   };
+  // Leave identities unset unless an admin explicitly provides overrides.
+  // When Meta Ads Manager has advertiser/payer defaults, omitting this field
+  // allows the account-level default to apply during Ad Set creation.
   if (taiwanBeneficiaryId || taiwanPayerId) {
     adset.regional_regulation_identities = {
       taiwan_universal_beneficiary: taiwanBeneficiaryId || taiwanPayerId,
