@@ -146,6 +146,8 @@ export function buildMetaPayloads(cfg: MetaConfigV1, input: MetaOrderInput): {
     start_time: input.startTime,
     status: "PAUSED",
     targeting,
+    // Required by Meta when the ad set targets Taiwan. This stays hidden from normal users.
+    regional_regulated_categories: ["TAIWAN_UNIVERSAL"],
   };
   const destinationType = normalizeDestinationType(input.conversionLocation);
   if (destinationType) {

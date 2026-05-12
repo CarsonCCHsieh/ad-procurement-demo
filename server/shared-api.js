@@ -3094,6 +3094,9 @@ async function createMetaOrderSecure(input) {
       start_time: input?.startTime || nowIso,
       end_time: input?.endTime || undefined,
       targeting: buildMetaTargeting(enrichedInput, settings, index),
+      // Meta requires this declaration for any ad set targeting Taiwan.
+      // Keep it server-side so users do not need to understand regional compliance fields.
+      regional_regulated_categories: ["TAIWAN_UNIVERSAL"],
       promoted_object: Object.keys(promotedObject).length ? promotedObject : undefined,
       status: "PAUSED",
     });
