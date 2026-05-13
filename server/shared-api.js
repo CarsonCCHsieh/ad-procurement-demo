@@ -3012,9 +3012,9 @@ function buildMetaTargeting(input, settings, variantIndex) {
   return targeting;
 }
 
-function buildPromotedObject(input, settings) {
+function buildPromotedObject(input, settings, pageIdOverride = "") {
   const out = {};
-  const pageId = String(settings.pageId || input?.pageId || "").trim();
+  const pageId = String(pageIdOverride || input?.pageId || settings.pageId || "").trim();
   if (pageId) out.page_id = pageId;
   if (input?.pixelId) out.pixel_id = String(input.pixelId);
   if (input?.conversionEvent) out.custom_event_type = String(input.conversionEvent);
@@ -3111,11 +3111,15 @@ async function createMetaOrderSecure(input) {
   const variants = [];
   const totalBudgetCents = Math.round(dailyBudget * 100);
   const variantBudgetCents = Math.max(100, Math.floor(totalBudgetCents / variantCount));
-  const promotedObject = buildPromotedObject(input, settings);
   const regionalRegulationIdentities = buildTaiwanRegionalRegulationIdentities(settings, adAccount);
-  const pageId = String(settings.pageId || input?.pageId || trackingRef?.pageId || "").trim();
-  const instagramActorId = String(settings.instagramActorId || input?.instagramActorId || "").trim();
   const postRef = String(input?.existingPostId || trackingRef?.refId || "").trim();
+  const postOwnerPageId = derivePageIdFromPostId(postRef) || String(trackingRef?.pageId || "").trim();
+  // Existing-post creatives must use the Page that owns the post. The configured
+  // default Page can differ from the submitted post URL, so the resolved post
+  // owner wins over settings/input values.
+  const pageId = String(postOwnerPageId || input?.pageId || settings.pageId || "").trim();
+  const instagramActorId = String(settings.instagramActorId || input?.instagramActorId || "").trim();
+  const promotedObject = buildPromotedObject(input, settings, pageId);
 
   for (let index = 0; index < variantCount; index += 1) {
     const suffix = variantCount > 1 ? (index === 0 ? "模板受眾" : "廣泛受眾") : "直投";
