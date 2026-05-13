@@ -509,6 +509,18 @@ async function graphApiPost(apiVersion, token, path, params = {}) {
   return jsonBody;
 }
 
+async function graphApiDelete(apiVersion, token, path) {
+  const res = await fetch(graphUrl(apiVersion, path, { access_token: token }), {
+    method: "DELETE",
+  });
+  const jsonBody = await res.json().catch(() => ({}));
+  if (!res.ok || jsonBody.error) {
+    const e = jsonBody?.error;
+    throw new Error(e?.error_user_msg || e?.message || `HTTP ${res.status}`);
+  }
+  return jsonBody;
+}
+
 async function listAvailablePages(metaSecrets) {
   const now = Date.now();
   if (metaPagesCache && now - metaPagesCache.fetchedAt < 5 * 60 * 1000) {
@@ -3071,6 +3083,22 @@ function buildTaiwanRegionalRegulationIdentities(settings, adAccount = null) {
   };
 }
 
+const META_BUDGET_WHOLE_UNIT_CURRENCIES = new Set([
+  "TWD",
+  "JPY",
+  "KRW",
+  "VND",
+  "CLP",
+  "ISK",
+]);
+
+function metaBudgetAmount(value, currency = "") {
+  const amount = Math.max(1, Number(value || 0));
+  const normalizedCurrency = String(currency || "").trim().toUpperCase();
+  const multiplier = META_BUDGET_WHOLE_UNIT_CURRENCIES.has(normalizedCurrency) ? 1 : 100;
+  return Math.max(1, Math.round(amount * multiplier));
+}
+
 function buildMetaTargeting(input, settings, variantIndex) {
   const countries = Array.isArray(input?.countries) && input.countries.length ? input.countries : ["TW"];
   const facebookPositions = Array.isArray(input?.manualPlacements?.facebook) ? input.manualPlacements.facebook.filter(Boolean) : [];
@@ -3197,8 +3225,9 @@ async function createMetaOrderSecure(input) {
 
   const variantCount = mode === "optimized" ? 2 : 1;
   const variants = [];
-  const totalBudgetCents = Math.round(dailyBudget * 100);
-  const variantBudgetCents = Math.max(100, Math.floor(totalBudgetCents / variantCount));
+  const accountCurrency = String(adAccount?.currency || "").trim().toUpperCase();
+  const totalBudgetMinor = metaBudgetAmount(dailyBudget, accountCurrency);
+  const variantBudgetMinor = Math.max(1, Math.floor(totalBudgetMinor / variantCount));
   const regionalRegulationIdentities = buildTaiwanRegionalRegulationIdentities(settings, adAccount);
   const postRef = String(input?.existingPostId || trackingRef?.refId || "").trim();
   const postOwnerPageId = derivePageIdFromPostId(postRef) || String(trackingRef?.pageId || "").trim();
@@ -3209,68 +3238,96 @@ async function createMetaOrderSecure(input) {
   const instagramActorId = String(settings.instagramActorId || input?.instagramActorId || "").trim();
   const promotedObject = buildPromotedObject(input, settings, pageId);
 
-  for (let index = 0; index < variantCount; index += 1) {
-    const suffix = variantCount > 1 ? (index === 0 ? "模板受眾" : "廣泛受眾") : "直投";
-    const adset = await graphApiPost(apiVersion, token, `/act_${adAccountId}/adsets`, {
-      name: `${String(input?.adsetName || campaignName).trim()} - ${suffix}`,
-      campaign_id: campaign.id,
-      daily_budget: String(variantBudgetCents),
-      billing_event: "IMPRESSIONS",
-      optimization_goal: optimizationGoal,
-      bid_strategy: "LOWEST_COST_WITHOUT_CAP",
-      is_adset_budget_sharing_enabled: false,
-      start_time: input?.startTime || nowIso,
-      end_time: input?.endTime || undefined,
-      targeting: buildMetaTargeting(enrichedInput, settings, index),
-      // Meta requires this declaration for any ad set targeting Taiwan.
-      // Keep it server-side so users do not need to understand regional compliance fields.
-      regional_regulated_categories: ["TAIWAN_UNIVERSAL"],
-      regional_regulation_identities: regionalRegulationIdentities || undefined,
-      promoted_object: Object.keys(promotedObject).length ? promotedObject : undefined,
-      status: "PAUSED",
-    });
-    requestLogs.push({ step: `adset_${index + 1}`, ok: true, detail: String(adset.id || "") });
+  const createdIds = {
+    campaigns: [String(campaign.id || "")].filter(Boolean),
+    adsets: [],
+    creatives: [],
+    ads: [],
+  };
 
-    const creativePayload = { name: `${String(input?.adName || campaignName).trim()} - ${suffix}` };
-    if (String(trackingRef?.platform || input?.platform || "").toLowerCase() === "instagram") {
-      creativePayload.source_instagram_media_id = postRef;
-    } else if (pageId && postRef) {
-      creativePayload.object_story_id = postRef.includes("_") ? postRef : `${pageId}_${postRef}`;
-    } else if (pageId) {
-      creativePayload.object_story_spec = {
-        page_id: pageId,
-        instagram_actor_id: instagramActorId || undefined,
-        link_data: {
-          message: input?.message || "",
-          link: input?.destinationUrl || input?.postUrl,
-          call_to_action: { type: input?.ctaType || "LEARN_MORE", value: { link: input?.destinationUrl || input?.postUrl } },
-        },
-      };
+  try {
+    for (let index = 0; index < variantCount; index += 1) {
+      const suffix = variantCount > 1 ? (index === 0 ? "模板受眾" : "廣泛受眾") : "直投";
+      const adset = await graphApiPost(apiVersion, token, `/act_${adAccountId}/adsets`, {
+        name: `${String(input?.adsetName || campaignName).trim()} - ${suffix}`,
+        campaign_id: campaign.id,
+        daily_budget: String(variantBudgetMinor),
+        billing_event: "IMPRESSIONS",
+        optimization_goal: optimizationGoal,
+        bid_strategy: "LOWEST_COST_WITHOUT_CAP",
+        is_adset_budget_sharing_enabled: false,
+        start_time: input?.startTime || nowIso,
+        end_time: input?.endTime || undefined,
+        targeting: buildMetaTargeting(enrichedInput, settings, index),
+        // Meta requires this declaration for any ad set targeting Taiwan.
+        // Keep it server-side so users do not need to understand regional compliance fields.
+        regional_regulated_categories: ["TAIWAN_UNIVERSAL"],
+        regional_regulation_identities: regionalRegulationIdentities || undefined,
+        promoted_object: Object.keys(promotedObject).length ? promotedObject : undefined,
+        status: "PAUSED",
+      });
+      createdIds.adsets.push(String(adset.id || ""));
+      requestLogs.push({ step: `adset_${index + 1}`, ok: true, detail: String(adset.id || "") });
+
+      const creativePayload = { name: `${String(input?.adName || campaignName).trim()} - ${suffix}` };
+      if (String(trackingRef?.platform || input?.platform || "").toLowerCase() === "instagram") {
+        creativePayload.source_instagram_media_id = postRef;
+      } else if (pageId && postRef) {
+        creativePayload.object_story_id = postRef.includes("_") ? postRef : `${pageId}_${postRef}`;
+      } else if (pageId) {
+        creativePayload.object_story_spec = {
+          page_id: pageId,
+          instagram_actor_id: instagramActorId || undefined,
+          link_data: {
+            message: input?.message || "",
+            link: input?.destinationUrl || input?.postUrl,
+            call_to_action: { type: input?.ctaType || "LEARN_MORE", value: { link: input?.destinationUrl || input?.postUrl } },
+          },
+        };
+      }
+
+      const creative = await graphApiPost(apiVersion, token, `/act_${adAccountId}/adcreatives`, creativePayload);
+      createdIds.creatives.push(String(creative.id || ""));
+      requestLogs.push({ step: `creative_${index + 1}`, ok: true, detail: String(creative.id || "") });
+
+      const ad = await graphApiPost(apiVersion, token, `/act_${adAccountId}/ads`, {
+        name: `${String(input?.adName || campaignName).trim()} - ${suffix}`,
+        adset_id: adset.id,
+        creative: { creative_id: creative.id },
+        status: "PAUSED",
+      });
+      createdIds.ads.push(String(ad.id || ""));
+      requestLogs.push({ step: `ad_${index + 1}`, ok: true, detail: String(ad.id || "") });
+
+      variants.push({
+        id: `${Date.now()}_${index}`,
+        label: suffix,
+        campaignId: String(campaign.id || ""),
+        adsetId: String(adset.id || ""),
+        creativeId: String(creative.id || ""),
+        adId: String(ad.id || ""),
+        budget: dailyBudget / variantCount,
+        status: "submitted",
+        performance: null,
+        proxyRoas: null,
+      });
     }
-
-    const creative = await graphApiPost(apiVersion, token, `/act_${adAccountId}/adcreatives`, creativePayload);
-    requestLogs.push({ step: `creative_${index + 1}`, ok: true, detail: String(creative.id || "") });
-
-    const ad = await graphApiPost(apiVersion, token, `/act_${adAccountId}/ads`, {
-      name: `${String(input?.adName || campaignName).trim()} - ${suffix}`,
-      adset_id: adset.id,
-      creative: { creative_id: creative.id },
-      status: "PAUSED",
-    });
-    requestLogs.push({ step: `ad_${index + 1}`, ok: true, detail: String(ad.id || "") });
-
-    variants.push({
-      id: `${Date.now()}_${index}`,
-      label: suffix,
-      campaignId: String(campaign.id || ""),
-      adsetId: String(adset.id || ""),
-      creativeId: String(creative.id || ""),
-      adId: String(ad.id || ""),
-      budget: variantBudgetCents / 100,
-      status: "submitted",
-      performance: null,
-      proxyRoas: null,
-    });
+  } catch (error) {
+    const cleanupTargets = [
+      ...createdIds.ads,
+      ...createdIds.creatives,
+      ...createdIds.adsets,
+      ...createdIds.campaigns,
+    ].filter(Boolean);
+    for (const id of cleanupTargets) {
+      try {
+        await graphApiDelete(apiVersion, token, `/${encodeURIComponent(id)}`);
+        requestLogs.push({ step: "cleanup", ok: true, detail: id });
+      } catch (cleanupError) {
+        requestLogs.push({ step: "cleanup", ok: false, detail: `${id}: ${cleanupError instanceof Error ? cleanupError.message : "cleanup failed"}` });
+      }
+    }
+    throw error;
   }
 
   const submitResult = {

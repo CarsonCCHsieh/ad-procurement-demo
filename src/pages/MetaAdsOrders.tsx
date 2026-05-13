@@ -652,6 +652,11 @@ export function MetaAdsOrdersPage() {
                     <div className="label">貼文連結</div>
                     <input value={state.postUrl} onChange={(e) => setField("postUrl", e.target.value)} placeholder="貼上 Facebook 或 Instagram 貼文 / Reels 連結" />
                   </label>
+                  <label className="field">
+                    <div className="label">行動呼籲網址（選填）</div>
+                    <input value={state.destinationUrl} onChange={(e) => setField("destinationUrl", e.target.value)} placeholder="若貼文本身沒有連結，但投放目標需要落地頁，可填入 https://..." />
+                    <div className="hint">使用既有貼文時，Meta 通常沿用貼文本身素材與 CTA；此欄只作為需要落地頁的目標備用。</div>
+                  </label>
                   <button className="btn primary" type="button" onClick={() => void resolvePost()} disabled={resolving}>{resolving ? "驗證中..." : "驗證貼文"}</button>
                 </div>
                 {resolved?.preview || resolved?.existingPostId ? (
