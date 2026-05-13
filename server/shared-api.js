@@ -1476,11 +1476,9 @@ async function resolveInstagramTrackingFromUrl(metaSecrets, rawUrl, preloadedAcc
 
 async function resolveFacebookTrackingFromUrl(metaSecrets, rawUrl) {
   const publicResolved = await resolveFacebookTrackingFromPublicUrl(rawUrl);
-  if (publicResolved) return publicResolved;
-
   const expandedUrl = await followRedirectUrl(rawUrl);
   const info = parseFacebookPostUrl(expandedUrl) || parseFacebookPostUrl(rawUrl);
-  if (!info?.username) return null;
+  if (!info?.username && !publicResolved) return null;
 
   let pageId = "";
   if (!pageId && info.pageIdFromQuery && /^\d+$/.test(info.pageIdFromQuery)) {
@@ -1492,19 +1490,8 @@ async function resolveFacebookTrackingFromUrl(metaSecrets, rawUrl) {
   let pageName = info.username;
   let feedToken = getMetaToken(metaSecrets, "facebook");
 
-  if (info.storyFbid && /^\d+$/.test(info.storyFbid)) {
-    return buildMetaTrackingRef({
-      platform: "facebook",
-      refId: `${pageId}_${info.storyFbid}`,
-      sourceUrl: rawUrl,
-      canonicalUrl: expandedUrl || rawUrl,
-      pageId,
-      pageName,
-      resolver: "facebook_story_fbid",
-    });
-  }
-
   const urlCandidates = [expandedUrl, rawUrl]
+    .concat(publicResolved?.canonicalUrl || [])
     .flatMap((item) => {
       const value = String(item || "").trim();
       if (!value) return [];
@@ -1519,6 +1506,109 @@ async function resolveFacebookTrackingFromUrl(metaSecrets, rawUrl) {
     .map((item) => String(item || "").trim())
     .filter(Boolean)
     .filter((item, idx, arr) => arr.indexOf(item) === idx);
+
+  const publicPostId = String(publicResolved?.refId || "").split("_").pop() || "";
+  const canonicalPostIds = urlCandidates
+    .map((item) => {
+      const parsed = tryParseUrl(item);
+      const segments = parsed ? parsed.pathname.split("/").filter(Boolean) : [];
+      const postIndex = segments.indexOf("posts");
+      return postIndex >= 0 && /^\d{6,}$/.test(segments[postIndex + 1] || "") ? segments[postIndex + 1] : "";
+    })
+    .filter(Boolean);
+  const matchTokens = uniqueStrings([
+    info.token,
+    info.storyFbid,
+    info.postIdToken,
+    publicPostId,
+    ...canonicalPostIds,
+  ]).filter(Boolean);
+  const normalizedSources = uniqueStrings([
+    info.rawUrl,
+    expandedUrl,
+    rawUrl,
+    publicResolved?.canonicalUrl,
+    publicResolved?.sourceUrl,
+  ].map((item) => normalizeComparableUrl(item)).filter(Boolean));
+
+  let pages = [];
+  try {
+    pages = await listAvailablePages(metaSecrets);
+  } catch {
+    pages = [];
+  }
+
+  const pageCandidates = [];
+  const addPageCandidate = (page) => {
+    const candidatePageId = String(page?.id || "").trim();
+    const token = String(page?.access_token || "").trim();
+    if (!candidatePageId || !token) return;
+    if (pageCandidates.some((item) => item.id === candidatePageId)) return;
+    pageCandidates.push({
+      id: candidatePageId,
+      name: String(page?.name || pageName || "").trim(),
+      token,
+    });
+  };
+  const preferredPageId = String(metaSecrets.preferredPageId || "").trim();
+  pages
+    .filter((page) => String(page?.id || "").trim() === preferredPageId)
+    .forEach(addPageCandidate);
+  pages
+    .filter((page) => String(page?.id || "").trim() === pageId)
+    .forEach(addPageCandidate);
+  pages.forEach(addPageCandidate);
+
+  if (matchTokens.length && pageCandidates.length) {
+    for (const candidatePage of pageCandidates.slice(0, 6)) {
+      for (const edge of ["posts", "feed"]) {
+        let after = "";
+        for (let pageIndex = 0; pageIndex < 20; pageIndex += 1) {
+          let feed = null;
+          try {
+            feed = await graphApiGet(metaSecrets.apiVersion, candidatePage.token, `/${encodeURIComponent(candidatePage.id)}/${edge}`, {
+              fields: "id,permalink_url,created_time,message",
+              limit: 100,
+              after: after || undefined,
+            });
+          } catch {
+            break;
+          }
+
+          const rows = Array.isArray(feed?.data) ? feed.data : [];
+          for (const row of rows) {
+            const permalink = typeof row?.permalink_url === "string" ? row.permalink_url : "";
+            const normalizedPermalink = normalizeComparableUrl(permalink);
+            const id = typeof row?.id === "string" ? row.id.trim() : "";
+            const rowPostId = id.split("_").pop() || "";
+            const tokenMatched = matchTokens.some((token) =>
+              token &&
+              (id.includes(token) ||
+                rowPostId === token ||
+                permalink.includes(token) ||
+                normalizedPermalink.includes(token))
+            );
+            const urlMatched = normalizedSources.some((source) => source && normalizedPermalink === source);
+            if (id && (tokenMatched || urlMatched)) {
+              return buildMetaTrackingRef({
+                platform: "facebook",
+                refId: id,
+                sourceUrl: rawUrl,
+                canonicalUrl: permalink || publicResolved?.canonicalUrl || rawUrl,
+                pageId: candidatePage.id,
+                pageName: candidatePage.name || pageName,
+                resolver: `facebook_${edge}_page_token_scan`,
+              });
+            }
+          }
+
+          const nextAfter = typeof feed?.paging?.cursors?.after === "string" ? feed.paging.cursors.after : "";
+          if (!nextAfter || nextAfter === after) break;
+          after = nextAfter;
+        }
+      }
+    }
+  }
 
   for (const candidate of urlCandidates) {
     const canonicalUrl = await fetchOpenGraphUrl(candidate);
@@ -1561,14 +1651,6 @@ async function resolveFacebookTrackingFromUrl(metaSecrets, rawUrl) {
     }
   }
 
-  if (!pageId) return null;
-
-  let pages = [];
-  try {
-    pages = await listAvailablePages(metaSecrets);
-  } catch {
-    pages = [];
-  }
   const page = pages.find((item) => String(item?.id || "") === pageId);
   if (String(page?.name || "").trim()) {
     pageName = String(page.name).trim();
@@ -1600,10 +1682,10 @@ async function resolveFacebookTrackingFromUrl(metaSecrets, rawUrl) {
     }
   }
 
-  const matchToken = info.token || info.postIdToken;
+  const matchToken = info.token || info.postIdToken || publicPostId;
   if (!matchToken) return null;
 
-  const normalizedSource = normalizeComparableUrl(info.rawUrl || expandedUrl || rawUrl);
+  const normalizedSource = normalizeComparableUrl(info.rawUrl || publicResolved?.canonicalUrl || expandedUrl || rawUrl);
   for (const edge of ["posts", "feed"]) {
     let after = "";
     for (let pageIndex = 0; pageIndex < 6; pageIndex += 1) {
@@ -1649,6 +1731,8 @@ async function resolveFacebookTrackingFromUrl(metaSecrets, rawUrl) {
     }
   }
 
+  if (publicResolved) return publicResolved;
+
   if (info.postIdToken && /^\d+$/.test(info.postIdToken) && /^\d+$/.test(pageId)) {
     return buildMetaTrackingRef({
       platform: "facebook",
@@ -1668,7 +1752,11 @@ async function resolveTrackingFromUrl(metaSecrets, url) {
   primeTrackingCacheFromStoredOrders();
   const expandedUrl = await followRedirectUrl(url);
   const cached = readTrackingCache(url, expandedUrl);
-  if (cached) {
+  const cachedResolver = String(cached?.resolver || "");
+  // Public Facebook HTML can expose a global/profile scoped id that is useful
+  // for metrics lookup but not accepted by Marketing API object_story_id.
+  // Re-resolve those entries with Page tokens so we can get a Page-scoped post id.
+  if (cached && !(cached.platform === "facebook" && cachedResolver.startsWith("facebook_public_"))) {
     return {
       ...cached,
       sourceUrl: String(url || "").trim() || cached.sourceUrl,
@@ -1697,7 +1785,7 @@ async function resolveTrackingFromUrl(metaSecrets, url) {
     if (isFacebookHost(parsed.hostname)) {
       let resolved = null;
       try {
-        resolved = await resolveFacebookTrackingFromPublicUrl(candidate);
+        resolved = await resolveFacebookTrackingFromUrl(metaSecrets, candidate);
       } catch {
         resolved = null;
       }
@@ -1706,7 +1794,7 @@ async function resolveTrackingFromUrl(metaSecrets, url) {
         return resolved;
       }
       try {
-        resolved = await resolveFacebookTrackingFromUrl(metaSecrets, candidate);
+        resolved = await resolveFacebookTrackingFromPublicUrl(candidate);
       } catch {
         resolved = null;
       }
