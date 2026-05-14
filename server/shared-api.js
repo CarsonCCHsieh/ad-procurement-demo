@@ -2303,19 +2303,23 @@ async function fetchMetaAdSnapshotSecure(metaSecrets, adId, goal) {
   };
 }
 
-async function updateMetaAdDeliverySecure(metaSecrets, adId, status) {
+async function updateMetaDeliveryObjectSecure(metaSecrets, objectId, status, objectLabel = "object") {
   const tokens = getMetaTokenCandidates(metaSecrets, "ads");
   if (!tokens.length) {
     return { ok: false, detail: "Meta access token is unavailable" };
   }
+  const id = String(objectId || "").trim();
+  if (!id) {
+    return { ok: false, detail: `Missing Meta ${objectLabel} id` };
+  }
   let lastError = "";
   for (const token of tokens) {
     try {
-      await graphApiPost(metaSecrets.apiVersion, token, `/${encodeURIComponent(adId)}`, { status });
+      await graphApiPost(metaSecrets.apiVersion, token, `/${encodeURIComponent(id)}`, { status });
       const raw = await graphApiGet(
         metaSecrets.apiVersion,
         token,
-        `/${encodeURIComponent(adId)}`,
+        `/${encodeURIComponent(id)}`,
         { fields: "id,name,status,effective_status,updated_time" },
       );
       return {
@@ -2324,12 +2328,77 @@ async function updateMetaAdDeliverySecure(metaSecrets, adId, status) {
         raw,
       };
     } catch (error) {
-      lastError = error instanceof Error ? error.message : "Failed to update Meta delivery status";
+      lastError = error instanceof Error ? error.message : `Failed to update Meta ${objectLabel} status`;
     }
   }
   return {
     ok: false,
-    detail: lastError || "Failed to update Meta delivery status",
+    detail: lastError || `Failed to update Meta ${objectLabel} status`,
+  };
+}
+
+async function updateMetaAdDeliverySecure(metaSecrets, adId, status) {
+  return updateMetaDeliveryObjectSecure(metaSecrets, adId, status, "ad");
+}
+
+function collectMetaDeliveryObjectIds(row) {
+  const campaignIds = new Set();
+  const adsetIds = new Set();
+  const adIds = new Set();
+  const submit = row?.submitResult || {};
+
+  if (submit.campaignId) campaignIds.add(String(submit.campaignId));
+  if (submit.adsetId) adsetIds.add(String(submit.adsetId));
+  if (submit.adId) adIds.add(String(submit.adId));
+
+  if (Array.isArray(submit.variants)) {
+    for (const variant of submit.variants) {
+      if (variant?.campaignId) campaignIds.add(String(variant.campaignId));
+      if (variant?.adsetId) adsetIds.add(String(variant.adsetId));
+      if (variant?.adId) adIds.add(String(variant.adId));
+    }
+  }
+
+  return {
+    campaignIds: Array.from(campaignIds).filter(Boolean),
+    adsetIds: Array.from(adsetIds).filter(Boolean),
+    adIds: Array.from(adIds).filter(Boolean),
+  };
+}
+
+async function updateMetaOrderDeliveryTreeSecure(metaSecrets, row, status) {
+  const ids = collectMetaDeliveryObjectIds(row);
+  const steps = status === "ACTIVE"
+    ? [
+        ...ids.campaignIds.map((id) => ({ type: "campaign", id })),
+        ...ids.adsetIds.map((id) => ({ type: "adset", id })),
+        ...ids.adIds.map((id) => ({ type: "ad", id })),
+      ]
+    : [
+        ...ids.adIds.map((id) => ({ type: "ad", id })),
+        ...ids.adsetIds.map((id) => ({ type: "adset", id })),
+        ...ids.campaignIds.map((id) => ({ type: "campaign", id })),
+      ];
+
+  if (!steps.length) {
+    return { ok: false, error: "Missing Meta campaign/adset/ad id" };
+  }
+
+  const results = [];
+  const errors = [];
+  for (const step of steps) {
+    const result = await updateMetaDeliveryObjectSecure(metaSecrets, step.id, status, step.type);
+    results.push({ ...step, ok: !!result.ok, statusText: result.statusText || "", detail: result.detail || "" });
+    if (!result.ok) {
+      errors.push(`${step.type} ${step.id}: ${result.detail || "status update failed"}`);
+    }
+  }
+
+  return {
+    ok: errors.length === 0,
+    error: errors.join("; "),
+    results,
+    ids,
   };
 }
 function findPageFromList(pages, targetPageId, targetPageName) {
@@ -4403,17 +4472,17 @@ async function syncSharedMetaOrders(options = {}) {
     let nextApiStatus = snapshots.map((snapshot) => snapshot.apiStatusText || snapshot.status).filter(Boolean).join(" / ") || "UNKNOWN";
 
     if (shouldAutoStop && typeof targetCurrent === "number" && targetCurrent >= targetValue) {
-      for (const snapshot of snapshots) {
-        if (!snapshot.adId || snapshot.status === "paused") continue;
-        const pauseResult = await updateMetaAdDeliverySecure(metaSecrets, snapshot.adId, "PAUSED");
-        if (pauseResult.ok) {
+      const pauseResult = await updateMetaOrderDeliveryTreeSecure(metaSecrets, row, "PAUSED");
+      if (pauseResult.ok) {
+        for (const snapshot of snapshots) {
+          if (!snapshot.adId || snapshot.status === "paused") continue;
           snapshot.status = "paused";
-          snapshot.apiStatusText = pauseResult.statusText || "PAUSED";
+          snapshot.apiStatusText = "PAUSED";
           snapshot.pausedReason = "target_reached";
           rowPausedCount += 1;
-        } else {
-          errors.push(`${snapshot.label}：${pauseResult.detail || "達標停投失敗"}`);
         }
+      } else {
+        errors.push(pauseResult.error || "Target reached pause failed");
       }
       if (rowPausedCount > 0) {
         nextStatus = "paused";
@@ -4895,25 +4964,18 @@ const server = http.createServer(async (req, res) => {
         json(res, result.error ? 400 : 200, { ok: !result.error, ...result });
         return;
       }
-      const adIds = Array.isArray(row?.submitResult?.variants)
-        ? row.submitResult.variants.map((variant) => String(variant?.adId || "")).filter(Boolean)
-        : [String(row?.submitResult?.adId || "")].filter(Boolean);
       const metaSecrets = loadMetaSecrets();
       const status = action === "pause" ? "PAUSED" : "ACTIVE";
-      const errors = [];
-      for (const adId of adIds) {
-        const result = await updateMetaAdDeliverySecure(metaSecrets, adId, status);
-        if (!result.ok) errors.push(result.detail || `鏇存柊 ${adId} 澶辨晽`);
-      }
-      if (errors.length) {
-        json(res, 400, { ok: false, error: errors.join("; ") });
+      const result = await updateMetaOrderDeliveryTreeSecure(metaSecrets, row, status);
+      if (!result.ok) {
+        json(res, 400, { ok: false, error: result.error || "Meta delivery status update failed", results: result.results });
         return;
       }
       const next = list.map((item) => String(item?.id) === String(row.id)
         ? { ...item, status: action === "pause" ? "paused" : "running", apiStatusText: status, error: "" }
         : item);
       writeSharedJson(META_ORDERS_KEY, next, "server-meta-delivery");
-      json(res, 200, { ok: true });
+      json(res, 200, { ok: true, results: result.results, ids: result.ids });
       return;
     }
 
