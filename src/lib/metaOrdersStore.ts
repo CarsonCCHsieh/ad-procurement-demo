@@ -65,6 +65,13 @@ export type MetaSubmitResult = {
   adsetId?: string;
   creativeId?: string;
   adId?: string;
+  variants?: Array<{
+    adId?: string;
+    adsetId?: string;
+    creativeId?: string;
+    label?: string;
+    status?: string;
+  }>;
   requestLogs: Array<{ step: string; ok: boolean; detail: string }>;
 };
 

@@ -895,7 +895,43 @@ export function AdPerformancePage() {
     row: MetaOrder,
     options?: { silent?: boolean; fromAutoLoop?: boolean },
   ): Promise<{ ok: boolean; pausedByTarget?: boolean }> => {
-    const adId = row.submitResult?.adId;
+    const syncKey = `meta:${row.id}`;
+    if (API_BASE) {
+      setSyncFlag(syncKey, true);
+      try {
+        const response = await fetch(apiUrl("/api/meta/sync-shared-orders"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ includePaused: true, force: true }),
+        });
+        const data = (await response.json()) as { ok?: boolean; error?: string; pausedCount?: number };
+        if (!response.ok || !data.ok) {
+          throw new Error(data.error || `HTTP ${response.status}`);
+        }
+        await pullLatestOrders();
+        if (!options?.silent) {
+          setMsg(
+            Number(data.pausedCount ?? 0) > 0
+              ? "\u5df2\u540c\u6b65\uff0c\u4e26\u66ab\u505c\u9054\u6a19\u6295\u653e\u3002"
+              : "Meta \u6295\u653e\u6210\u6548\u5df2\u540c\u6b65\u3002",
+          );
+          setTimeout(() => setMsg(null), 2200);
+        }
+        if (!options?.fromAutoLoop) setRefresh((value) => value + 1);
+        return { ok: true, pausedByTarget: Number(data.pausedCount ?? 0) > 0 };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "\u540c\u6b65\u5931\u6557";
+        if (!options?.silent) {
+          setMsg(`Meta \u540c\u6b65\u5931\u6557\uff1a${message}`);
+          setTimeout(() => setMsg(null), 3500);
+        }
+        return { ok: false };
+      } finally {
+        setSyncFlag(syncKey, false);
+      }
+    }
+
+    const adId = row.submitResult?.adId || row.submitResult?.variants?.find((variant) => variant.adId)?.adId;
     if (!adId) {
       if (!options?.silent) {
         setMsg("這筆資料缺少 ad_id");
@@ -904,7 +940,6 @@ export function AdPerformancePage() {
       return { ok: false };
     }
 
-    const syncKey = `meta:${row.id}`;
     setSyncFlag(syncKey, true);
     try {
       const result = await fetchMetaAdSnapshot({ cfg: metaCfg, adId, goal: row.goal });
