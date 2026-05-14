@@ -118,6 +118,29 @@ function formatCurrency(value: number | null, digits = 0): string {
   })}`;
 }
 
+function formatMetaStatusText(row: MetaOrder): string {
+  const status = String(row.apiStatusText || row.status || "").trim();
+  if (!status) return "\u5f85\u540c\u6b65";
+  if (status.toLowerCase() === "error") return "\u5f85\u91cd\u65b0\u540c\u6b65";
+  return status;
+}
+
+function summarizeMetaError(error?: string): string {
+  const text = String(error || "").trim();
+  if (!text) return "\u5df2\u5efa\u7acb\uff0c\u7b49\u5f85\u540c\u6b65\u6210\u6548\u3002";
+  if (text.includes("video_3_sec_watched_actions")) {
+    return "\u6210\u6548\u6b04\u4f4d\u5df2\u8abf\u6574\uff0c\u8acb\u91cd\u65b0\u540c\u6b65\u3002";
+  }
+  if (text.includes("pages_read_engagement") || text.includes("Page Public Content Access")) {
+    return "\u8cbc\u6587\u6210\u6548\u540c\u6b65\u9700\u8981\u53ef\u8b80\u53d6\u7c89\u5c08\u8cbc\u6587\u7684\u9577\u6548 Token\uff0c\u8acb\u91cd\u65b0\u540c\u6b65\u6216\u6aa2\u67e5\u63a7\u5236\u8a2d\u5b9a\u3002";
+  }
+  if (text.includes("Session has expired") || text.includes("Error validating access token")) {
+    return "\u6210\u6548\u540c\u6b65\u7684 Meta Token \u5df2\u904e\u671f\uff0c\u8acb\u5230\u63a7\u5236\u8a2d\u5b9a\u66f4\u65b0\u5f8c\u518d\u91cd\u65b0\u540c\u6b65\u3002";
+  }
+  if (text.length > 80) return "\u6210\u6548\u540c\u6b65\u6682\u6642\u5931\u6557\uff0c\u8acb\u91cd\u65b0\u540c\u6b65\u6216\u901a\u77e5\u7ba1\u7406\u54e1\u3002";
+  return text;
+}
+
 function buildMetaDerivedKpis(row: MetaOrder): MetaDerivedKpis {
   const primaryMetricKey = getGoalPrimaryMetricKey(row.goal);
   const primaryMetricLabel = getGoalPrimaryMetricLabel(row.goal);
@@ -1198,7 +1221,7 @@ export function AdPerformancePage() {
       </div>
 
       {msg ? (
-        <div className="card">
+        <div className="card" style={{ marginBottom: 18 }}>
           <div className="card-bd">{msg}</div>
         </div>
       ) : null}
@@ -1214,10 +1237,10 @@ export function AdPerformancePage() {
       </div>
 
       {canManage && metaRows.length > 0 ? (
-        <div className="card">
+        <div className="card" style={{ marginBottom: 18 }}>
           <div className="card-hd">
             <div>
-              <div className="card-title">{"Meta \u5b98\u65b9\u6295\u5ee3\u6210\u6548"}</div>
+              <div className="card-title">{"Meta\u5b98\u65b9\u6295\u5ee3\u6210\u6548"}</div>
               <div className="card-desc">{"\u6700\u8fd1\u5efa\u7acb\u7684 Meta \u6295\u5ee3\u6848\u4ef6\u6703\u512a\u5148\u986f\u793a\u5728\u9019\u88e1\u3002"}</div>
             </div>
             <div className="actions inline">
@@ -1253,7 +1276,7 @@ export function AdPerformancePage() {
                   </div>
                   <div className="dense-td">{row.performanceGoalLabel || META_AD_GOALS[row.goal]?.label || "-"}</div>
                   <div className="dense-td">NT$ {Number(row.dailyBudget || 0).toLocaleString("zh-TW")}</div>
-                  <div className="dense-td">{row.apiStatusText || row.status}</div>
+                  <div className="dense-td">{formatMetaStatusText(row)}</div>
                   <div className="dense-td">{new Date(row.createdAt).toLocaleString("zh-TW")}</div>
                   <div className="dense-td">
                     <button className="btn sm" type="button" onClick={() => void syncMetaOne(row)}>
@@ -1261,7 +1284,7 @@ export function AdPerformancePage() {
                     </button>
                   </div>
                   <div className="dense-td dense-main">
-                    <div className="dense-meta">{row.error || "\u5df2\u5efa\u7acb\uff0c\u7b49\u5f85\u540c\u6b65\u6210\u6548\u3002"}</div>
+                    <div className="dense-meta">{summarizeMetaError(row.error)}</div>
                   </div>
                 </div>
               ))}
@@ -1270,7 +1293,7 @@ export function AdPerformancePage() {
         </div>
       ) : null}
 
-      <div className="card">
+        <div className="card" style={{ marginTop: 18 }}>
         <div className="card-hd">
           <div>
             <div className="card-title">廠商互動成效</div>
@@ -1581,7 +1604,7 @@ export function AdPerformancePage() {
 
                       {row.error ? (
                         <div className="hint" style={{ marginTop: 8, color: "rgba(220, 38, 38, 0.95)" }}>
-                          {row.error}
+                          {summarizeMetaError(row.error)}
                         </div>
                       ) : null}
                     </div>

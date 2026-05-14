@@ -262,7 +262,7 @@ function extractMetricValues(row: Record<string, unknown>): Record<MetaKpiMetric
     "onsite_conversion.profile_visit",
   ]);
 
-  const video3s = sumActions(row.video_3_sec_watched_actions, ["video_view"]);
+  const video3s = sumActions(row.actions, ["video_view", "video_3_sec_view", "video_3_sec_watched"]);
   const thruplays = Math.max(
     sumActions(row.video_thruplay_watched_actions, ["video_view"]),
     sumAcrossActionTypes(row.actions, ["thruplay", "video_view"]),
@@ -687,7 +687,7 @@ export async function fetchMetaAdSnapshot(params: {
       cfg,
       token,
       `/${encodeURIComponent(adId)}/insights`,
-      "impressions,reach,clicks,spend,actions,video_3_sec_watched_actions,video_thruplay_watched_actions",
+      "impressions,reach,clicks,spend,actions,video_thruplay_watched_actions",
     );
     const row = firstInsightRow(insightsRaw) ?? {};
     const perf = buildPerformance(goal, extractMetricValues(row), insightsRaw);

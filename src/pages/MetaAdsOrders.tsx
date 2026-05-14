@@ -540,14 +540,14 @@ export function MetaAdsOrdersPage() {
     <div className="container container--wide meta-page">
       <div className="topbar topbar--meta">
         <div className="brand brand--page">
-          <div className="brand-title">Meta 官方投廣</div>
+          <div className="brand-title">Meta官方投廣</div>
           <div className="brand-sub">依照行銷活動設定建立投放，送出後可在成效頁持續查看進度與是否達標。</div>
         </div>
         <div className="pill pill--nav">
           <span className="tag">{user?.displayName ?? user?.username}</span>
           <button className="btn" onClick={() => nav("/ad-orders")}>廠商互動下單</button>
           <button className="btn" onClick={() => nav("/ad-performance")}>投放成效</button>
-          <button className="btn primary" onClick={() => nav("/meta-ads-orders")}>Meta 官方投廣</button>
+          <button className="btn primary" onClick={() => nav("/meta-ads-orders")}>Meta官方投廣</button>
           {canManage ? <button className="btn" onClick={() => nav("/settings")}>控制設定</button> : null}
           <button className="btn danger" onClick={() => { signOut(); nav("/login", { replace: true }); }}>登出</button>
         </div>

@@ -392,9 +392,25 @@ function getMetaToken(metaSecrets, platform) {
     return String(metaSecrets.adsAccessToken || metaSecrets.userAccessToken || "").trim();
   }
   if (platform === "instagram") {
-    return String(metaSecrets.instagramAccessToken || metaSecrets.userAccessToken || "").trim();
+    return String(metaSecrets.instagramAccessToken || metaSecrets.facebookAccessToken || metaSecrets.userAccessToken || "").trim();
   }
-  return String(metaSecrets.facebookAccessToken || metaSecrets.userAccessToken || "").trim();
+  return String(metaSecrets.facebookAccessToken || metaSecrets.instagramAccessToken || metaSecrets.userAccessToken || "").trim();
+}
+
+function getMetaTokenCandidates(metaSecrets, platform) {
+  if (!metaSecrets) return [];
+  if (platform === "ads") {
+    return uniqueStrings([
+      metaSecrets.adsAccessToken,
+      metaSecrets.userAccessToken,
+      metaSecrets.facebookAccessToken,
+      metaSecrets.instagramAccessToken,
+    ]);
+  }
+  if (platform === "instagram") {
+    return uniqueStrings([metaSecrets.instagramAccessToken, metaSecrets.facebookAccessToken, metaSecrets.userAccessToken]);
+  }
+  return uniqueStrings([metaSecrets.facebookAccessToken, metaSecrets.instagramAccessToken, metaSecrets.userAccessToken, metaSecrets.adsAccessToken]);
 }
 
 function metaTokenKeyForScope(scope) {
@@ -526,24 +542,29 @@ async function listAvailablePages(metaSecrets) {
   if (metaPagesCache && now - metaPagesCache.fetchedAt < 5 * 60 * 1000) {
     return metaPagesCache.pages;
   }
-  const pageToken = getMetaToken(metaSecrets, "facebook");
-  if (!pageToken) return [];
-
   const pages = [];
-  let after = "";
+  const pageTokens = getMetaTokenCandidates(metaSecrets, "facebook");
   // /me/accounts is paginated. Keep the cap explicit to avoid accidental high-volume Graph API calls.
-  for (let pageIndex = 0; pageIndex < 8; pageIndex += 1) {
-    const raw = await graphApiGet(metaSecrets.apiVersion, pageToken, "/me/accounts", {
-      fields: "id,name,category,tasks,access_token,instagram_business_account{id,username}",
-      limit: 100,
-      after: after || undefined,
-    });
-    if (Array.isArray(raw.data)) {
-      pages.push(...raw.data);
+  for (const pageToken of pageTokens.slice(0, 3)) {
+    let after = "";
+    for (let pageIndex = 0; pageIndex < 8; pageIndex += 1) {
+      let raw = null;
+      try {
+        raw = await graphApiGet(metaSecrets.apiVersion, pageToken, "/me/accounts", {
+          fields: "id,name,category,tasks,access_token,instagram_business_account{id,username}",
+          limit: 100,
+          after: after || undefined,
+        });
+      } catch {
+        break;
+      }
+      if (Array.isArray(raw.data)) {
+        pages.push(...raw.data);
+      }
+      const nextAfter = String(raw?.paging?.cursors?.after || "").trim();
+      if (!nextAfter || nextAfter === after) break;
+      after = nextAfter;
     }
-    const nextAfter = String(raw?.paging?.cursors?.after || "").trim();
-    if (!nextAfter || nextAfter === after) break;
-    after = nextAfter;
   }
 
   const businessPages = await listBusinessPages(metaSecrets);
@@ -2168,7 +2189,7 @@ function extractAdMetricValues(row) {
     "instagram_profile_visit",
     "onsite_conversion.profile_visit",
   ]);
-  const video3s = sumActions(row?.video_3_sec_watched_actions, ["video_view"]);
+  const video3s = sumAcrossActionTypes(row?.actions, ["video_view", "video_3_sec_view", "video_3_sec_watched"]);
   const thruplays = Math.max(
     sumActions(row?.video_thruplay_watched_actions, ["video_view"]),
     sumAcrossActionTypes(row?.actions, ["thruplay", "video_view"]),
@@ -2216,64 +2237,71 @@ function mapMetaOrderStatus(statusText) {
 }
 
 async function fetchMetaAdSnapshotSecure(metaSecrets, adId, goal) {
-  const token = getMetaToken(metaSecrets, "ads");
-  if (!token) {
+  const tokens = getMetaTokenCandidates(metaSecrets, "ads");
+  if (!tokens.length) {
     return { ok: false, detail: "Meta access token is unavailable" };
   }
-  try {
-    const statusRaw = await graphApiGet(
-      metaSecrets.apiVersion,
-      token,
-      `/${encodeURIComponent(adId)}`,
-      { fields: "id,name,status,effective_status,updated_time" },
-    );
-    const statusText = String(statusRaw.effective_status || statusRaw.status || "UNKNOWN");
-    const insightsRaw = await graphApiGet(
-      metaSecrets.apiVersion,
-      token,
-      `/${encodeURIComponent(adId)}/insights`,
-      { fields: "impressions,reach,clicks,spend,actions,video_3_sec_watched_actions,video_thruplay_watched_actions" },
-    );
-    const row = firstInsightRow(insightsRaw) || {};
-    return {
-      ok: true,
-      statusText,
-      performance: buildMetaPerformance(goal, extractAdMetricValues(row), insightsRaw),
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      detail: error instanceof Error ? error.message : "讀取投放狀態失敗",
-    };
+  let lastError = "";
+  for (const token of tokens) {
+    try {
+      const statusRaw = await graphApiGet(
+        metaSecrets.apiVersion,
+        token,
+        `/${encodeURIComponent(adId)}`,
+        { fields: "id,name,status,effective_status,updated_time" },
+      );
+      const statusText = String(statusRaw.effective_status || statusRaw.status || "UNKNOWN");
+      const insightsRaw = await graphApiGet(
+        metaSecrets.apiVersion,
+        token,
+        `/${encodeURIComponent(adId)}/insights`,
+        { fields: "impressions,reach,clicks,spend,actions,video_thruplay_watched_actions" },
+      );
+      const row = firstInsightRow(insightsRaw) || {};
+      return {
+        ok: true,
+        statusText,
+        performance: buildMetaPerformance(goal, extractAdMetricValues(row), insightsRaw),
+      };
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : "Failed to read Meta delivery status";
+    }
   }
+  return {
+    ok: false,
+    detail: lastError || "Failed to read Meta delivery status",
+  };
 }
 
 async function updateMetaAdDeliverySecure(metaSecrets, adId, status) {
-  const token = getMetaToken(metaSecrets, "ads");
-  if (!token) {
+  const tokens = getMetaTokenCandidates(metaSecrets, "ads");
+  if (!tokens.length) {
     return { ok: false, detail: "Meta access token is unavailable" };
   }
-  try {
-    await graphApiPost(metaSecrets.apiVersion, token, `/${encodeURIComponent(adId)}`, { status });
-    const raw = await graphApiGet(
-      metaSecrets.apiVersion,
-      token,
-      `/${encodeURIComponent(adId)}`,
-      { fields: "id,name,status,effective_status,updated_time" },
-    );
-    return {
-      ok: true,
-      statusText: String(raw.effective_status || raw.status || status),
-      raw,
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      detail: error instanceof Error ? error.message : "更新投放狀態失敗",
-    };
+  let lastError = "";
+  for (const token of tokens) {
+    try {
+      await graphApiPost(metaSecrets.apiVersion, token, `/${encodeURIComponent(adId)}`, { status });
+      const raw = await graphApiGet(
+        metaSecrets.apiVersion,
+        token,
+        `/${encodeURIComponent(adId)}`,
+        { fields: "id,name,status,effective_status,updated_time" },
+      );
+      return {
+        ok: true,
+        statusText: String(raw.effective_status || raw.status || status),
+        raw,
+      };
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : "Failed to update Meta delivery status";
+    }
   }
+  return {
+    ok: false,
+    detail: lastError || "Failed to update Meta delivery status",
+  };
 }
-
 function findPageFromList(pages, targetPageId, targetPageName) {
   return (Array.isArray(pages) ? pages : []).find((item) =>
     (targetPageId && String(item?.id || "") === targetPageId) ||
