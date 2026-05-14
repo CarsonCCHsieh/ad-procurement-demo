@@ -572,16 +572,46 @@ async function listAvailablePages(metaSecrets) {
   for (const page of [...pages, ...businessPages]) {
     const id = String(page?.id || "").trim();
     if (!id) continue;
+    const previous = byId.get(id) || {};
     byId.set(id, {
-      ...(byId.get(id) || {}),
+      ...previous,
       ...page,
       id,
+      access_token: String(page?.access_token || previous?.access_token || "").trim(),
+      instagram_business_account: page?.instagram_business_account || previous?.instagram_business_account,
     });
   }
 
   const mergedPages = Array.from(byId.values());
   metaPagesCache = { fetchedAt: now, pages: mergedPages };
   return mergedPages;
+}
+
+async function findPageAccessTokenById(metaSecrets, pageId) {
+  const targetPageId = String(pageId || "").trim();
+  if (!targetPageId) return "";
+  for (const token of getMetaTokenCandidates(metaSecrets, "facebook").slice(0, 4)) {
+    let after = "";
+    for (let pageIndex = 0; pageIndex < 3; pageIndex += 1) {
+      try {
+        const raw = await graphApiGet(metaSecrets.apiVersion, token, "/me/accounts", {
+          fields: "id,name,access_token",
+          limit: 100,
+          after: after || undefined,
+        });
+        const hit = Array.isArray(raw?.data)
+          ? raw.data.find((page) => String(page?.id || "") === targetPageId)
+          : null;
+        if (hit?.access_token) return String(hit.access_token).trim();
+        const nextAfter = String(raw?.paging?.cursors?.after || "").trim();
+        if (!nextAfter || nextAfter === after) break;
+        after = nextAfter;
+      } catch {
+        break;
+      }
+    }
+  }
+  return "";
 }
 
 async function listBusinessPages(metaSecrets) {
@@ -2438,6 +2468,7 @@ async function fetchMetaPostMetricsCoreSecure({ postId, platform, pageId, pageNa
     }
   }
   let page = findPageFromList(pages, targetPageId, targetPageName);
+  const directPageAccessToken = targetPageId ? await findPageAccessTokenById(metaSecrets, targetPageId) : "";
   const postIdCandidates = buildFacebookPostIdCandidates({
     normalizedPostId,
     targetPageId,
@@ -2456,6 +2487,7 @@ async function fetchMetaPostMetricsCoreSecure({ postId, platform, pageId, pageNa
       ? (Array.isArray(pages) ? pages.find((item) => String(item?.id || "") === candidatePageId) : null)
       : null;
     const tokenCandidates = uniqueStrings([
+      directPageAccessToken,
       String(candidatePage?.access_token || ""),
       String(page?.access_token || ""),
       getMetaToken(metaSecrets, "facebook"),
@@ -2509,6 +2541,7 @@ async function fetchMetaPostMetricsCoreSecure({ postId, platform, pageId, pageNa
   const invalidMetrics = [];
 
   const metricTokens = uniqueStrings([
+    directPageAccessToken,
     String(page?.access_token || ""),
     baseToken,
     getMetaToken(metaSecrets, "facebook"),
