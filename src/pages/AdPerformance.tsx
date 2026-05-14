@@ -15,7 +15,7 @@ import {
   type MetaTrackingRef,
   type VendorSplitExec,
 } from "../lib/ordersStore";
-import { clearMetaOrders, listMetaOrders, updateMetaOrder, type MetaOrder } from "../lib/metaOrdersStore";
+import { clearMetaOrders, listMetaOrders, replaceMetaOrders, updateMetaOrder, type MetaOrder } from "../lib/metaOrdersStore";
 import { getMetaConfig } from "../config/metaConfig";
 import { getMetaPresetConfig, type MetaOptimizationConfig } from "../config/metaPresetConfig";
 import { fetchMetaAdSnapshot, fetchMetaPostMetrics, updateMetaAdDelivery } from "../lib/metaGraphApi";
@@ -417,6 +417,7 @@ export function AdPerformancePage() {
   const [hourlyAutoRunning, setHourlyAutoRunning] = useState(false);
   const [hourlyAutoLastRunAt, setHourlyAutoLastRunAt] = useState<string | null>(null);
   const [remoteOrdersFallback, setRemoteOrdersFallback] = useState<DemoOrder[]>([]);
+  const [serverMetaRows, setServerMetaRows] = useState<MetaOrder[]>([]);
   const [metaSyncStatus, setMetaSyncStatus] = useState<MetaSyncStatus | null>(null);
 
   const orders = useMemo(() => {
@@ -426,8 +427,8 @@ export function AdPerformancePage() {
 
   const metaRows = useMemo(() => {
     void refresh;
-    return listMetaOrders();
-  }, [refresh]);
+    return serverMetaRows.length > 0 ? serverMetaRows : listMetaOrders();
+  }, [refresh, serverMetaRows]);
 
   const vendorRows = useMemo(() => buildVendorRows(orders), [orders]);
   const vendorFallbackRows = useMemo(() => buildVendorRows(remoteOrdersFallback), [remoteOrdersFallback]);
@@ -441,6 +442,23 @@ export function AdPerformancePage() {
   const metaLastUpdatedAt = metaSyncStatus?.lastRunAt || hourlyAutoLastRunAt;
 
   const setSyncFlag = (key: string, value: boolean) => setSyncing((state) => ({ ...state, [key]: value }));
+
+  const pullServerMetaOrders = async () => {
+    if (!API_BASE) return;
+
+    const response = await fetch(apiUrl("/api/meta/orders"), {
+      headers: { "Cache-Control": "no-store" },
+    });
+    const data = (await response.json()) as { ok?: boolean; orders?: MetaOrder[]; error?: string };
+    if (!response.ok || !data.ok || !Array.isArray(data.orders)) {
+      throw new Error(data.error || `HTTP ${response.status}`);
+    }
+
+    const sorted = [...data.orders].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+    setServerMetaRows(sorted);
+    // Keep localStorage as an offline/cache fallback only. The backend remains the source of truth.
+    replaceMetaOrders(sorted);
+  };
 
   const deriveOrderStatus = (lines: Array<{ batches?: DemoOrderBatch[] }>) => {
     const batches = lines.flatMap((line) => line.batches ?? []);
@@ -456,6 +474,11 @@ export function AdPerformancePage() {
   const pullLatestOrders = async () => {
     try {
       await pullSharedState(["ad_demo_orders_v1", "ad_demo_meta_orders_v1", "ad_demo_meta_sync_status_v1"]);
+      try {
+        await pullServerMetaOrders();
+      } catch {
+        // Keep existing local/server state if the backend Meta endpoint is temporarily unavailable.
+      }
       const remote = await fetchSharedValues(["ad_demo_orders_v1", "ad_demo_meta_sync_status_v1"]);
       const raw = remote.values.ad_demo_orders_v1;
       const metaSyncRaw = remote.values.ad_demo_meta_sync_status_v1;
@@ -474,6 +497,11 @@ export function AdPerformancePage() {
       setRefresh((value) => value + 1);
     } catch {
       try {
+        try {
+          await pullServerMetaOrders();
+        } catch {
+          // keep local state if server Meta fetch fails
+        }
         const remote = await fetchSharedValues(["ad_demo_orders_v1", "ad_demo_meta_sync_status_v1"]);
         const raw = remote.values.ad_demo_orders_v1;
         const metaSyncRaw = remote.values.ad_demo_meta_sync_status_v1;
