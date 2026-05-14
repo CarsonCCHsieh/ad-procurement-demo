@@ -1213,6 +1213,63 @@ export function AdPerformancePage() {
         </div>
       </div>
 
+      {canManage && metaRows.length > 0 ? (
+        <div className="card">
+          <div className="card-hd">
+            <div>
+              <div className="card-title">{"Meta \u5b98\u65b9\u6295\u5ee3\u6210\u6548"}</div>
+              <div className="card-desc">{"\u6700\u8fd1\u5efa\u7acb\u7684 Meta \u6295\u5ee3\u6848\u4ef6\u6703\u512a\u5148\u986f\u793a\u5728\u9019\u88e1\u3002"}</div>
+            </div>
+            <div className="actions inline">
+              <button className="btn" type="button" onClick={() => void pullLatestOrders()}>
+                {"\u91cd\u65b0\u6574\u7406"}
+              </button>
+              <button
+                className="btn"
+                type="button"
+                onClick={() => document.getElementById("meta-performance-detail")?.scrollIntoView({ behavior: "smooth" })}
+              >
+                {"\u67e5\u770b\u5b8c\u6574\u5217\u8868"}
+              </button>
+            </div>
+          </div>
+          <div className="card-bd">
+            <div className="dense-table performance-table">
+              <div className="dense-th">{"\u7533\u8acb\u4eba"}</div>
+              <div className="dense-th">{"\u6848\u4ef6\u540d"}</div>
+              <div className="dense-th">{"\u76ee\u6a19"}</div>
+              <div className="dense-th">{"\u9810\u7b97"}</div>
+              <div className="dense-th">{"\u76ee\u524d\u72c0\u614b"}</div>
+              <div className="dense-th">{"\u5efa\u7acb\u6642\u9593"}</div>
+              <div className="dense-th">{"\u64cd\u4f5c"}</div>
+              <div className="dense-th">{"\u5099\u8a3b"}</div>
+
+              {metaRows.slice(0, 5).map((row) => (
+                <div className="dense-tr" key={`meta-summary-${row.id}`}>
+                  <div className="dense-td">{row.applicant || "-"}</div>
+                  <div className="dense-td dense-main">
+                    <div className="dense-title">{row.campaignName || row.title}</div>
+                    <div className="dense-meta">{row.industryLabel || row.industryKey || "-"}</div>
+                  </div>
+                  <div className="dense-td">{row.performanceGoalLabel || META_AD_GOALS[row.goal]?.label || "-"}</div>
+                  <div className="dense-td">NT$ {Number(row.dailyBudget || 0).toLocaleString("zh-TW")}</div>
+                  <div className="dense-td">{row.apiStatusText || row.status}</div>
+                  <div className="dense-td">{new Date(row.createdAt).toLocaleString("zh-TW")}</div>
+                  <div className="dense-td">
+                    <button className="btn sm" type="button" onClick={() => void syncMetaOne(row)}>
+                      {"\u540c\u6b65"}
+                    </button>
+                  </div>
+                  <div className="dense-td dense-main">
+                    <div className="dense-meta">{row.error || "\u5df2\u5efa\u7acb\uff0c\u7b49\u5f85\u540c\u6b65\u6210\u6548\u3002"}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <div className="card">
         <div className="card-hd">
           <div>
@@ -1325,7 +1382,7 @@ export function AdPerformancePage() {
       </div>
 
       {canManage ? (
-        <div className="card" style={{ marginTop: 12 }}>
+        <div className="card" id="meta-performance-detail" style={{ marginTop: 12 }}>
           <div className="card-hd">
             <div>
               <div className="card-title">Meta官方投廣成效</div>
@@ -1334,7 +1391,7 @@ export function AdPerformancePage() {
           </div>
           <div className="card-bd">
             <div className="actions inline">
-              <button className="btn" onClick={() => setRefresh((value) => value + 1)}>重新整理</button>
+              <button className="btn" onClick={() => void pullLatestOrders()}>{"\u91cd\u65b0\u6574\u7406"}</button>
               <button className="btn" onClick={() => void syncAllMeta()} disabled={metaSyncingAll}>
                 {metaSyncingAll ? "同步中..." : "全部同步"}
               </button>
