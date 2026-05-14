@@ -125,6 +125,26 @@ function formatMetaStatusText(row: MetaOrder): string {
   return status;
 }
 
+function getMetaAdIds(row: MetaOrder): string[] {
+  const ids = new Set<string>();
+  if (row.submitResult?.adId) ids.add(String(row.submitResult.adId));
+  if (Array.isArray(row.submitResult?.variants)) {
+    for (const variant of row.submitResult.variants) {
+      const adId = String(variant?.adId || "").trim();
+      if (adId) ids.add(adId);
+    }
+  }
+  return Array.from(ids);
+}
+
+function buildMetaTargetProgress(row: MetaOrder): string {
+  if (!row.targetValue) return "\u672a\u8a2d\u5b9a";
+  const current = Number(row.targetCurrentValue || 0);
+  const target = Number(row.targetValue || 0);
+  const metricLabel = getGoalPrimaryMetricLabel(row.goal);
+  return `${current.toLocaleString("zh-TW")} / ${target.toLocaleString("zh-TW")} ${metricLabel}`;
+}
+
 function summarizeMetaError(error?: string): string {
   const text = String(error || "").trim();
   if (!text) return "\u5df2\u5efa\u7acb\uff0c\u7b49\u5f85\u540c\u6b65\u6210\u6548\u3002";
@@ -1081,7 +1101,7 @@ export function AdPerformancePage() {
     }
 
     const activeRows = metaRows.filter((row) => {
-      if (!row.submitResult?.adId) return false;
+      if (getMetaAdIds(row).length === 0) return false;
       if (row.status === "running" || row.status === "submitted") return true;
       return !!options?.includePaused && row.status === "paused";
     });
@@ -1096,9 +1116,9 @@ export function AdPerformancePage() {
   };
 
   const updateMetaDeliveryStatus = async (row: MetaOrder, nextStatus: "PAUSED" | "ACTIVE") => {
-    const adId = row.submitResult?.adId;
-    if (!adId) {
-      setMsg("這筆資料缺少 ad_id，無法切換狀態。");
+    const adIds = getMetaAdIds(row);
+    if (adIds.length === 0) {
+      setMsg("\u9019\u7b46\u8cc7\u6599\u7f3a\u5c11 ad_id\uff0c\u7121\u6cd5\u5207\u63db\u72c0\u614b\u3002");
       setTimeout(() => setMsg(null), 2500);
       return;
     }
@@ -1106,9 +1126,25 @@ export function AdPerformancePage() {
     const syncKey = `meta:${row.id}`;
     setSyncFlag(syncKey, true);
     try {
-      const result = await updateMetaAdDelivery({ cfg: metaCfg, adId, status: nextStatus });
+      if (API_BASE) {
+        const action = nextStatus === "PAUSED" ? "pause" : "resume";
+        const response = await fetch(apiUrl(`/api/meta/orders/${encodeURIComponent(row.id)}/${action}`), { method: "POST" });
+        const data = (await response.json()) as { ok?: boolean; error?: string };
+        if (!response.ok || !data.ok) {
+          setMsg(`Meta \u72c0\u614b\u66f4\u65b0\u5931\u6557\uff1a${data.error || `HTTP ${response.status}`}`);
+          setTimeout(() => setMsg(null), 3500);
+          return;
+        }
+        await pullLatestOrders();
+        setMsg(nextStatus === "PAUSED" ? "\u5df2\u66ab\u505c Meta \u6295\u653e\u3002" : "\u5df2\u958b\u59cb Meta \u6295\u653e\u3002");
+        setTimeout(() => setMsg(null), 2200);
+        setRefresh((value) => value + 1);
+        return;
+      }
+
+      const result = await updateMetaAdDelivery({ cfg: metaCfg, adId: adIds[0], status: nextStatus });
       if (!result.ok) {
-        setMsg(`Meta 狀態更新失敗：${result.detail ?? "未知錯誤"}`);
+        setMsg(`Meta \u72c0\u614b\u66f4\u65b0\u5931\u6557\uff1a${result.detail ?? "\u672a\u77e5\u932f\u8aa4"}`);
         setTimeout(() => setMsg(null), 3500);
         return;
       }
@@ -1120,7 +1156,7 @@ export function AdPerformancePage() {
         error: "",
       }));
 
-      setMsg(nextStatus === "PAUSED" ? "已暫停 Meta 投放。" : "已重新啟用 Meta 投放。");
+      setMsg(nextStatus === "PAUSED" ? "\u5df2\u66ab\u505c Meta \u6295\u653e\u3002" : "\u5df2\u958b\u59cb Meta \u6295\u653e\u3002");
       setTimeout(() => setMsg(null), 2200);
       setRefresh((value) => value + 1);
     } finally {
@@ -1292,37 +1328,66 @@ export function AdPerformancePage() {
             </div>
           </div>
           <div className="card-bd">
-            <div className="dense-table performance-table">
+            <div className="dense-table performance-table meta-summary-table">
               <div className="dense-th">{"\u7533\u8acb\u4eba"}</div>
               <div className="dense-th">{"\u6848\u4ef6\u540d"}</div>
               <div className="dense-th">{"\u76ee\u6a19"}</div>
+              <div className="dense-th">{"\u76ee\u6a19\u9032\u5ea6"}</div>
               <div className="dense-th">{"\u9810\u7b97"}</div>
               <div className="dense-th">{"\u76ee\u524d\u72c0\u614b"}</div>
               <div className="dense-th">{"\u5efa\u7acb\u6642\u9593"}</div>
               <div className="dense-th">{"\u64cd\u4f5c"}</div>
               <div className="dense-th">{"\u5099\u8a3b"}</div>
 
-              {metaRows.slice(0, 5).map((row) => (
-                <div className="dense-tr" key={`meta-summary-${row.id}`}>
-                  <div className="dense-td">{row.applicant || "-"}</div>
-                  <div className="dense-td dense-main">
-                    <div className="dense-title">{row.campaignName || row.title}</div>
-                    <div className="dense-meta">{row.industryLabel || row.industryKey || "-"}</div>
+              {metaRows.slice(0, 5).map((row) => {
+                const syncKey = `meta:${row.id}`;
+                const adIds = getMetaAdIds(row);
+                const canStart = adIds.length > 0 && row.status === "paused" && !row.targetReachedAt;
+                const canPause = adIds.length > 0 && row.status !== "paused";
+                return (
+                  <div className="dense-tr" key={`meta-summary-${row.id}`}>
+                    <div className="dense-td">{row.applicant || "-"}</div>
+                    <div className="dense-td dense-main">
+                      <div className="dense-title">{row.campaignName || row.title}</div>
+                      <div className="dense-meta">{row.industryLabel || row.industryKey || "-"}</div>
+                    </div>
+                    <div className="dense-td">{row.performanceGoalLabel || META_AD_GOALS[row.goal]?.label || "-"}</div>
+                    <div className="dense-td dense-main">
+                      <div className="dense-title">{buildMetaTargetProgress(row)}</div>
+                      {row.targetReachedAt ? <div className="dense-meta">{"\u5df2\u9054\u6a19\u505c\u6295"}</div> : null}
+                    </div>
+                    <div className="dense-td">NT$ {Number(row.dailyBudget || 0).toLocaleString("zh-TW")}</div>
+                    <div className="dense-td">{formatMetaStatusText(row)}</div>
+                    <div className="dense-td">{new Date(row.createdAt).toLocaleString("zh-TW")}</div>
+                    <div className="dense-td">
+                      <div className="actions inline">
+                        <button className="btn sm" type="button" onClick={() => void syncMetaOne(row)} disabled={!!syncing[syncKey]}>
+                          {syncing[syncKey] ? "\u540c\u6b65\u4e2d..." : "\u540c\u6b65"}
+                        </button>
+                        <button
+                          className="btn sm primary"
+                          type="button"
+                          onClick={() => void updateMetaDeliveryStatus(row, "ACTIVE")}
+                          disabled={!canStart || !!syncing[syncKey]}
+                        >
+                          {"\u958b\u59cb\u6295\u905e"}
+                        </button>
+                        <button
+                          className="btn sm"
+                          type="button"
+                          onClick={() => void updateMetaDeliveryStatus(row, "PAUSED")}
+                          disabled={!canPause || !!syncing[syncKey]}
+                        >
+                          {"\u66ab\u505c"}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="dense-td dense-main">
+                      <div className="dense-meta">{summarizeMetaError(row.error)}</div>
+                    </div>
                   </div>
-                  <div className="dense-td">{row.performanceGoalLabel || META_AD_GOALS[row.goal]?.label || "-"}</div>
-                  <div className="dense-td">NT$ {Number(row.dailyBudget || 0).toLocaleString("zh-TW")}</div>
-                  <div className="dense-td">{formatMetaStatusText(row)}</div>
-                  <div className="dense-td">{new Date(row.createdAt).toLocaleString("zh-TW")}</div>
-                  <div className="dense-td">
-                    <button className="btn sm" type="button" onClick={() => void syncMetaOne(row)}>
-                      {"\u540c\u6b65"}
-                    </button>
-                  </div>
-                  <div className="dense-td dense-main">
-                    <div className="dense-meta">{summarizeMetaError(row.error)}</div>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>
@@ -1485,9 +1550,10 @@ export function AdPerformancePage() {
                 {metaRows.map((row) => {
                   const goal = META_AD_GOALS[row.goal];
                   const syncKey = `meta:${row.id}`;
-                  const adId = row.submitResult?.adId;
-                  const canPause = !!adId && row.status !== "paused";
-                  const canResume = !!adId && row.status === "paused";
+                  const adIds = getMetaAdIds(row);
+                  const adId = adIds[0] || "";
+                  const canPause = adIds.length > 0 && row.status !== "paused";
+                  const canResume = adIds.length > 0 && row.status === "paused" && !row.targetReachedAt;
                   const metricLabel = getGoalPrimaryMetricLabel(row.goal);
                   const derived = buildMetaDerivedKpis(row);
                   const recommendations = buildMetaRecommendations(row, metaPresetCfg.optimization, derived);
