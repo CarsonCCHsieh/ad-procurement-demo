@@ -16,6 +16,12 @@ export function isCustomCommentsPlacementText(value: string | undefined | null):
   return hasCustom && hasComments;
 }
 
+
+export function isCustomCommentsService(value: { name?: string; type?: string; category?: string } | undefined | null): boolean {
+  if (!value) return false;
+  return isCustomCommentsPlacementText([value.name, value.type, value.category].filter(Boolean).join(" "));
+}
+
 export function assignCustomCommentsToBatches<
   TBatch extends { quantity: number; splits: Array<TSplit> },
   TSplit extends { quantity: number },

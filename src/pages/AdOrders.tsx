@@ -4,6 +4,7 @@ import { useAuth } from "../auth/AuthContext";
 import type { AdPlacement } from "../lib/pricing";
 import { isValidUrl, parseLinks } from "../lib/validate";
 import { getConfig, getEnabledPlacements, getPlacementConfig, getPlacementLabel, type VendorKey } from "../config/appConfig";
+import { getVendorServices } from "../config/serviceCatalog";
 import { planSplit } from "../lib/split";
 import { addOrder, insertOrder, type DemoOrder, type OrderSubmitMode } from "../lib/ordersStore";
 import { calcInternalLineAmount, shouldShowPrices } from "../lib/internalPricing";
@@ -15,6 +16,7 @@ import {
   assignCustomCommentsToBatches,
   countCustomCommentLines,
   isCustomCommentsPlacementText,
+  isCustomCommentsService,
 } from "../lib/customComments";
 
 type OrderKind = "new" | "upsell";
@@ -64,6 +66,19 @@ function isEmptyDraft(d: Draft) {
 function hasErr(e: DraftError) {
   return Object.keys(e).length > 0;
 }
+
+function isCustomCommentsPlacement(placement: AdPlacement): boolean {
+  const placementConfig = getPlacementConfig(placement);
+  if (isCustomCommentsPlacementText(`${placementConfig.placement} ${placementConfig.label}`)) return true;
+
+  return placementConfig.suppliers
+    .filter((supplier) => supplier.enabled && supplier.serviceId > 0)
+    .some((supplier) => {
+      const service = getVendorServices(supplier.vendor).find((item) => item.id === supplier.serviceId);
+      return isCustomCommentsService(service);
+    });
+}
+
 function validateDraft(draft: Draft): DraftError {
   const e: DraftError = {};
   if (!draft.applicant.trim()) e.applicant = "請填寫申請人";
@@ -83,7 +98,7 @@ function validateDraft(draft: Draft): DraftError {
   e.items = draft.items.map((item) => {
     const fe: { placement?: string; target?: string } = {};
     if (!item.placement) fe.placement = "請選擇投放項目";
-    const isComments = isCustomCommentsPlacementText(`${item.placement} ${getPlacementLabel(item.placement)}`);
+    const isComments = isCustomCommentsPlacement(item.placement);
     const q = isComments ? countCustomCommentLines(item.commentsText) : Number(item.target);
     const min = getPlacementMinUnit(item.placement);
     if (isComments && q <= 0) fe.target = "請輸入至少一行留言內容";
@@ -98,7 +113,7 @@ function validateDraft(draft: Draft): DraftError {
 export function AdOrdersPage() {
   const nav = useNavigate();
   const { user, signOut, hasRole } = useAuth();
-  const [, setSharedTick] = useState(0);
+  const [sharedTick, setSharedTick] = useState(0);
   const [step, setStep] = useState<"edit" | "confirm" | "submitted">("edit");
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -117,24 +132,24 @@ export function AdOrdersPage() {
   const vendorEnabled = (vendor: VendorKey) => cfg.vendors.some((item) => item.key === vendor && item.enabled);
   const computed = useMemo(() => drafts.map((draft) => {
     const linePlans = draft.items.map((item) => {
-      const isComments = isCustomCommentsPlacementText(`${item.placement} ${getPlacementLabel(item.placement)}`);
+      const isComments = isCustomCommentsPlacement(item.placement);
       const qty = isComments ? countCustomCommentLines(item.commentsText) : Number(item.target);
       if (!Number.isFinite(qty) || qty <= 0) return { splits: [], warnings: [] as string[] };
       const placementConfig = getPlacementConfig(item.placement);
       return planSplit({ total: qty, suppliers: placementConfig.suppliers, strategy: placementConfig.splitStrategy ?? "random", vendorEnabled });
     });
     const total = draft.items.reduce((sum, item) => {
-      const isComments = isCustomCommentsPlacementText(`${item.placement} ${getPlacementLabel(item.placement)}`);
+      const isComments = isCustomCommentsPlacement(item.placement);
       const qty = isComments ? countCustomCommentLines(item.commentsText) : Number(item.target);
       return Number.isFinite(qty) && qty > 0 ? sum + calcInternalLineAmount(item.placement, qty) : sum;
     }, 0);
     return { linePlans, total };
-  }), [drafts, cfg.updatedAt]);
+  }), [drafts, cfg.updatedAt, sharedTick]);
 
   const activeIndexes = useMemo(() => drafts.map((d, i) => ({ d, i })).filter((x) => !isEmptyDraft(x.d)).map((x) => x.i), [drafts]);
   const totalAll = useMemo(() => activeIndexes.reduce((sum, i) => sum + (computed[i]?.total ?? 0), 0), [activeIndexes, computed]);
 
-  useEffect(() => { void pullSharedState(["ad_demo_config_v1", "ad_demo_pricing_v1"]); }, []);
+  useEffect(() => { void pullSharedState(["ad_demo_config_v1", "ad_demo_pricing_v1", "ad_demo_service_catalog_v1"]); }, []);
   useEffect(() => {
     const onSharedSync = () => setSharedTick((v) => v + 1);
     window.addEventListener(SHARED_SYNC_EVENT, onSharedSync);
@@ -175,7 +190,7 @@ export function AdOrdersPage() {
       scheduleEndDate: d.submitMode === "average" ? d.scheduleEndDate : undefined,
       links,
       lines: d.items.map((item, idx) => {
-        const isComments = isCustomCommentsPlacementText(`${item.placement} ${getPlacementLabel(item.placement)}`);
+        const isComments = isCustomCommentsPlacement(item.placement);
         const q = isComments ? countCustomCommentLines(item.commentsText) : Number(item.target);
         const amount = Number.isFinite(q) && q > 0 ? calcInternalLineAmount(item.placement, q) : 0;
         const plan = c.linePlans[idx] ?? { splits: [], warnings: [] as string[] };
@@ -257,7 +272,7 @@ export function AdOrdersPage() {
             <div className="sep" />
             <div className="item-hd"><div className="item-title">投放項目</div><button className="btn" onClick={() => addLine(i)} disabled={!enabledPlacements.length}>新增投放項目</button></div>
             <div className="list">{draft.items.map((item, li) => {
-              const isComments = isCustomCommentsPlacementText(`${item.placement} ${getPlacementLabel(item.placement)}`);
+              const isComments = isCustomCommentsPlacement(item.placement);
               const commentCount = countCustomCommentLines(item.commentsText);
               const min = getPlacementMinUnit(item.placement);
               const q = isComments ? commentCount : Number(item.target);
