@@ -43,6 +43,7 @@ function cloneSplit(split: VendorSplitExec, quantity: number): VendorSplitExec {
   return {
     ...split,
     quantity,
+    comments: undefined,
     vendorOrderId: undefined,
     vendorStatus: "scheduled",
     remains: quantity,

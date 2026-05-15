@@ -5,6 +5,7 @@ import { queueSharedWrite } from "./sharedSync";
 export type VendorKey = "smmraja" | "urpanel" | "justanotherpanel" | "hdz";
 
 export type VendorSplitExec = PlannedSplit & {
+  comments?: string;
   vendorOrderId?: number; // order id returned by vendor after "add"
   vendorStatus?: string;
   remains?: number;
@@ -56,6 +57,7 @@ export type DemoOrderBatch = {
   stageCount: number;
   plannedDate?: string; // YYYY-MM-DD
   quantity: number;
+  comments?: string;
   amount: number;
   warnings: string[];
   splits: VendorSplitExec[];
@@ -68,6 +70,7 @@ export type DemoOrderBatch = {
 export type DemoOrderLine = {
   placement: AdPlacement;
   quantity: number;
+  comments?: string;
   amount: number;
   splits: VendorSplitExec[];
   warnings: string[];

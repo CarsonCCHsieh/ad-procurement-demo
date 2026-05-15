@@ -3760,10 +3760,15 @@ function normalizeLineBatches(line) {
       stageCount: Number(batch?.stageCount ?? line.batches.length),
       plannedDate: typeof batch?.plannedDate === "string" ? batch.plannedDate : undefined,
       quantity: Number(batch?.quantity ?? 0),
+      comments: typeof batch?.comments === "string" ? batch.comments : undefined,
       amount: Number(batch?.amount ?? 0),
       warnings: Array.isArray(batch?.warnings) ? [...batch.warnings] : [],
       splits: Array.isArray(batch?.splits)
-        ? batch.splits.map((split) => ({ ...split, quantity: Number(split?.quantity ?? 0) }))
+        ? batch.splits.map((split) => ({
+            ...split,
+            quantity: Number(split?.quantity ?? 0),
+            comments: typeof split?.comments === "string" ? split.comments : undefined,
+          }))
         : [],
       status: typeof batch?.status === "string" ? batch.status : normalizeBatchStatus(batch),
       submittedAt: typeof batch?.submittedAt === "string" ? batch.submittedAt : undefined,
@@ -3778,10 +3783,15 @@ function normalizeLineBatches(line) {
       stageCount: 1,
       plannedDate: undefined,
       quantity: Number(line?.quantity ?? 0),
+      comments: typeof line?.comments === "string" ? line.comments : undefined,
       amount: Number(line?.amount ?? 0),
       warnings: Array.isArray(line?.warnings) ? [...line.warnings] : [],
       splits: Array.isArray(line?.splits)
-        ? line.splits.map((split) => ({ ...split, quantity: Number(split?.quantity ?? 0) }))
+        ? line.splits.map((split) => ({
+            ...split,
+            quantity: Number(split?.quantity ?? 0),
+            comments: typeof split?.comments === "string" ? split.comments : undefined,
+          }))
         : [],
       status: normalizeBatchStatus(line),
       submittedAt: undefined,
@@ -3978,7 +3988,7 @@ async function maybeHandleLineAppend(line, links) {
   };
 }
 
-async function submitVendorSplit({ vendor, serviceId, quantity, link }) {
+async function submitVendorSplit({ vendor, serviceId, quantity, link, comments }) {
   const runtime = getVendorRuntime(vendor);
   if (!runtime.enabled) {
     return { ok: false, error: "Vendor is not enabled" };
@@ -3990,15 +4000,18 @@ async function submitVendorSplit({ vendor, serviceId, quantity, link }) {
     return { ok: false, error: "serviceId is missing" };
   }
 
+  const cleanComments = typeof comments === "string" ? comments.trim() : "";
+  const payload = {
+    service: serviceId,
+    link,
+    ...(cleanComments ? { comments: cleanComments } : { quantity }),
+  };
+
   const resp = await postVendorPanel({
     baseUrl: runtime.baseUrl,
     key: runtime.key,
     action: "add",
-    payload: {
-      service: serviceId,
-      link,
-      quantity,
-    },
+    payload,
   });
 
   if (typeof resp?.error === "string") {
@@ -4066,6 +4079,7 @@ async function submitBatch(batch, links) {
       serviceId: Number(split?.serviceId ?? 0),
       quantity: Number(split?.quantity ?? 0),
       link: firstLink,
+      comments: typeof split?.comments === "string" ? split.comments : "",
     });
 
     if (result.ok) {
@@ -5079,6 +5093,7 @@ const server = http.createServer(async (req, res) => {
         const nextLine = {
           placement: line?.placement,
           quantity: Number(line?.quantity ?? 0),
+          comments: typeof line?.comments === "string" ? line.comments : undefined,
           amount: Number(line?.amount ?? 0),
           warnings: Array.isArray(line?.warnings) ? [...line.warnings] : [],
           appendOnComplete: appendOnComplete ?? undefined,

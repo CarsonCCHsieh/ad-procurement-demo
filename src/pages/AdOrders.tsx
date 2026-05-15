@@ -11,9 +11,14 @@ import { getPlacementMinUnit } from "../config/pricingConfig";
 import { apiUrl } from "../lib/apiBase";
 import { flushAllSharedState, pullSharedState, SHARED_SYNC_EVENT } from "../lib/sharedSync";
 import { buildAverageBatches, buildInstantBatches, countAverageExecutionDays } from "../lib/orderSchedule";
+import {
+  assignCustomCommentsToBatches,
+  countCustomCommentLines,
+  isCustomCommentsPlacementText,
+} from "../lib/customComments";
 
 type OrderKind = "new" | "upsell";
-type LineItem = { placement: AdPlacement; target: string };
+type LineItem = { placement: AdPlacement; target: string; commentsText?: string };
 type Draft = {
   id: string;
   applicant: string;
@@ -78,9 +83,11 @@ function validateDraft(draft: Draft): DraftError {
   e.items = draft.items.map((item) => {
     const fe: { placement?: string; target?: string } = {};
     if (!item.placement) fe.placement = "請選擇投放項目";
-    const q = Number(item.target);
+    const isComments = isCustomCommentsPlacementText(`${item.placement} ${getPlacementLabel(item.placement)}`);
+    const q = isComments ? countCustomCommentLines(item.commentsText) : Number(item.target);
     const min = getPlacementMinUnit(item.placement);
-    if (!Number.isFinite(q) || !Number.isInteger(q) || q <= 0) fe.target = "請輸入正整數";
+    if (isComments && q <= 0) fe.target = "請輸入至少一行留言內容";
+    else if (!Number.isFinite(q) || !Number.isInteger(q) || q <= 0) fe.target = "請輸入正整數";
     else if (q % min !== 0) fe.target = `數量需為 ${min.toLocaleString()} 的倍數`;
     return fe;
   });
@@ -110,13 +117,15 @@ export function AdOrdersPage() {
   const vendorEnabled = (vendor: VendorKey) => cfg.vendors.some((item) => item.key === vendor && item.enabled);
   const computed = useMemo(() => drafts.map((draft) => {
     const linePlans = draft.items.map((item) => {
-      const qty = Number(item.target);
+      const isComments = isCustomCommentsPlacementText(`${item.placement} ${getPlacementLabel(item.placement)}`);
+      const qty = isComments ? countCustomCommentLines(item.commentsText) : Number(item.target);
       if (!Number.isFinite(qty) || qty <= 0) return { splits: [], warnings: [] as string[] };
       const placementConfig = getPlacementConfig(item.placement);
       return planSplit({ total: qty, suppliers: placementConfig.suppliers, strategy: placementConfig.splitStrategy ?? "random", vendorEnabled });
     });
     const total = draft.items.reduce((sum, item) => {
-      const qty = Number(item.target);
+      const isComments = isCustomCommentsPlacementText(`${item.placement} ${getPlacementLabel(item.placement)}`);
+      const qty = isComments ? countCustomCommentLines(item.commentsText) : Number(item.target);
       return Number.isFinite(qty) && qty > 0 ? sum + calcInternalLineAmount(item.placement, qty) : sum;
     }, 0);
     return { linePlans, total };
@@ -166,16 +175,19 @@ export function AdOrdersPage() {
       scheduleEndDate: d.submitMode === "average" ? d.scheduleEndDate : undefined,
       links,
       lines: d.items.map((item, idx) => {
-        const q = Number(item.target);
+        const isComments = isCustomCommentsPlacementText(`${item.placement} ${getPlacementLabel(item.placement)}`);
+        const q = isComments ? countCustomCommentLines(item.commentsText) : Number(item.target);
         const amount = Number.isFinite(q) && q > 0 ? calcInternalLineAmount(item.placement, q) : 0;
         const plan = c.linePlans[idx] ?? { splits: [], warnings: [] as string[] };
         const placementCfg = getPlacementConfig(item.placement);
         const appendCfg = placementCfg.appendOnComplete;
-        const batches = d.submitMode === "average" && d.scheduleStartDate && d.scheduleEndDate
+        const rawBatches = d.submitMode === "average" && d.scheduleStartDate && d.scheduleEndDate
           ? buildAverageBatches({ startDate: d.scheduleStartDate, endDate: d.scheduleEndDate, quantity: Number.isFinite(q) ? q : 0, amount, minUnit: getPlacementMinUnit(item.placement), warnings: plan.warnings, splits: plan.splits })
           : buildInstantBatches({ quantity: Number.isFinite(q) ? q : 0, amount, warnings: plan.warnings, splits: plan.splits });
+        const batches = isComments ? assignCustomCommentsToBatches(rawBatches, item.commentsText) : rawBatches;
+        const splits = isComments ? batches.flatMap((batch) => batch.splits) : plan.splits;
         return {
-          placement: item.placement, quantity: Number.isFinite(q) ? q : 0, amount, splits: plan.splits, warnings: plan.warnings,
+          placement: item.placement, quantity: Number.isFinite(q) ? q : 0, comments: isComments ? item.commentsText ?? "" : undefined, amount, splits, warnings: plan.warnings,
           appendOnComplete: appendCfg && appendCfg.enabled && appendCfg.serviceId > 0 && appendCfg.quantity > 0 ? { enabled: true, vendor: appendCfg.vendor, serviceId: appendCfg.serviceId, quantity: appendCfg.quantity } : undefined,
           mode: d.submitMode, startDate: d.submitMode === "average" ? d.scheduleStartDate : undefined, endDate: d.submitMode === "average" ? d.scheduleEndDate : undefined, batches,
         };
@@ -244,7 +256,22 @@ export function AdOrdersPage() {
             </div>
             <div className="sep" />
             <div className="item-hd"><div className="item-title">投放項目</div><button className="btn" onClick={() => addLine(i)} disabled={!enabledPlacements.length}>新增投放項目</button></div>
-            <div className="list">{draft.items.map((item, li) => { const min = getPlacementMinUnit(item.placement); const q = Number(item.target); const amount = Number.isFinite(q) && q > 0 ? calcInternalLineAmount(item.placement, q) : 0; const le = e.items?.[li]; return <div className="item" key={`${draft.id}-${li}`}><div className="item-hd"><div className="item-title">投放項目 {li + 1}</div><button className="btn danger" disabled={draft.items.length <= 1} onClick={() => removeLine(i, li)}>移除</button></div><div className="row cols3"><div className="field"><div className="label">平台 / 項目</div><select value={item.placement} onChange={(ev) => updateDraft(i, (x) => ({ ...x, items: x.items.map((it, idx) => idx === li ? { ...it, placement: ev.target.value as AdPlacement, target: String(getPlacementMinUnit(ev.target.value as AdPlacement)) } : it) }))}>{enabledPlacements.map((p) => <option key={p.placement} value={p.placement}>{p.label}</option>)}</select>{le?.placement ? <div className="error">{le.placement}</div> : null}</div><div className="field"><div className="label">目標數量</div><input inputMode="numeric" value={item.target} onChange={(ev) => updateDraft(i, (x) => ({ ...x, items: x.items.map((it, idx) => idx === li ? { ...it, target: ev.target.value } : it) }))} /><div className="hint">最小單位：{min.toLocaleString("zh-TW")}</div>{le?.target ? <div className="error">{le.target}</div> : null}</div><div className="field"><div className="label">預估金額</div><input readOnly value={showPrices ? `NT$ ${amount.toLocaleString("zh-TW")}` : "依設定隱藏"} /></div></div></div>; })}</div>
+            <div className="list">{draft.items.map((item, li) => {
+              const isComments = isCustomCommentsPlacementText(`${item.placement} ${getPlacementLabel(item.placement)}`);
+              const commentCount = countCustomCommentLines(item.commentsText);
+              const min = getPlacementMinUnit(item.placement);
+              const q = isComments ? commentCount : Number(item.target);
+              const amount = Number.isFinite(q) && q > 0 ? calcInternalLineAmount(item.placement, q) : 0;
+              const le = e.items?.[li];
+              return <div className="item" key={`${draft.id}-${li}`}>
+                <div className="item-hd"><div className="item-title">投放項目 {li + 1}</div><button className="btn danger" disabled={draft.items.length <= 1} onClick={() => removeLine(i, li)}>移除</button></div>
+                <div className="row cols3">
+                  <div className="field"><div className="label">平台 / 項目</div><select value={item.placement} onChange={(ev) => updateDraft(i, (x) => ({ ...x, items: x.items.map((it, idx) => idx === li ? { ...it, placement: ev.target.value as AdPlacement, target: String(getPlacementMinUnit(ev.target.value as AdPlacement)), commentsText: it.commentsText ?? "" } : it) }))}>{enabledPlacements.map((p) => <option key={p.placement} value={p.placement}>{p.label}</option>)}</select>{le?.placement ? <div className="error">{le.placement}</div> : null}</div>
+                  <div className="field"><div className="label">{isComments ? "留言數量" : "目標數量"}</div><input inputMode="numeric" readOnly={isComments} value={isComments ? String(commentCount) : item.target} onChange={(ev) => updateDraft(i, (x) => ({ ...x, items: x.items.map((it, idx) => idx === li ? { ...it, target: ev.target.value } : it) }))} /><div className="hint">{isComments ? "依下方有效留言行數自動計算" : `最小單位：${min.toLocaleString("zh-TW")}`}</div>{le?.target ? <div className="error">{le.target}</div> : null}</div>
+                  <div className="field"><div className="label">預估金額</div><input readOnly value={showPrices ? `NT$ ${amount.toLocaleString("zh-TW")}` : "依設定隱藏"} /></div>                </div>
+                {isComments ? <div className="field" style={{ marginTop: 10 }}><div className="label">留言內容</div><textarea rows={5} value={item.commentsText ?? ""} onChange={(ev) => updateDraft(i, (x) => ({ ...x, items: x.items.map((it, idx) => idx === li ? { ...it, commentsText: ev.target.value, target: String(countCustomCommentLines(ev.target.value)) } : it) }))} placeholder="每一行輸入一則留言" /><div className="hint">系統會忽略空白行，並以有效行數作為下單數量。</div></div> : null}
+              </div>;
+            })}</div>
             <div className="kpi"><div className="hint">此筆訂單預估總金額</div><div style={{ fontWeight: 800 }}>{showPrices ? `NT$ ${c.total.toLocaleString("zh-TW")}` : "依設定隱藏"}</div></div>
           </div>; })}</div>
           <div className="sep" />
