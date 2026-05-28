@@ -10791,7 +10791,7 @@
     "service": 3849,
     "name": "Twitter Video Views - [No Drop] [Max: 10M] [15 Minutes - 1M/Day]",
     "type": "Default",
-    "rate": "0.0052",
+    "rate": "0.0055",
     "min": 100,
     "max": 99999999,
     "dripfeed": true,
@@ -10952,7 +10952,7 @@
     "max": 20000,
     "dripfeed": true,
     "refill": false,
-    "cancel": true,
+    "cancel": false,
     "category": "Tiktok - FOLLOWERS"
   },
   {
@@ -11468,7 +11468,7 @@
     "max": 20000,
     "dripfeed": true,
     "refill": false,
-    "cancel": true,
+    "cancel": false,
     "category": "TikTok - Targeted USA 🇺🇸"
   },
   {
@@ -11480,7 +11480,7 @@
     "max": 20000,
     "dripfeed": true,
     "refill": false,
-    "cancel": true,
+    "cancel": false,
     "category": "TikTok - Targeted USA 🇺🇸"
   },
   {
@@ -22568,7 +22568,7 @@
     "max": 50,
     "dripfeed": false,
     "refill": false,
-    "cancel": true,
+    "cancel": false,
     "category": "T"
   },
   {
