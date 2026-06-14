@@ -1481,7 +1481,7 @@
     "type": "Default",
     "rate": "0.20",
     "min": 10,
-    "max": 200000,
+    "max": 100000,
     "dripfeed": true,
     "refill": false,
     "cancel": true,
@@ -23508,6 +23508,18 @@
     "category": "Facebook Post Packages"
   },
   {
+    "service": 3266,
+    "name": "Facebook Live Stream Views [Max: 2K[ [Start Time: INSTANT] [Speed: 300 Minutes]",
+    "type": "Default",
+    "rate": "16.19",
+    "min": 10,
+    "max": 500,
+    "dripfeed": true,
+    "refill": false,
+    "cancel": true,
+    "category": "Facebook Live Stream"
+  },
+  {
     "service": 5793,
     "name": "Facebook Live Stream Likes [Max: 250K] [Refill: No] [Max: 20k] [Start Time: 0-1 Hour] [Speed: 5K/Day]",
     "type": "Default",
@@ -23529,6 +23541,102 @@
     "dripfeed": false,
     "refill": false,
     "cancel": false,
+    "category": "Facebook Live Stream"
+  },
+  {
+    "service": 3257,
+    "name": "Facebook Live Stream Views [Max: 10K] [Stay: 30 Minutes] [Start Time: INSTANT]",
+    "type": "Default",
+    "rate": "1.62",
+    "min": 10,
+    "max": 500,
+    "dripfeed": true,
+    "refill": false,
+    "cancel": true,
+    "category": "Facebook Live Stream"
+  },
+  {
+    "service": 3258,
+    "name": "Facebook Live Stream Views [Max: 2K] [Stay: 60 Minutes] [Start Time: INSTANT]",
+    "type": "Default",
+    "rate": "3.2388",
+    "min": 10,
+    "max": 500,
+    "dripfeed": true,
+    "refill": false,
+    "cancel": true,
+    "category": "Facebook Live Stream"
+  },
+  {
+    "service": 3259,
+    "name": "Facebook Live Stream Views [Max: 2K] [Stay: 90 Minutes] [Start Time: INSTANT]",
+    "type": "Default",
+    "rate": "4.8575",
+    "min": 10,
+    "max": 500,
+    "dripfeed": true,
+    "refill": false,
+    "cancel": true,
+    "category": "Facebook Live Stream"
+  },
+  {
+    "service": 3260,
+    "name": "Facebook Live Stream Views [Max: 2K] [Stay: 120 Minutes] [Start Time: INSTANT]",
+    "type": "Default",
+    "rate": "6.4763",
+    "min": 10,
+    "max": 500,
+    "dripfeed": true,
+    "refill": false,
+    "cancel": true,
+    "category": "Facebook Live Stream"
+  },
+  {
+    "service": 3261,
+    "name": "Facebook Live Stream Views [Max: 2K] [Stay: 150 Minutes] [Start Time: INSTANT]",
+    "type": "Default",
+    "rate": "8.095",
+    "min": 10,
+    "max": 500,
+    "dripfeed": true,
+    "refill": false,
+    "cancel": true,
+    "category": "Facebook Live Stream"
+  },
+  {
+    "service": 3262,
+    "name": "Facebook Live Stream Views [Max: 2K] [Stay: 180 Minutes] [Start Time: INSTANT]",
+    "type": "Default",
+    "rate": "9.715",
+    "min": 10,
+    "max": 500,
+    "dripfeed": true,
+    "refill": false,
+    "cancel": true,
+    "category": "Facebook Live Stream"
+  },
+  {
+    "service": 3263,
+    "name": "Facebook Live Stream Views [Max: 2K] [Stay: 210 Minutes] [Start Time: INSTANT]",
+    "type": "Default",
+    "rate": "11.3338",
+    "min": 10,
+    "max": 500,
+    "dripfeed": true,
+    "refill": false,
+    "cancel": true,
+    "category": "Facebook Live Stream"
+  },
+  {
+    "service": 3264,
+    "name": "Facebook Live Stream Views [Max: 2K] [Stay: 240 Minutes] [Start Time: INSTANT]",
+    "type": "Default",
+    "rate": "12.9525",
+    "min": 10,
+    "max": 500,
+    "dripfeed": true,
+    "refill": false,
+    "cancel": true,
     "category": "Facebook Live Stream"
   },
   {
@@ -29892,6 +30000,30 @@
     "category": "Youtube Live Stream / Premiere"
   },
   {
+    "service": 9533,
+    "name": "Youtube Subscribers [Refill: 30D] [Max: 100K] [Start Time: 0 - 3 Hrs] [Speed: Up to 100D] 💧",
+    "type": "Default",
+    "rate": "26.25",
+    "min": 50,
+    "max": 10000,
+    "dripfeed": false,
+    "refill": false,
+    "cancel": false,
+    "category": "Youtube Subscribers"
+  },
+  {
+    "service": 6293,
+    "name": "Youtube Subscribers [Refill: 30D] [Max: 5K] [Start Time: 0 - 3 Hrs] [Speed: Up to 100/D] 💧♻️",
+    "type": "Default",
+    "rate": "26.46",
+    "min": 50,
+    "max": 9999,
+    "dripfeed": false,
+    "refill": false,
+    "cancel": false,
+    "category": "Youtube Subscribers"
+  },
+  {
     "service": 3519,
     "name": "Youtube Subscribers [Refill: 30D] [Max: 100K] [Start Time: 0 - 3 Hrs] [Speed: Up to 100/D] 💧⛔",
     "type": "Default",
@@ -32980,11 +33112,11 @@
     "name": "TikTok Likes [Max: 100K] [Refill: No] [Start Time: 0 - 6 Hours] [Speed: 5K/Day]",
     "type": "Default",
     "rate": "0.20",
-    "min": 50,
+    "min": 10,
     "max": 100000,
     "dripfeed": true,
     "refill": false,
-    "cancel": true,
+    "cancel": false,
     "category": "Tiktok Likes"
   },
   {
@@ -33628,11 +33760,11 @@
     "name": "TikTok Likes [Refill: No] [Max: 500K] [Start Time: 0 - 1 Hr] [Speed: 250K/D]💧⛔️",
     "type": "Default",
     "rate": "0.275",
-    "min": 50,
+    "min": 10,
     "max": 50000,
     "dripfeed": true,
     "refill": false,
-    "cancel": true,
+    "cancel": false,
     "category": "Tiktok Likes"
   },
   {
@@ -34132,11 +34264,11 @@
     "name": "TikTok Likes [Refill: 30 Days] [Max: 10K] [Start Time: Instant] [Speed: 10K/Day] 🔥",
     "type": "Default",
     "rate": "0.875",
-    "min": 50,
+    "min": 10,
     "max": 50000,
     "dripfeed": true,
     "refill": false,
-    "cancel": true,
+    "cancel": false,
     "category": "Tiktok Likes"
   },
   {
@@ -34228,11 +34360,11 @@
     "name": "TikTok Likes [Refill: 30 Days] [Max: 4K] [Start Time: 1 Hour] [Speed: 5K/Day] ♻️",
     "type": "Default",
     "rate": "1.875",
-    "min": 50,
+    "min": 10,
     "max": 50000,
     "dripfeed": true,
     "refill": false,
-    "cancel": true,
+    "cancel": false,
     "category": "Tiktok Likes"
   },
   {
@@ -34240,11 +34372,11 @@
     "name": "TikTok Likes [Refill: No] [Max: 2K] [Start Time: 0 - 1 Hour] [Speed: 1K/Day] 🔥",
     "type": "Default",
     "rate": "1.875",
-    "min": 50,
+    "min": 10,
     "max": 50000,
     "dripfeed": true,
     "refill": false,
-    "cancel": true,
+    "cancel": false,
     "category": "Tiktok Likes"
   },
   {
@@ -34448,7 +34580,7 @@
     "max": 50000,
     "dripfeed": true,
     "refill": false,
-    "cancel": true,
+    "cancel": false,
     "category": "Tiktok Followers"
   },
   {
@@ -34460,7 +34592,7 @@
     "max": 300000,
     "dripfeed": true,
     "refill": false,
-    "cancel": true,
+    "cancel": false,
     "category": "Tiktok Followers"
   },
   {
@@ -34577,7 +34709,7 @@
     "type": "Default",
     "rate": "2.125",
     "min": 10,
-    "max": 10000000,
+    "max": 1000000,
     "dripfeed": true,
     "refill": false,
     "cancel": false,
@@ -35460,6 +35592,18 @@
     "category": "Tiktok Followers"
   },
   {
+    "service": 2008,
+    "name": "TikTok Followers [Refill: No] [Max: 500K] [Start Time: 0 - 2 Hours] [Speed: 50K/Day] 💧⛔️",
+    "type": "Default",
+    "rate": "3.1095",
+    "min": 10,
+    "max": 500000,
+    "dripfeed": true,
+    "refill": false,
+    "cancel": true,
+    "category": "Tiktok Followers"
+  },
+  {
     "service": 8518,
     "name": "TikTok Followers [Refill: No Refill] [Max: 50K] [Start Time: 0 - 1 Hours] [Speed: Up to 20K/Day]",
     "type": "Default",
@@ -35481,6 +35625,18 @@
     "dripfeed": true,
     "refill": false,
     "cancel": false,
+    "category": "Tiktok Followers"
+  },
+  {
+    "service": 7995,
+    "name": "TikTok Followers [Refill: 7D] [Max: 500K] [Start Time: 0 - 2 Hours] [Speed: 50K/Day] 💧⛔️♻️",
+    "type": "Default",
+    "rate": "3.455",
+    "min": 10,
+    "max": 500000,
+    "dripfeed": true,
+    "refill": false,
+    "cancel": true,
     "category": "Tiktok Followers"
   },
   {
@@ -35608,11 +35764,11 @@
     "name": "TikTok Followers [Refill 30 Days] [Max: 20K] [Start Time: 0 - 1Hours] [Speed: 10K/Day] 💧⛔️♻️",
     "type": "Default",
     "rate": "6.25",
-    "min": 100,
+    "min": 10,
     "max": 20000,
     "dripfeed": true,
     "refill": false,
-    "cancel": true,
+    "cancel": false,
     "category": "Tiktok Followers"
   },
   {
@@ -39988,11 +40144,11 @@
     "name": "TikTok Auto Likes [Max: 100K] [Refill: No] [Start Time: 0 - 6 Hours] [Speed: 5K/Day]",
     "type": "Subscriptions",
     "rate": "0.20",
-    "min": 50,
+    "min": 10,
     "max": 100000,
     "dripfeed": false,
     "refill": false,
-    "cancel": true,
+    "cancel": false,
     "category": "TikTok Auto Services"
   },
   {
@@ -40172,7 +40328,7 @@
     "max": 50000,
     "dripfeed": false,
     "refill": false,
-    "cancel": true,
+    "cancel": false,
     "category": "X - Twitter Followers"
   },
   {
@@ -40256,7 +40412,7 @@
     "max": 50000,
     "dripfeed": true,
     "refill": false,
-    "cancel": true,
+    "cancel": false,
     "category": "X - Twitter Followers"
   },
   {
@@ -40424,7 +40580,7 @@
     "max": 50000,
     "dripfeed": false,
     "refill": false,
-    "cancel": true,
+    "cancel": false,
     "category": "X - Twitter Followers"
   },
   {
@@ -40436,7 +40592,7 @@
     "max": 50000,
     "dripfeed": false,
     "refill": false,
-    "cancel": true,
+    "cancel": false,
     "category": "X - Twitter Followers"
   },
   {
@@ -40587,7 +40743,7 @@
     "service": 6359,
     "name": "Twitter Followers [HQ - English Names] [Refill: 30D] [Max: 300K] [Start Time: 0-3 Hrs] [Speed: 10K/D] 💧♻️",
     "type": "Default",
-    "rate": "11.1725",
+    "rate": "15.625",
     "min": 10,
     "max": 50000,
     "dripfeed": true,
@@ -42483,7 +42639,7 @@
     "service": 8239,
     "name": "Twitter Video Views [Refill: No Drop] [Max: 10M] [Start Time: 0 - 1 Hr] [Speed: 10M/Day]",
     "type": "Default",
-    "rate": "0.4125",
+    "rate": "0.6125",
     "min": 10,
     "max": 100000,
     "dripfeed": true,
@@ -53127,7 +53283,7 @@
     "service": 6251,
     "name": "Likee Likes [Refill: 90 Days] [Max: 2K] [Start Time: 0-8 Hours] [Speed: 200-400/Day] ♻️",
     "type": "Default",
-    "rate": "3.575",
+    "rate": "3.9875",
     "min": 10,
     "max": 10000,
     "dripfeed": false,
